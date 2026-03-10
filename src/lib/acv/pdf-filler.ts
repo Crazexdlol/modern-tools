@@ -122,7 +122,7 @@ export async function fillACVPdf(
       .join('\n')
     setField(form, f.dealer, dealerInfo, timesRoman)
     setField(form, f.asking, fmt(comp.price), timesRoman)
-    setField(form, f.mileage, comp.miles.toLocaleString(), timesRoman)
+    setField(form, f.mileage, (comp.miles ?? 0).toLocaleString(), timesRoman)
     setField(
       form,
       f.mileDiffRaw,

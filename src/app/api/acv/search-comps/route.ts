@@ -41,14 +41,14 @@ export async function GET(request: NextRequest) {
       const media = (l.media as Record<string, unknown>) ?? {}
       const photoLinks = (media.photo_links as string[]) ?? []
       return {
-        id: l.id,
-        vin: l.vin,
+        id: l.id ?? l.vin ?? String(Math.random()),
+        vin: l.vin ?? '',
         price: l.price,
-        miles: l.miles,
-        year: l.year,
-        make: l.make,
-        model: l.model,
-        trim: l.trim,
+        miles: l.miles ?? 0,
+        year: l.year ?? 0,
+        make: l.make ?? '',
+        model: l.model ?? '',
+        trim: l.trim ?? '',
         dealerName: dealer.name ?? '',
         dealerPhone: dealer.phone ?? '',
         dealerCity: dealer.city ?? '',

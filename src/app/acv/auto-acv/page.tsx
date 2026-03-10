@@ -645,7 +645,7 @@ function ReviewStep({
                     {formatCurrency(comp.price)}
                   </td>
                   <td className="px-4 py-2.5 text-right tabular-nums text-gray-700">
-                    {comp.miles.toLocaleString()}
+                    {(comp.miles ?? 0).toLocaleString()}
                   </td>
                   <td
                     className={cn(
@@ -1077,7 +1077,7 @@ function AutoProcessStep({
                   </p>
                   <p className="text-xs text-gray-500 flex items-center gap-1 mt-1">
                     <Car className="w-3 h-3" />
-                    {comp.miles.toLocaleString()} miles
+                    {(comp.miles ?? 0).toLocaleString()} miles
                   </p>
                   {comp.dealerName && (
                     <p className="text-xs text-gray-400 flex items-center gap-1 mt-0.5 truncate">
