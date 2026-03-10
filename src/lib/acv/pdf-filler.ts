@@ -1,4 +1,4 @@
-import { PDFDocument } from 'pdf-lib'
+import { PDFDocument, PDFName, PDFBool } from 'pdf-lib'
 import fs from 'fs'
 import path from 'path'
 import type { ClaimInfo, SelectedComp, ACVAdjustments, ACVResult } from './types'
@@ -16,6 +16,11 @@ function setField(
   try {
     const field = form.getTextField(name)
     field.setText(value)
+    // Remove pdf-lib's auto-generated appearance so the PDF reader
+    // uses the template's original font/size via NeedAppearances
+    field.acroField.getWidgets().forEach(w => {
+      w.dict.delete(PDFName.of('AP'))
+    })
   } catch { /* field may not exist */ }
 }
 
@@ -23,6 +28,9 @@ function setDropdown(form: ReturnType<PDFDocument['getForm']>, name: string, val
   try {
     const field = form.getDropdown(name)
     if (field.getOptions().includes(value)) field.select(value)
+    field.acroField.getWidgets().forEach(w => {
+      w.dict.delete(PDFName.of('AP'))
+    })
   } catch { /* ignore */ }
 }
 
@@ -36,6 +44,10 @@ export async function fillACVPdf(
   const templateBytes = fs.readFileSync(templatePath)
   const doc = await PDFDocument.load(templateBytes)
   const form = doc.getForm()
+
+  // Tell PDF readers to regenerate field appearances using the template's
+  // own fonts/sizes instead of pdf-lib's defaults
+  form.acroForm.dict.set(PDFName.of('NeedAppearances'), PDFBool.True)
 
   const today = new Date().toLocaleDateString('en-US')
   const vehicleStr = `${claim.year} ${claim.make} ${claim.model}`
