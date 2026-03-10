@@ -1,4 +1,4 @@
-import { PDFDocument, StandardFonts } from 'pdf-lib'
+import { PDFDocument } from 'pdf-lib'
 import fs from 'fs'
 import path from 'path'
 import type { ClaimInfo, SelectedComp, ACVAdjustments, ACVResult } from './types'
@@ -12,12 +12,9 @@ function setField(
   form: ReturnType<PDFDocument['getForm']>,
   name: string,
   value: string,
-  font: Awaited<ReturnType<PDFDocument['embedFont']>>
 ) {
   try {
     const field = form.getTextField(name)
-    field.setFontSize(10)
-    field.defaultUpdateAppearances(font)
     field.setText(value)
   } catch { /* field may not exist */ }
 }
@@ -39,39 +36,38 @@ export async function fillACVPdf(
   const templateBytes = fs.readFileSync(templatePath)
   const doc = await PDFDocument.load(templateBytes)
   const form = doc.getForm()
-  const timesRoman = await doc.embedFont(StandardFonts.TimesRoman)
 
   const today = new Date().toLocaleDateString('en-US')
   const vehicleStr = `${claim.year} ${claim.make} ${claim.model}`
 
   // Header
-  setField(form, 'Modern file #', claim.maNumber, timesRoman)
-  setField(form, 'Ins Claim #', claim.claimNumber, timesRoman)
-  setField(form, 'Date of Loss', claim.dateOfLoss, timesRoman)
-  setField(form, 'Date2_af_date', today, timesRoman)
+  setField(form, 'Modern file #', claim.maNumber)
+  setField(form, 'Ins Claim #', claim.claimNumber)
+  setField(form, 'Date of Loss', claim.dateOfLoss)
+  setField(form, 'Date2_af_date', today)
 
   // Owner
   setDropdown(form, 'List Box 1', claim.clientType)
-  setField(form, 'Owner Name', claim.insuredName, timesRoman)
-  setField(form, 'Owner Phone', claim.ownerPhone, timesRoman)
-  setField(form, 'Owner Email', claim.ownerEmail, timesRoman)
-  setField(form, 'Owner Address', claim.ownerAddress, timesRoman)
-  setField(form, 'Client', claim.insuredName, timesRoman)
+  setField(form, 'Owner Name', claim.insuredName)
+  setField(form, 'Owner Phone', claim.ownerPhone)
+  setField(form, 'Owner Email', claim.ownerEmail)
+  setField(form, 'Owner Address', claim.ownerAddress)
+  setField(form, 'Client', claim.insuredName)
 
   // Insurance
-  setField(form, 'Ins. Co', claim.insuranceCompany, timesRoman)
-  setField(form, 'Adjuster Name', claim.adjuster, timesRoman)
-  setField(form, 'Adjuster Phone', claim.adjusterPhone, timesRoman)
-  setField(form, 'Adjuster email', claim.adjusterEmail, timesRoman)
+  setField(form, 'Ins. Co', claim.insuranceCompany)
+  setField(form, 'Adjuster Name', claim.adjuster)
+  setField(form, 'Adjuster Phone', claim.adjusterPhone)
+  setField(form, 'Adjuster email', claim.adjusterEmail)
 
   // Vehicle
-  setField(form, 'Year', String(claim.year), timesRoman)
-  setField(form, 'Make', claim.make, timesRoman)
-  setField(form, 'Model', claim.model, timesRoman)
-  setField(form, 'VIN', claim.vin, timesRoman)
-  setField(form, 'mileage', claim.mileage.toLocaleString(), timesRoman)
+  setField(form, 'Year', String(claim.year))
+  setField(form, 'Make', claim.make)
+  setField(form, 'Model', claim.model)
+  setField(form, 'VIN', claim.vin)
+  setField(form, 'mileage', claim.mileage.toLocaleString())
   setDropdown(form, 'mileage actual', 'Actual')
-  setField(form, 'complete vehicle information', vehicleStr, timesRoman)
+  setField(form, 'complete vehicle information', vehicleStr)
 
   // Condition (all Fair)
   setDropdown(form, 'Body', 'Fair')
@@ -120,62 +116,55 @@ export async function fillACVPdf(
     const dealerInfo = [comp.dealerName, `${comp.dealerCity}, ${comp.dealerState}`, comp.dealerPhone]
       .filter(Boolean)
       .join('\n')
-    setField(form, f.dealer, dealerInfo, timesRoman)
-    setField(form, f.asking, fmt(comp.price), timesRoman)
-    setField(form, f.mileage, (comp.miles ?? 0).toLocaleString(), timesRoman)
+    setField(form, f.dealer, dealerInfo)
+    setField(form, f.asking, fmt(comp.price))
+    setField(form, f.mileage, (comp.miles ?? 0).toLocaleString())
     setField(
       form,
       f.mileDiffRaw,
       comp.mileageDiffRaw >= 0
         ? `+${comp.mileageDiffRaw.toLocaleString()}`
-        : comp.mileageDiffRaw.toLocaleString(),
-      timesRoman
+        : comp.mileageDiffRaw.toLocaleString()
     )
-    setField(form, f.mileDiffDollar, fmt(comp.mileageAdjDollar), timesRoman)
+    setField(form, f.mileDiffDollar, fmt(comp.mileageAdjDollar))
     setField(
       form,
       f.yearDiffRaw,
-      comp.yearDiffRaw >= 0 ? `+${comp.yearDiffRaw}` : String(comp.yearDiffRaw),
-      timesRoman
+      comp.yearDiffRaw >= 0 ? `+${comp.yearDiffRaw}` : String(comp.yearDiffRaw)
     )
-    setField(form, f.yearDiffDollar, fmt(comp.yearAdjDollar), timesRoman)
-    setField(form, f.value, fmt(comp.compValue), timesRoman)
+    setField(form, f.yearDiffDollar, fmt(comp.yearAdjDollar))
+    setField(form, f.value, fmt(comp.compValue))
   })
 
   // Adjustments
-  setField(form, 'vehicle history', adjustments.vehicleHistoryNote, timesRoman)
+  setField(form, 'vehicle history', adjustments.vehicleHistoryNote)
   setField(
     form,
     'v his value',
-    adjustments.vehicleHistory !== 0 ? fmt(adjustments.vehicleHistory) : '',
-    timesRoman
+    adjustments.vehicleHistory !== 0 ? fmt(adjustments.vehicleHistory) : ''
   )
-  setField(form, 'prior damages', adjustments.priorDamagesNote, timesRoman)
+  setField(form, 'prior damages', adjustments.priorDamagesNote)
   setField(
     form,
     'p dmg value',
-    adjustments.priorDamages !== 0 ? fmt(adjustments.priorDamages) : '',
-    timesRoman
+    adjustments.priorDamages !== 0 ? fmt(adjustments.priorDamages) : ''
   )
-  setField(form, 'additions', adjustments.additionsNote, timesRoman)
-  setField(form, 'addit value', adjustments.additions !== 0 ? fmt(adjustments.additions) : '', timesRoman)
-  setField(form, 'deductions', adjustments.deductionsNote, timesRoman)
-  setField(form, 'deduc value', fmt(adjustments.deductions), timesRoman)
+  setField(form, 'additions', adjustments.additionsNote)
+  setField(form, 'addit value', adjustments.additions !== 0 ? fmt(adjustments.additions) : '')
+  setField(form, 'deductions', adjustments.deductionsNote)
+  setField(form, 'deduc value', fmt(adjustments.deductions))
 
   // Calculated
-  setField(form, 'comp average value', fmt(result.averageValue), timesRoman)
-  setField(form, 'total adjustments', fmt(result.totalAdjustments), timesRoman)
+  setField(form, 'comp average value', fmt(result.averageValue))
+  setField(form, 'total adjustments', fmt(result.totalAdjustments))
   if (adjustments.taxRate > 0) {
-    setField(form, 'Text Box 5', String(adjustments.taxRate), timesRoman)
-    setField(form, 'Numeric Field 1', fmt(result.taxAmount), timesRoman)
+    setField(form, 'Text Box 5', String(adjustments.taxRate))
+    setField(form, 'Numeric Field 1', fmt(result.taxAmount))
   }
-  setField(form, 'Final ACV', fmt(result.acv), timesRoman)
+  setField(form, 'Final ACV', fmt(result.acv))
 
   // Notes
-  setField(form, 'notes', adjustments.notes, timesRoman)
-
-  // Flatten to prevent further editing
-  form.flatten()
+  setField(form, 'notes', adjustments.notes)
 
   return doc.save()
 }
