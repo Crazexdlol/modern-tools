@@ -1,4 +1,4 @@
-import { PDFDocument, PDFName, PDFBool } from 'pdf-lib'
+import { PDFDocument, PDFName, PDFBool, PDFArray } from 'pdf-lib'
 import fs from 'fs'
 import path from 'path'
 import type { ClaimInfo, SelectedComp, ACVAdjustments, ACVResult } from './types'
@@ -177,6 +177,14 @@ export async function fillACVPdf(
 
   // Notes
   setField(form, 'notes', adjustments.notes)
+
+  // Remove JavaScript calculation actions from all fields so the PDF reader
+  // doesn't overwrite our pre-filled values when it opens the document
+  form.getFields().forEach(f => {
+    f.acroField.dict.delete(PDFName.of('AA'))
+  })
+  // Remove the calculation order array from the AcroForm
+  form.acroForm.dict.delete(PDFName.of('CO'))
 
   return doc.save()
 }
