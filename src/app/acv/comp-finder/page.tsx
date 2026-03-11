@@ -1130,73 +1130,66 @@ function defaultClaim(): ClaimInfo {
 
 // ── History Dashboard ────────────────────────────────────────────────────────
 // ── Main page ────────────────────────────────────────────────────────────────
+const COMP_FINDER_SESSION_KEY = 'modern-tools-comp-finder-draft'
+
+function getCompFinderDraft(): { step: number; claim: ClaimInfo; listings: MarketComp[]; selectedIds: string[]; compAdjs: { mileageAdj: number; yearAdj: number }[]; adjustments: ACVAdjustments; editingId: string | null } | null {
+  try {
+    const raw = sessionStorage.getItem(COMP_FINDER_SESSION_KEY)
+    if (raw) return JSON.parse(raw)
+  } catch { /* ignore */ }
+  return null
+}
+
 function CompFinderInner() {
   const searchParams = useSearchParams()
-  const [step, setStep] = useState(1)
-  const [claim, setClaim] = useState<ClaimInfo>(defaultClaim)
-  const [listings, setListings] = useState<MarketComp[]>([])
+  const draft = useRef(getCompFinderDraft())
+  const [step, setStep] = useState(() => draft.current?.step ?? 1)
+  const [claim, setClaim] = useState<ClaimInfo>(() => draft.current?.claim ?? defaultClaim())
+  const [listings, setListings] = useState<MarketComp[]>(() => draft.current?.listings ?? [])
   const [loadingComps, setLoadingComps] = useState(false)
   const [compsError, setCompsError] = useState<string | null>(null)
-  const [selectedIds, setSelectedIds] = useState<string[]>([])
+  const [selectedIds, setSelectedIds] = useState<string[]>(() => draft.current?.selectedIds ?? [])
   const [viewingComp, setViewingComp] = useState<MarketComp | null>(null)
-  // Per-comp adjustments
-  const [compAdjs, setCompAdjs] = useState<{ mileageAdj: number; yearAdj: number }[]>([
-    { mileageAdj: 0, yearAdj: 0 },
-    { mileageAdj: 0, yearAdj: 0 },
-    { mileageAdj: 0, yearAdj: 0 },
-  ])
-  const [adjustments, setAdjustments] = useState<ACVAdjustments>(defaultAdjustments)
-  const [editingId, setEditingId] = useState<string | null>(null)
+  const [compAdjs, setCompAdjs] = useState<{ mileageAdj: number; yearAdj: number }[]>(
+    () => draft.current?.compAdjs ?? [
+      { mileageAdj: 0, yearAdj: 0 },
+      { mileageAdj: 0, yearAdj: 0 },
+      { mileageAdj: 0, yearAdj: 0 },
+    ]
+  )
+  const [adjustments, setAdjustments] = useState<ACVAdjustments>(
+    () => draft.current?.adjustments ?? defaultAdjustments()
+  )
+  const [editingId, setEditingId] = useState<string | null>(() => draft.current?.editingId ?? null)
 
-  const SESSION_KEY = 'modern-tools-comp-finder-draft'
-  const hydrated = useRef(false)
-
-  // Restore draft state on mount (runs first, before save effect)
+  // Handle edit mode (from history) — overrides draft
   useEffect(() => {
-    if (searchParams.get('edit') === 'true') {
-      try {
-        const raw = sessionStorage.getItem('modern-tools-acv-edit')
-        if (raw) {
-          const entry: ACVHistoryEntry = JSON.parse(raw)
-          sessionStorage.removeItem('modern-tools-acv-edit')
-          sessionStorage.removeItem(SESSION_KEY)
-          setClaim(entry.claim)
-          setAdjustments(entry.adjustments)
-          setEditingId(entry.id)
-          if (entry.comps && entry.comps.length > 0) {
-            setListings(entry.comps)
-            setSelectedIds(entry.comps.map(c => c.id))
-            setCompAdjs(entry.comps.map(c => ({
-              mileageAdj: c.mileageAdjDollar ?? 0,
-              yearAdj: c.yearAdjDollar ?? 0,
-            })))
-          }
-        }
-      } catch { /* ignore */ }
-    } else {
-      try {
-        const raw = sessionStorage.getItem(SESSION_KEY)
-        if (raw) {
-          const draft = JSON.parse(raw)
-          if (draft.claim) setClaim(draft.claim)
-          if (draft.listings) setListings(draft.listings)
-          if (draft.selectedIds) setSelectedIds(draft.selectedIds)
-          if (draft.compAdjs) setCompAdjs(draft.compAdjs)
-          if (draft.adjustments) setAdjustments(draft.adjustments)
-          if (draft.editingId) setEditingId(draft.editingId)
-          if (draft.step) setStep(draft.step)
-        }
-      } catch { /* ignore */ }
-    }
-    hydrated.current = true
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
-  // Persist form state to sessionStorage on every change (skip until hydrated)
-  useEffect(() => {
-    if (!hydrated.current) return
+    if (searchParams.get('edit') !== 'true') return
     try {
-      sessionStorage.setItem(SESSION_KEY, JSON.stringify({
+      const raw = sessionStorage.getItem('modern-tools-acv-edit')
+      if (raw) {
+        const entry: ACVHistoryEntry = JSON.parse(raw)
+        sessionStorage.removeItem('modern-tools-acv-edit')
+        sessionStorage.removeItem(COMP_FINDER_SESSION_KEY)
+        setClaim(entry.claim)
+        setAdjustments(entry.adjustments)
+        setEditingId(entry.id)
+        if (entry.comps && entry.comps.length > 0) {
+          setListings(entry.comps)
+          setSelectedIds(entry.comps.map(c => c.id))
+          setCompAdjs(entry.comps.map(c => ({
+            mileageAdj: c.mileageAdjDollar ?? 0,
+            yearAdj: c.yearAdjDollar ?? 0,
+          })))
+        }
+      }
+    } catch { /* ignore */ }
+  }, [searchParams])
+
+  // Persist form state to sessionStorage on every change
+  useEffect(() => {
+    try {
+      sessionStorage.setItem(COMP_FINDER_SESSION_KEY, JSON.stringify({
         step, claim, listings, selectedIds, compAdjs, adjustments, editingId,
       }))
     } catch { /* ignore */ }
@@ -1304,7 +1297,7 @@ function CompFinderInner() {
     setAdjustments(defaultAdjustments())
     setCompsError(null)
     setEditingId(null)
-    sessionStorage.removeItem(SESSION_KEY)
+    sessionStorage.removeItem(COMP_FINDER_SESSION_KEY)
   }
 
   return (

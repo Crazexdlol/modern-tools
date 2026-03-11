@@ -1176,64 +1176,57 @@ function AutoProcessStep({
 
 // ── History Dashboard ────────────────────────────────────────────────────────
 // ── Main page ────────────────────────────────────────────────────────────────
+const AUTO_ACV_SESSION_KEY = 'modern-tools-auto-acv-draft'
+
+function getAutoACVDraft(): { step: number; claim: ClaimInfo; adjustments: ACVAdjustments; finalComps: SelectedComp[]; finalResult: ACVResult | null; finalAdj: ACVAdjustments; editingId: string | null } | null {
+  try {
+    const raw = sessionStorage.getItem(AUTO_ACV_SESSION_KEY)
+    if (raw) return JSON.parse(raw)
+  } catch { /* ignore */ }
+  return null
+}
+
 function AutoACVInner() {
   const searchParams = useSearchParams()
-  const [step, setStep] = useState(1)
-  const [claim, setClaim] = useState<ClaimInfo>(defaultClaim)
-  const [adjustments, setAdjustments] = useState<ACVAdjustments>(defaultAdjustments)
-  const [finalComps, setFinalComps] = useState<SelectedComp[]>([])
-  const [finalResult, setFinalResult] = useState<ACVResult | null>(null)
-  const [finalAdj, setFinalAdj] = useState<ACVAdjustments>(defaultAdjustments())
-  // Track if we need to re-run auto process (reset when going back past step 3)
+  const draft = useRef(getAutoACVDraft())
+  const [step, setStep] = useState(() => draft.current?.step ?? 1)
+  const [claim, setClaim] = useState<ClaimInfo>(() => draft.current?.claim ?? defaultClaim())
+  const [adjustments, setAdjustments] = useState<ACVAdjustments>(
+    () => draft.current?.adjustments ?? defaultAdjustments()
+  )
+  const [finalComps, setFinalComps] = useState<SelectedComp[]>(() => draft.current?.finalComps ?? [])
+  const [finalResult, setFinalResult] = useState<ACVResult | null>(() => draft.current?.finalResult ?? null)
+  const [finalAdj, setFinalAdj] = useState<ACVAdjustments>(
+    () => draft.current?.finalAdj ?? defaultAdjustments()
+  )
   const [processKey, setProcessKey] = useState(0)
-  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editingId, setEditingId] = useState<string | null>(() => draft.current?.editingId ?? null)
 
-  const SESSION_KEY = 'modern-tools-auto-acv-draft'
-  const hydrated = useRef(false)
-
-  // Restore draft state on mount (runs first, before save effect)
+  // Handle edit mode (from history) — overrides draft
   useEffect(() => {
-    if (searchParams.get('edit') === 'true') {
-      try {
-        const raw = sessionStorage.getItem('modern-tools-acv-edit')
-        if (raw) {
-          const entry: ACVHistoryEntry = JSON.parse(raw)
-          sessionStorage.removeItem('modern-tools-acv-edit')
-          sessionStorage.removeItem(SESSION_KEY)
-          setClaim(entry.claim)
-          setAdjustments(entry.adjustments)
-          setEditingId(entry.id)
-          if (entry.comps && entry.comps.length > 0) {
-            setFinalComps(entry.comps)
-            setFinalResult(entry.result)
-            setFinalAdj(entry.adjustments)
-          }
-        }
-      } catch { /* ignore */ }
-    } else {
-      try {
-        const raw = sessionStorage.getItem(SESSION_KEY)
-        if (raw) {
-          const draft = JSON.parse(raw)
-          if (draft.claim) setClaim(draft.claim)
-          if (draft.adjustments) setAdjustments(draft.adjustments)
-          if (draft.finalComps) setFinalComps(draft.finalComps)
-          if (draft.finalResult) setFinalResult(draft.finalResult)
-          if (draft.finalAdj) setFinalAdj(draft.finalAdj)
-          if (draft.editingId) setEditingId(draft.editingId)
-          if (draft.step) setStep(draft.step)
-        }
-      } catch { /* ignore */ }
-    }
-    hydrated.current = true
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
-  // Persist form state to sessionStorage on every change (skip until hydrated)
-  useEffect(() => {
-    if (!hydrated.current) return
+    if (searchParams.get('edit') !== 'true') return
     try {
-      sessionStorage.setItem(SESSION_KEY, JSON.stringify({
+      const raw = sessionStorage.getItem('modern-tools-acv-edit')
+      if (raw) {
+        const entry: ACVHistoryEntry = JSON.parse(raw)
+        sessionStorage.removeItem('modern-tools-acv-edit')
+        sessionStorage.removeItem(AUTO_ACV_SESSION_KEY)
+        setClaim(entry.claim)
+        setAdjustments(entry.adjustments)
+        setEditingId(entry.id)
+        if (entry.comps && entry.comps.length > 0) {
+          setFinalComps(entry.comps)
+          setFinalResult(entry.result)
+          setFinalAdj(entry.adjustments)
+        }
+      }
+    } catch { /* ignore */ }
+  }, [searchParams])
+
+  // Persist form state to sessionStorage on every change
+  useEffect(() => {
+    try {
+      sessionStorage.setItem(AUTO_ACV_SESSION_KEY, JSON.stringify({
         step, claim, adjustments, finalComps, finalResult, finalAdj, editingId,
       }))
     } catch { /* ignore */ }
@@ -1264,7 +1257,7 @@ function AutoACVInner() {
     setFinalAdj(defaultAdjustments())
     setProcessKey((k) => k + 1)
     setEditingId(null)
-    sessionStorage.removeItem(SESSION_KEY)
+    sessionStorage.removeItem(AUTO_ACV_SESSION_KEY)
   }
 
   const goToStep3 = () => {
