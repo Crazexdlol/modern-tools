@@ -39,6 +39,7 @@ export interface MarketComp {
   dealerState: string
   photoUrl: string
   heading: string
+  distanceMi: number
 }
 
 export interface SelectedComp extends MarketComp {

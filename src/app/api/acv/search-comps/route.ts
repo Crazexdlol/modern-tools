@@ -6,11 +6,12 @@ export async function GET(request: NextRequest) {
   const make = p.get('make')
   const model = p.get('model')
   const trim = p.get('trim') || ''
-  const zip = p.get('zip')
+  const zip = p.get('zip') || ''
   const radius = p.get('radius') || '150'
+  const nationwide = radius === '0' || p.get('nationwide') === 'true'
   const includeInactive = p.get('includeInactive') === 'true'
 
-  if (!year || !make || !model || !zip) {
+  if (!year || !make || !model || (!zip && !nationwide)) {
     return NextResponse.json({ error: 'Missing params' }, { status: 400 })
   }
 
@@ -22,11 +23,10 @@ export async function GET(request: NextRequest) {
     year,
     make,
     model,
-    zip,
-    radius,
     rows: '30',
     sort_by: 'price',
     sort_order: 'asc',
+    ...(zip && !nationwide ? { zip, radius } : {}),
     ...(trim ? { trim } : {}),
   })
 
@@ -59,6 +59,7 @@ export async function GET(request: NextRequest) {
         dealerState: dealer.state ?? '',
         photoUrl: photoLinks[0] ?? '',
         heading: l.heading ?? '',
+        distanceMi: l.dist ? Math.round(Number(l.dist)) : 0,
       }
     })
 

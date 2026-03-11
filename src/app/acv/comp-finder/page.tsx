@@ -353,25 +353,35 @@ function ClaimInfoForm({
             />
           </div>
           <div>
-            <label className={labelCls}>ZIP Code</label>
-            <input
+            <label className={labelCls}>Search Radius</label>
+            <select
               className={inputCls}
-              placeholder="90210"
-              maxLength={5}
-              value={claim.zip}
-              onChange={(e) => set('zip', e.target.value)}
-            />
+              value={claim.radius}
+              onChange={(e) => {
+                const val = parseInt(e.target.value)
+                onChange({ ...claim, radius: val, ...(val === 0 ? { zip: '' } : {}) })
+              }}
+            >
+              <option value={25}>25 miles</option>
+              <option value={50}>50 miles</option>
+              <option value={100}>100 miles</option>
+              <option value={200}>200 miles</option>
+              <option value={500}>500 miles</option>
+              <option value={0}>Nationwide</option>
+            </select>
           </div>
-          <div>
-            <label className={labelCls}>Search Radius (miles)</label>
-            <input
-              type="number"
-              className={inputCls}
-              placeholder="150"
-              value={claim.radius || ''}
-              onChange={(e) => set('radius', parseInt(e.target.value) || 150)}
-            />
-          </div>
+          {claim.radius !== 0 && (
+            <div>
+              <label className={labelCls}>ZIP Code</label>
+              <input
+                className={inputCls}
+                placeholder="90210"
+                maxLength={5}
+                value={claim.zip}
+                onChange={(e) => set('zip', e.target.value)}
+              />
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -387,6 +397,7 @@ function CompDetailModal({
   onClose: () => void
 }) {
   const printRef = useRef<HTMLDivElement>(null)
+  const vehicle = [comp.year || '', comp.make, comp.model, comp.trim].filter(Boolean).join(' ')
 
   const handlePrint = () => {
     if (!printRef.current) return
@@ -395,23 +406,24 @@ function CompDetailModal({
     printWindow.document.write(`
       <html>
         <head>
-          <title>${comp.year} ${comp.make} ${comp.model} - Comp Detail</title>
+          <title>${vehicle} - Comp Detail</title>
           <style>
-            body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; padding: 24px; color: #111; }
-            .header { display: flex; gap: 20px; margin-bottom: 20px; }
-            .photo { width: 300px; height: 200px; object-fit: cover; border-radius: 8px; }
-            .title { font-size: 20px; font-weight: 700; margin-bottom: 4px; }
-            .price { font-size: 22px; font-weight: 700; color: #059669; margin-bottom: 8px; }
-            .vin { font-family: monospace; font-size: 13px; color: #555; margin-bottom: 12px; }
-            .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 24px; font-size: 13px; }
-            .grid dt { color: #888; } .grid dd { font-weight: 500; margin: 0; }
-            .dealer { margin-top: 16px; padding-top: 12px; border-top: 1px solid #e5e7eb; font-size: 13px; }
-            @media print { body { padding: 0; } }
+            * { box-sizing: border-box; margin: 0; padding: 0; }
+            body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; padding: 32px; color: #111; }
+            img { width: 100%; max-height: 280px; object-fit: cover; border-radius: 8px; margin-bottom: 20px; }
+            h1 { font-size: 22px; font-weight: 700; margin-bottom: 2px; }
+            .price { font-size: 24px; font-weight: 700; color: #059669; margin: 4px 0 8px; }
+            .vin { font-family: monospace; font-size: 12px; color: #666; margin-bottom: 16px; }
+            .specs { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 32px; font-size: 13px; padding: 16px 0; border-top: 1px solid #e5e7eb; border-bottom: 1px solid #e5e7eb; }
+            .specs .label { color: #888; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; }
+            .specs .value { font-weight: 600; margin-top: 1px; }
+            .dealer { padding-top: 16px; font-size: 13px; }
+            .dealer .name { font-weight: 600; }
+            .dealer .loc { color: #666; margin-top: 2px; }
+            @media print { body { padding: 16px; } }
           </style>
         </head>
-        <body>
-          ${printRef.current.innerHTML}
-        </body>
+        <body>${printRef.current.innerHTML}</body>
       </html>
     `)
     printWindow.document.close()
@@ -426,7 +438,7 @@ function CompDetailModal({
         className="bg-white rounded-xl shadow-2xl max-w-lg w-full mx-4 max-h-[90vh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between p-4 border-b border-gray-200">
+        <div className="flex items-center justify-between px-5 py-3 border-b border-gray-200">
           <h3 className="text-sm font-semibold text-gray-900">Comp Detail</h3>
           <div className="flex items-center gap-2">
             <button
@@ -441,46 +453,48 @@ function CompDetailModal({
             </button>
           </div>
         </div>
-        <div ref={printRef} className="p-4 space-y-4">
+        <div ref={printRef} className="p-5">
           {comp.photoUrl && (
             // eslint-disable-next-line @next/next/no-img-element
             <img
               src={comp.photoUrl}
-              alt={comp.heading}
-              className="w-full h-48 object-cover rounded-lg"
+              alt={vehicle}
+              className="w-full h-52 object-cover rounded-lg mb-4"
             />
           )}
-          <div>
-            <p className="text-lg font-bold text-gray-900">
-              {comp.year} {comp.make} {comp.model}
-              {comp.trim ? ` ${comp.trim}` : ''}
-            </p>
-            <p className="text-xl font-bold text-emerald-600 mt-1">
-              {formatCurrency(comp.price)}
-            </p>
-            <p className="text-xs font-mono text-gray-500 mt-1">VIN: {comp.vin || 'N/A'}</p>
+          <h1 className="text-lg font-bold text-gray-900">{vehicle}</h1>
+          <p className="text-2xl font-bold text-emerald-600 mt-1">
+            {formatCurrency(comp.price)}
+          </p>
+          <p className="text-xs font-mono text-gray-500 mt-1.5 mb-4">VIN: {comp.vin || 'N/A'}</p>
+
+          <div className="grid grid-cols-2 gap-x-8 gap-y-3 py-4 border-t border-b border-gray-200">
+            {[
+              { label: 'Mileage', value: `${(comp.miles ?? 0).toLocaleString()} mi` },
+              { label: 'Trim', value: comp.trim || '—' },
+              { label: 'Engine', value: comp.engine || '—' },
+              { label: 'Drivetrain', value: comp.drivetrain || '—' },
+              { label: 'Transmission', value: comp.transmission || '—' },
+              { label: 'Distance', value: comp.distanceMi ? `${comp.distanceMi} mi away` : '—' },
+            ].map(({ label, value }) => (
+              <div key={label}>
+                <p className="text-[10px] font-medium text-gray-400 uppercase tracking-wider">{label}</p>
+                <p className="text-sm font-semibold text-gray-900 mt-0.5">{value}</p>
+              </div>
+            ))}
           </div>
-          <dl className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
-            <dt className="text-gray-400">Mileage</dt>
-            <dd className="font-medium text-gray-900">{(comp.miles ?? 0).toLocaleString()}</dd>
-            <dt className="text-gray-400">Trim</dt>
-            <dd className="font-medium text-gray-900">{comp.trim || '—'}</dd>
-            <dt className="text-gray-400">Engine</dt>
-            <dd className="font-medium text-gray-900">{comp.engine || '—'}</dd>
-            <dt className="text-gray-400">Drivetrain</dt>
-            <dd className="font-medium text-gray-900">{comp.drivetrain || '—'}</dd>
-            <dt className="text-gray-400">Transmission</dt>
-            <dd className="font-medium text-gray-900">{comp.transmission || '—'}</dd>
-          </dl>
+
           {comp.dealerName && (
-            <div className="pt-3 border-t border-gray-200 text-sm space-y-1">
-              <p className="font-medium text-gray-900">{comp.dealerName}</p>
+            <div className="pt-4 text-sm">
+              <p className="font-semibold text-gray-900">{comp.dealerName}</p>
               {(comp.dealerCity || comp.dealerState) && (
-                <p className="text-gray-500">
+                <p className="text-gray-500 mt-0.5">
                   {comp.dealerCity}{comp.dealerCity && comp.dealerState ? ', ' : ''}{comp.dealerState}
                 </p>
               )}
-              {comp.dealerPhone && <p className="text-gray-500">{comp.dealerPhone}</p>}
+              {comp.dealerPhone && (
+                <p className="text-gray-500 mt-0.5">{comp.dealerPhone}</p>
+              )}
             </div>
           )}
         </div>
@@ -534,8 +548,7 @@ function CompCard({
         <div className="p-3">
           <div className="flex items-start justify-between gap-2 mb-1.5">
             <p className="text-sm font-semibold text-gray-900 leading-snug">
-              {comp.year} {comp.make} {comp.model}
-              {comp.trim ? ` ${comp.trim}` : ''}
+              {[comp.year || '', comp.make, comp.model, comp.trim].filter(Boolean).join(' ')}
             </p>
             {selected && (
               <span className="shrink-0 flex items-center justify-center w-5 h-5 rounded-full bg-blue-500">
@@ -554,25 +567,33 @@ function CompCard({
           <p className="text-xs font-mono text-gray-400 mt-1 truncate">
             {comp.vin || 'No VIN'}
           </p>
-          <p className="text-xs text-gray-500 flex items-center gap-1 mt-1">
-            <Car className="w-3 h-3" />
-            {(comp.miles ?? 0).toLocaleString()} miles
-          </p>
-          {(comp.engine || comp.drivetrain || comp.transmission) && (
-            <div className="flex flex-wrap gap-x-2 gap-y-0.5 mt-1">
+          <div className="flex items-center gap-3 mt-1.5 text-xs text-gray-500">
+            <span className="flex items-center gap-1">
+              <Car className="w-3 h-3" />
+              {(comp.miles ?? 0).toLocaleString()} mi
+            </span>
+            {comp.distanceMi > 0 && (
+              <span className="flex items-center gap-1">
+                <MapPin className="w-3 h-3" />
+                {comp.distanceMi} mi away
+              </span>
+            )}
+          </div>
+          {(comp.drivetrain || comp.transmission || comp.engine) && (
+            <div className="flex flex-wrap gap-1.5 mt-1.5">
               {comp.drivetrain && (
-                <span className="text-xs text-gray-400">{comp.drivetrain}</span>
+                <span className="text-[10px] px-1.5 py-0.5 bg-gray-100 text-gray-500 rounded">{comp.drivetrain}</span>
               )}
               {comp.transmission && (
-                <span className="text-xs text-gray-400">{comp.transmission}</span>
+                <span className="text-[10px] px-1.5 py-0.5 bg-gray-100 text-gray-500 rounded">{comp.transmission}</span>
               )}
               {comp.engine && (
-                <span className="text-xs text-gray-400 truncate">{comp.engine}</span>
+                <span className="text-[10px] px-1.5 py-0.5 bg-gray-100 text-gray-500 rounded truncate max-w-[140px]">{comp.engine}</span>
               )}
             </div>
           )}
           {comp.dealerName && (
-            <p className="text-xs text-gray-400 flex items-center gap-1 mt-0.5 truncate">
+            <p className="text-xs text-gray-400 flex items-center gap-1 mt-1.5 truncate">
               <MapPin className="w-3 h-3 shrink-0" />
               {comp.dealerName}
               {comp.dealerCity ? `, ${comp.dealerCity}` : ''}
@@ -1124,7 +1145,7 @@ function defaultClaim(): ClaimInfo {
     trim: '',
     mileage: 0,
     zip: '',
-    radius: 150,
+    radius: 200,
   }
 }
 
@@ -1219,16 +1240,17 @@ function CompFinderInner() {
   const result = calculateACV(builtComps, adjustments)
 
   const searchComps = useCallback(async () => {
-    if (!claim.year || !claim.make || !claim.model || !claim.zip) return
+    if (!claim.year || !claim.make || !claim.model || (claim.radius !== 0 && !claim.zip)) return
     setLoadingComps(true)
     setCompsError(null)
     try {
+      const isNationwide = claim.radius === 0
       const params = new URLSearchParams({
         year: String(claim.year),
         make: claim.make,
         model: claim.model,
-        zip: claim.zip,
         radius: String(claim.radius),
+        ...(isNationwide ? { nationwide: 'true' } : { zip: claim.zip }),
         ...(claim.trim ? { trim: claim.trim } : {}),
       })
       const res = await fetch(`/api/acv/search-comps?${params}`)
@@ -1268,7 +1290,7 @@ function CompFinderInner() {
   }
 
   const canProceedStep1 =
-    claim.year > 0 && claim.make && claim.model && claim.mileage > 0 && claim.zip.length === 5
+    claim.year > 0 && claim.make && claim.model && claim.mileage > 0 && (claim.radius === 0 || claim.zip.length === 5)
 
   const steps = ['Claim Info', 'Select Comps', 'Adjustments', 'Review & Generate']
 

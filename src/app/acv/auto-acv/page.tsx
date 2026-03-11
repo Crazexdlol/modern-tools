@@ -107,7 +107,7 @@ function defaultClaim(): ClaimInfo {
     trim: '',
     mileage: 0,
     zip: '',
-    radius: 300,
+    radius: 200,
   }
 }
 
@@ -369,15 +369,35 @@ function ClaimInfoForm({
             />
           </div>
           <div>
-            <label className={labelCls}>ZIP Code</label>
-            <input
+            <label className={labelCls}>Search Radius</label>
+            <select
               className={inputCls}
-              placeholder="90210"
-              maxLength={5}
-              value={claim.zip}
-              onChange={(e) => set('zip', e.target.value)}
-            />
+              value={claim.radius}
+              onChange={(e) => {
+                const val = parseInt(e.target.value)
+                onChange({ ...claim, radius: val, ...(val === 0 ? { zip: '' } : {}) })
+              }}
+            >
+              <option value={25}>25 miles</option>
+              <option value={50}>50 miles</option>
+              <option value={100}>100 miles</option>
+              <option value={200}>200 miles</option>
+              <option value={500}>500 miles</option>
+              <option value={0}>Nationwide</option>
+            </select>
           </div>
+          {claim.radius !== 0 && (
+            <div>
+              <label className={labelCls}>ZIP Code</label>
+              <input
+                className={inputCls}
+                placeholder="90210"
+                maxLength={5}
+                value={claim.zip}
+                onChange={(e) => set('zip', e.target.value)}
+              />
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -844,12 +864,13 @@ function AutoProcessStep({
   }
 
   const searchAtRadius = async (radius: number): Promise<MarketComp[]> => {
+    const isNationwide = radius === 0
     const params = new URLSearchParams({
       year: String(claim.year),
       make: claim.make,
       model: claim.model,
-      zip: claim.zip,
       radius: String(radius),
+      ...(isNationwide ? { nationwide: 'true' } : { zip: claim.zip }),
     })
     const res = await fetch(`/api/acv/search-comps?${params}`)
     if (!res.ok) return []
@@ -863,47 +884,63 @@ function AutoProcessStep({
 
     async function run() {
       try {
-        // Step 1: Search 300mi
-        updateStatus('searching', 'running', `Searching within 300 miles of ${claim.zip}...`)
-        let listings = await searchAtRadius(300)
-        let radiusUsed = 300
+        const isNationwide = claim.radius === 0
+        const initialRadius = isNationwide ? 0 : claim.radius
+        const radiusLabel = isNationwide ? 'nationwide' : `within ${initialRadius} miles of ${claim.zip}`
+
+        // Step 1: Search at selected radius
+        updateStatus('searching', 'running', `Searching ${radiusLabel}...`)
+        let listings = await searchAtRadius(initialRadius)
+        let radiusUsed = initialRadius
 
         updateStatus(
           'searching',
           'done',
-          `Found ${listings.length} listing${listings.length !== 1 ? 's' : ''} within 300 miles`
+          `Found ${listings.length} listing${listings.length !== 1 ? 's' : ''} ${radiusLabel}`
         )
 
-        // Step 2: Expand if needed
-        if (listings.length < 2) {
-          updateStatus('expanding', 'running', 'Too few results, expanding to 500 miles...')
-          listings = await searchAtRadius(500)
-          radiusUsed = 500
-
-          if (listings.length < 2) {
-            updateStatus('expanding', 'running', 'Still too few, expanding to 750 miles...')
-            listings = await searchAtRadius(750)
-            radiusUsed = 750
+        // Step 2: Expand if needed (skip if nationwide)
+        if (!isNationwide && listings.length < 2) {
+          const expansions = [500, 750, 0] // 0 = nationwide fallback
+          for (const expandTo of expansions) {
+            if (expandTo <= initialRadius) continue
+            const expandLabel = expandTo === 0 ? 'nationwide' : `${expandTo} miles`
+            updateStatus('expanding', 'running', `Too few results, expanding to ${expandLabel}...`)
+            listings = await searchAtRadius(expandTo)
+            radiusUsed = expandTo
+            if (listings.length >= 3) break
           }
 
           if (listings.length < 3) {
             updateStatus(
               'expanding',
               'error',
-              `Only ${listings.length} listing${listings.length !== 1 ? 's' : ''} found within 750 miles — cannot generate report`
+              `Only ${listings.length} listing${listings.length !== 1 ? 's' : ''} found — cannot generate report`
             )
             setState((prev) => ({
               ...prev,
-              error: `Not enough comparables found (${listings.length} found, need at least 3). Try a different ZIP or vehicle.`,
+              error: `Not enough comparables found (${listings.length} found, need at least 3). Try a different vehicle.`,
             }))
             return
           }
 
+          const expandedLabel = radiusUsed === 0 ? 'nationwide' : `within ${radiusUsed} miles`
           updateStatus(
             'expanding',
             'done',
-            `Found ${listings.length} listing${listings.length !== 1 ? 's' : ''} within ${radiusUsed} miles`
+            `Found ${listings.length} listing${listings.length !== 1 ? 's' : ''} ${expandedLabel}`
           )
+        } else if (isNationwide && listings.length < 3) {
+          updateStatus(
+            'expanding',
+            'error',
+            `Only ${listings.length} listing${listings.length !== 1 ? 's' : ''} found nationwide — cannot generate report`
+          )
+          setState((prev) => ({
+            ...prev,
+            error: `Not enough comparables found (${listings.length} found, need at least 3).`,
+          }))
+          return
         } else {
           updateStatus('expanding', 'done', 'Radius expansion not needed')
         }
@@ -975,7 +1012,8 @@ function AutoProcessStep({
 
         // Step 5: Calculate final ACV
         // Build final notes
-        const autoNotes = `Based on the information provided, I have attached the recommended ACV on this vehicle. This report was generated using ${listings.length} available comparables within a ${radiusUsed}-mile radius, with an average market value of ${formatCurrency(overallAvg)}. The subject vehicle's ACV has been established at ${formatCurrency(calculateACV(top3, adjustments).acv)}.`
+        const radiusDesc = radiusUsed === 0 ? 'nationwide' : `within a ${radiusUsed}-mile radius`
+        const autoNotes = `Based on the information provided, I have attached the recommended ACV on this vehicle. This report was generated using ${listings.length} available comparables ${radiusDesc}, with an average market value of ${formatCurrency(overallAvg)}. The subject vehicle's ACV has been established at ${formatCurrency(calculateACV(top3, adjustments).acv)}.`
 
         const finalAdj: ACVAdjustments = { ...adjustments, notes: autoNotes }
         const finalResult = calculateACV(top3, finalAdj)
@@ -1233,7 +1271,7 @@ function AutoACVInner() {
   }, [step, claim, adjustments, finalComps, finalResult, finalAdj, editingId])
 
   const canProceedStep1 =
-    claim.year > 0 && claim.make && claim.model && claim.mileage > 0 && claim.zip.length === 5
+    claim.year > 0 && claim.make && claim.model && claim.mileage > 0 && (claim.radius === 0 || claim.zip.length === 5)
 
   const steps = ['Claim Info', 'Adjustments', 'Auto Process', 'Review & Generate']
 
