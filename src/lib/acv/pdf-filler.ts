@@ -1,4 +1,4 @@
-import { PDFDocument, PDFName, PDFBool, PDFArray, PDFDict, PDFNumber } from 'pdf-lib'
+import { PDFDocument, PDFName, PDFBool, PDFArray, PDFString } from 'pdf-lib'
 import fs from 'fs'
 import path from 'path'
 import type { ClaimInfo, SelectedComp, ACVAdjustments, ACVResult } from './types'
@@ -186,22 +186,31 @@ export async function fillACVPdf(
   // Remove the calculation order array from the AcroForm
   form.acroForm.dict.delete(PDFName.of('CO'))
 
-  // Set all field widget backgrounds to white
+  // Set text color per page: white on cover (page 0), black on page 1
+  const coverPageRef = doc.getPages()[0].ref
   form.getFields().forEach(f => {
     f.acroField.getWidgets().forEach(w => {
-      let mk = w.dict.get(PDFName.of('MK'))
-      if (!mk) {
-        mk = doc.context.obj({})
-        w.dict.set(PDFName.of('MK'), mk)
-      }
-      if (mk instanceof PDFDict) {
-        const bg = PDFArray.withContext(doc.context)
-        bg.push(PDFNumber.of(1))
-        bg.push(PDFNumber.of(1))
-        bg.push(PDFNumber.of(1))
-        mk.set(PDFName.of('BG'), bg)
+      const onCover = w.P() === coverPageRef
+      // Replace color in DA string: "r g b rg" for text color
+      const da = w.dict.get(PDFName.of('DA'))
+      if (da) {
+        const daStr = (da as PDFString).decodeText?.() ?? da.toString()
+        // Replace any existing color command (e.g. "0 0 0 rg" or "0.5 0.5 0.5 rg")
+        const newColor = onCover ? '1 1 1 rg' : '0 0 0 rg'
+        const newDa = daStr.replace(/[\d.]+\s+[\d.]+\s+[\d.]+\s+rg/, newColor)
+        w.dict.set(PDFName.of('DA'), PDFString.of(newDa !== daStr ? newDa : `${newColor} ${daStr}`))
+      } else {
+        const newColor = onCover ? '1 1 1 rg' : '0 0 0 rg'
+        w.dict.set(PDFName.of('DA'), PDFString.of(`${newColor} /Helv 10 Tf`))
       }
     })
+    // Also update the field-level DA
+    const fieldDa = f.acroField.dict.get(PDFName.of('DA'))
+    if (fieldDa) {
+      const daStr = (fieldDa as PDFString).decodeText?.() ?? fieldDa.toString()
+      const newDa = daStr.replace(/[\d.]+\s+[\d.]+\s+[\d.]+\s+rg/, '0 0 0 rg')
+      f.acroField.dict.set(PDFName.of('DA'), PDFString.of(newDa))
+    }
   })
 
   return doc.save()
