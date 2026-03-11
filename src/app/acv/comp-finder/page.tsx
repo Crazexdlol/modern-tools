@@ -397,104 +397,108 @@ function CompDetailModal({
   onClose: () => void
 }) {
   const printRef = useRef<HTMLDivElement>(null)
-  const vehicle = [comp.year || '', comp.make, comp.model, comp.trim].filter(Boolean).join(' ')
+  const vehicle = [comp.year || '', comp.make, comp.model].filter(Boolean).join(' ')
+  const trimLine = comp.trim || ''
 
   const handlePrint = () => {
     if (!printRef.current) return
-    const printWindow = window.open('', '_blank')
-    if (!printWindow) return
-    printWindow.document.write(`
-      <html>
-        <head>
-          <title>${vehicle} - Comp Detail</title>
-          <style>
-            * { box-sizing: border-box; margin: 0; padding: 0; }
-            body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; padding: 32px; color: #111; }
-            img { width: 100%; max-height: 280px; object-fit: cover; border-radius: 8px; margin-bottom: 20px; }
-            h1 { font-size: 22px; font-weight: 700; margin-bottom: 2px; }
-            .price { font-size: 24px; font-weight: 700; color: #059669; margin: 4px 0 8px; }
-            .vin { font-family: monospace; font-size: 12px; color: #666; margin-bottom: 16px; }
-            .specs { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 32px; font-size: 13px; padding: 16px 0; border-top: 1px solid #e5e7eb; border-bottom: 1px solid #e5e7eb; }
-            .specs .label { color: #888; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; }
-            .specs .value { font-weight: 600; margin-top: 1px; }
-            .dealer { padding-top: 16px; font-size: 13px; }
-            .dealer .name { font-weight: 600; }
-            .dealer .loc { color: #666; margin-top: 2px; }
-            @media print { body { padding: 16px; } }
-          </style>
-        </head>
-        <body>${printRef.current.innerHTML}</body>
-      </html>
-    `)
-    printWindow.document.close()
-    printWindow.focus()
-    printWindow.print()
-    printWindow.close()
+    const w = window.open('', '_blank')
+    if (!w) return
+    w.document.write(`<html><head><title>${vehicle}</title>
+      <style>
+        *{box-sizing:border-box;margin:0;padding:0}
+        body{font-family:Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;padding:40px;color:#0f172a}
+        img{width:100%;max-height:300px;object-fit:cover;border-radius:12px;margin-bottom:24px}
+        .vehicle{font-size:26px;font-weight:800;letter-spacing:-0.5px}
+        .trim{font-size:14px;color:#64748b;margin-top:2px}
+        .price{font-size:28px;font-weight:800;color:#2563eb;margin:8px 0}
+        .vin{font-family:'SF Mono',Consolas,monospace;font-size:11px;color:#94a3b8;letter-spacing:0.5px;margin-bottom:20px}
+        .grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;padding:20px 0;border-top:1px solid #e2e8f0;border-bottom:1px solid #e2e8f0}
+        .grid .lbl{font-size:10px;text-transform:uppercase;letter-spacing:0.8px;color:#94a3b8;font-weight:600}
+        .grid .val{font-size:14px;font-weight:700;color:#0f172a;margin-top:3px}
+        .dealer{padding-top:20px;font-size:13px;color:#64748b}
+        .dealer b{color:#0f172a}
+        @media print{body{padding:20px}}
+      </style></head><body>${printRef.current.innerHTML}</body></html>`)
+    w.document.close()
+    w.focus()
+    w.print()
+    w.close()
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={onClose}>
       <div
-        className="bg-white rounded-xl shadow-2xl max-w-lg w-full mx-4 max-h-[90vh] overflow-y-auto"
+        className="bg-white rounded-2xl shadow-2xl max-w-[520px] w-full mx-4 max-h-[90vh] overflow-y-auto ring-1 ring-black/5"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between px-5 py-3 border-b border-gray-200">
-          <h3 className="text-sm font-semibold text-gray-900">Comp Detail</h3>
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4">
           <div className="flex items-center gap-2">
+            <div className="w-2 h-2 rounded-full bg-blue-500" />
+            <span className="text-xs font-semibold text-gray-400 uppercase tracking-widest">Comparable</span>
+          </div>
+          <div className="flex items-center gap-1.5">
             <button
               onClick={handlePrint}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors"
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-gray-600 hover:text-gray-900 bg-gray-50 hover:bg-gray-100 rounded-lg transition-all"
             >
               <Printer className="w-3.5 h-3.5" />
               Print
             </button>
-            <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
-              <X className="w-5 h-5" />
+            <button onClick={onClose} className="p-1.5 text-gray-300 hover:text-gray-500 rounded-lg hover:bg-gray-50 transition-all">
+              <X className="w-4 h-4" />
             </button>
           </div>
         </div>
-        <div ref={printRef} className="p-5">
+
+        <div ref={printRef} className="px-6 pb-6">
           {comp.photoUrl && (
             // eslint-disable-next-line @next/next/no-img-element
             <img
               src={comp.photoUrl}
               alt={vehicle}
-              className="w-full h-52 object-cover rounded-lg mb-4"
+              className="w-full h-56 object-cover rounded-xl mb-5"
             />
           )}
-          <h1 className="text-lg font-bold text-gray-900">{vehicle}</h1>
-          <p className="text-2xl font-bold text-emerald-600 mt-1">
+
+          {/* Vehicle title */}
+          <p className="text-xl font-extrabold text-gray-900 tracking-tight leading-tight">{vehicle}</p>
+          {trimLine && <p className="text-sm text-gray-400 font-medium mt-0.5">{trimLine}</p>}
+          <p className="text-2xl font-extrabold text-blue-600 mt-2 tracking-tight">
             {formatCurrency(comp.price)}
           </p>
-          <p className="text-xs font-mono text-gray-500 mt-1.5 mb-4">VIN: {comp.vin || 'N/A'}</p>
+          <p className="text-[11px] font-mono text-gray-300 tracking-wider mt-1.5 mb-5">
+            {comp.vin || 'VIN N/A'}
+          </p>
 
-          <div className="grid grid-cols-2 gap-x-8 gap-y-3 py-4 border-t border-b border-gray-200">
+          {/* Specs grid */}
+          <div className="grid grid-cols-3 gap-4 py-5 border-t border-b border-gray-100">
             {[
-              { label: 'Mileage', value: `${(comp.miles ?? 0).toLocaleString()} mi` },
-              { label: 'Trim', value: comp.trim || '—' },
-              { label: 'Engine', value: comp.engine || '—' },
+              { label: 'Mileage', value: `${(comp.miles ?? 0).toLocaleString()}` },
               { label: 'Drivetrain', value: comp.drivetrain || '—' },
-              { label: 'Transmission', value: comp.transmission || '—' },
-              { label: 'Distance', value: comp.distanceMi ? `${comp.distanceMi} mi away` : '—' },
+              { label: 'Distance', value: comp.distanceMi ? `${comp.distanceMi} mi` : '—' },
+              { label: 'Engine', value: comp.engine || '—' },
+              { label: 'Trans', value: comp.transmission || '—' },
+              { label: 'Trim', value: comp.trim || '—' },
             ].map(({ label, value }) => (
               <div key={label}>
-                <p className="text-[10px] font-medium text-gray-400 uppercase tracking-wider">{label}</p>
-                <p className="text-sm font-semibold text-gray-900 mt-0.5">{value}</p>
+                <p className="text-[10px] font-bold text-gray-300 uppercase tracking-widest">{label}</p>
+                <p className="text-[13px] font-bold text-gray-800 mt-1 truncate">{value}</p>
               </div>
             ))}
           </div>
 
+          {/* Dealer */}
           {comp.dealerName && (
-            <div className="pt-4 text-sm">
-              <p className="font-semibold text-gray-900">{comp.dealerName}</p>
+            <div className="pt-5 space-y-0.5">
+              <p className="text-sm font-bold text-gray-900">{comp.dealerName}</p>
               {(comp.dealerCity || comp.dealerState) && (
-                <p className="text-gray-500 mt-0.5">
-                  {comp.dealerCity}{comp.dealerCity && comp.dealerState ? ', ' : ''}{comp.dealerState}
+                <p className="text-xs text-gray-400">
+                  {[comp.dealerCity, comp.dealerState].filter(Boolean).join(', ')}
                 </p>
               )}
-              {comp.dealerPhone && (
-                <p className="text-gray-500 mt-0.5">{comp.dealerPhone}</p>
-              )}
+              {comp.dealerPhone && <p className="text-xs text-gray-400">{comp.dealerPhone}</p>}
             </div>
           )}
         </div>
@@ -519,95 +523,104 @@ function CompCard({
   onView: () => void
   disabled: boolean
 }) {
+  const vehicle = [comp.year || '', comp.make, comp.model].filter(Boolean).join(' ')
+
   return (
     <div
       className={cn(
-        'w-full text-left rounded-lg border transition-all duration-150 overflow-hidden',
+        'group relative rounded-xl border overflow-hidden transition-all duration-200',
         selected
-          ? 'border-blue-500 bg-blue-50 ring-1 ring-blue-500/40'
-          : 'border-gray-200 bg-white hover:border-gray-300 shadow-sm',
-        disabled && !selected ? 'opacity-40' : ''
+          ? 'border-blue-500 ring-2 ring-blue-500/20 bg-white'
+          : 'border-gray-200/80 bg-white hover:border-gray-300 hover:shadow-md',
+        disabled && !selected ? 'opacity-35 pointer-events-none' : ''
       )}
     >
+      {/* Selection badge */}
+      {selected && selectionIndex > 0 && (
+        <div className="absolute top-3 left-3 z-10 w-7 h-7 rounded-lg bg-blue-600 text-white flex items-center justify-center text-xs font-bold shadow-lg shadow-blue-600/30">
+          {selectionIndex}
+        </div>
+      )}
+
+      {/* Image */}
       <button
         onClick={onToggle}
         disabled={disabled && !selected}
-        className={cn(
-          'w-full text-left',
-          disabled && !selected ? 'cursor-not-allowed' : 'cursor-pointer'
-        )}
+        className="w-full text-left cursor-pointer"
       >
-        {comp.photoUrl && (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={comp.photoUrl}
-            alt={comp.heading}
-            className="w-full h-36 object-cover"
-          />
-        )}
-        <div className="p-3">
-          <div className="flex items-start justify-between gap-2 mb-1.5">
-            <p className="text-sm font-semibold text-gray-900 leading-snug">
-              {[comp.year || '', comp.make, comp.model, comp.trim].filter(Boolean).join(' ')}
+        <div className="relative h-40 bg-gray-100">
+          {comp.photoUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={comp.photoUrl} alt={vehicle} className="w-full h-full object-cover" />
+          ) : (
+            <div className="w-full h-full flex items-center justify-center">
+              <Car className="w-8 h-8 text-gray-300" />
+            </div>
+          )}
+          {/* Price overlay */}
+          <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/60 to-transparent pt-8 pb-2.5 px-3">
+            <p className="text-lg font-extrabold text-white tracking-tight">
+              {formatCurrency(comp.price)}
             </p>
-            {selected && (
-              <span className="shrink-0 flex items-center justify-center w-5 h-5 rounded-full bg-blue-500">
-                <Check className="w-3 h-3 text-white" />
-              </span>
-            )}
-            {selected && selectionIndex > 0 && (
-              <Badge className="shrink-0 text-xs bg-blue-600 hover:bg-blue-600 text-white ml-1">
-                #{selectionIndex}
-              </Badge>
-            )}
           </div>
-          <p className="text-lg font-bold text-emerald-600">
-            {formatCurrency(comp.price)}
+        </div>
+
+        {/* Info */}
+        <div className="p-3.5">
+          <p className="text-[13px] font-bold text-gray-900 leading-snug tracking-tight">
+            {vehicle}
           </p>
-          <p className="text-xs font-mono text-gray-400 mt-1 truncate">
+          {comp.trim && (
+            <p className="text-[11px] text-gray-400 font-medium mt-0.5">{comp.trim}</p>
+          )}
+
+          <p className="text-[10px] font-mono text-gray-300 mt-1.5 truncate tracking-wide">
             {comp.vin || 'No VIN'}
           </p>
-          <div className="flex items-center gap-3 mt-1.5 text-xs text-gray-500">
-            <span className="flex items-center gap-1">
-              <Car className="w-3 h-3" />
-              {(comp.miles ?? 0).toLocaleString()} mi
-            </span>
+
+          {/* Stats row */}
+          <div className="flex items-center gap-2.5 mt-2.5 text-[11px] text-gray-500 font-medium">
+            <span>{(comp.miles ?? 0).toLocaleString()} mi</span>
+            <span className="w-0.5 h-0.5 rounded-full bg-gray-300" />
             {comp.distanceMi > 0 && (
-              <span className="flex items-center gap-1">
-                <MapPin className="w-3 h-3" />
-                {comp.distanceMi} mi away
-              </span>
+              <>
+                <span>{comp.distanceMi} mi away</span>
+                <span className="w-0.5 h-0.5 rounded-full bg-gray-300" />
+              </>
             )}
+            {comp.drivetrain && <span>{comp.drivetrain}</span>}
           </div>
-          {(comp.drivetrain || comp.transmission || comp.engine) && (
-            <div className="flex flex-wrap gap-1.5 mt-1.5">
-              {comp.drivetrain && (
-                <span className="text-[10px] px-1.5 py-0.5 bg-gray-100 text-gray-500 rounded">{comp.drivetrain}</span>
-              )}
+
+          {/* Spec pills */}
+          {(comp.transmission || comp.engine) && (
+            <div className="flex flex-wrap gap-1 mt-2">
               {comp.transmission && (
-                <span className="text-[10px] px-1.5 py-0.5 bg-gray-100 text-gray-500 rounded">{comp.transmission}</span>
+                <span className="text-[10px] font-semibold px-2 py-0.5 bg-gray-50 text-gray-500 rounded-full">{comp.transmission}</span>
               )}
               {comp.engine && (
-                <span className="text-[10px] px-1.5 py-0.5 bg-gray-100 text-gray-500 rounded truncate max-w-[140px]">{comp.engine}</span>
+                <span className="text-[10px] font-semibold px-2 py-0.5 bg-gray-50 text-gray-500 rounded-full truncate max-w-[160px]">{comp.engine}</span>
               )}
             </div>
           )}
+
+          {/* Dealer */}
           {comp.dealerName && (
-            <p className="text-xs text-gray-400 flex items-center gap-1 mt-1.5 truncate">
-              <MapPin className="w-3 h-3 shrink-0" />
+            <p className="text-[11px] text-gray-300 font-medium mt-2.5 truncate">
               {comp.dealerName}
-              {comp.dealerCity ? `, ${comp.dealerCity}` : ''}
+              {comp.dealerCity ? ` · ${comp.dealerCity}` : ''}
               {comp.dealerState ? `, ${comp.dealerState}` : ''}
             </p>
           )}
         </div>
       </button>
-      <div className="px-3 pb-3">
+
+      {/* View button */}
+      <div className="px-3.5 pb-3.5">
         <button
           onClick={(e) => { e.stopPropagation(); onView(); }}
-          className="w-full flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-medium text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-md transition-colors"
+          className="w-full flex items-center justify-center gap-1.5 py-2 text-[11px] font-bold text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors uppercase tracking-wider"
         >
-          <Eye className="w-3.5 h-3.5" />
+          <Eye className="w-3 h-3" />
           View Details
         </button>
       </div>
@@ -1394,47 +1407,90 @@ function CompFinderInner() {
 
             {/* Step 2: Search & Select */}
             {step === 2 && (
-              <div>
-                <div className="flex items-center justify-between mb-4">
-                  <div>
-                    <h2 className="text-lg font-semibold text-gray-900">Select 3 Comps</h2>
-                    <p className="text-sm text-gray-500">
-                      {selectedIds.length} selected / 3 needed
-                      {listings.length > 0 && ` · ${listings.length} results`}
-                    </p>
+              <div className="space-y-6">
+                {/* Subject vehicle banner */}
+                <div className="bg-gradient-to-r from-gray-900 to-gray-800 rounded-2xl p-5 text-white">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-1">Subject Vehicle</p>
+                      <p className="text-xl font-extrabold tracking-tight">
+                        {claim.year} {claim.make} {claim.model}
+                      </p>
+                      {claim.trim && <p className="text-sm text-gray-400 font-medium">{claim.trim}</p>}
+                      <div className="flex items-center gap-3 mt-2 text-xs text-gray-400 font-medium">
+                        {claim.vin && <span className="font-mono tracking-wide">{claim.vin}</span>}
+                        <span className="w-0.5 h-0.5 rounded-full bg-gray-600" />
+                        <span>{claim.mileage.toLocaleString()} mi</span>
+                        {claim.zip && (
+                          <>
+                            <span className="w-0.5 h-0.5 rounded-full bg-gray-600" />
+                            <span>ZIP {claim.zip}</span>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-1">Radius</p>
+                      <p className="text-sm font-bold text-white">
+                        {claim.radius === 0 ? 'Nationwide' : `${claim.radius} mi`}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Toolbar */}
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <h2 className="text-lg font-extrabold text-gray-900 tracking-tight">Comparables</h2>
+                    <div className="flex items-center gap-1.5">
+                      {[1, 2, 3].map((n) => (
+                        <div
+                          key={n}
+                          className={cn(
+                            'w-2 h-2 rounded-full transition-colors',
+                            selectedIds.length >= n ? 'bg-blue-500' : 'bg-gray-200'
+                          )}
+                        />
+                      ))}
+                      <span className="text-xs text-gray-400 font-semibold ml-1">
+                        {selectedIds.length}/3
+                      </span>
+                    </div>
+                    {listings.length > 0 && (
+                      <span className="text-xs text-gray-300 font-medium">{listings.length} found</span>
+                    )}
                   </div>
                   <Button
                     onClick={searchComps}
                     disabled={loadingComps}
-                    variant="outline"
                     size="sm"
-                    className="border-gray-200 text-gray-700 hover:bg-gray-100 gap-1.5"
+                    className="bg-gray-900 hover:bg-gray-800 text-white text-xs font-bold gap-1.5 rounded-lg"
                   >
                     {loadingComps ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
                     ) : (
-                      <Search className="w-4 h-4" />
+                      <Search className="w-3.5 h-3.5" />
                     )}
                     Refresh
                   </Button>
                 </div>
 
                 {loadingComps && (
-                  <div className="flex items-center justify-center py-16 text-gray-500">
-                    <Loader2 className="w-6 h-6 animate-spin mr-3" />
-                    Searching Marketcheck...
+                  <div className="flex flex-col items-center justify-center py-20">
+                    <Loader2 className="w-8 h-8 animate-spin text-blue-500 mb-3" />
+                    <p className="text-sm font-semibold text-gray-400">Searching comparables...</p>
                   </div>
                 )}
 
                 {compsError && !loadingComps && (
-                  <div className="flex items-start gap-2 p-4 rounded-lg bg-red-50 border border-red-200 text-red-600 text-sm mb-4">
+                  <div className="flex items-start gap-3 p-4 rounded-xl bg-red-50 border border-red-100 text-red-600 text-sm font-medium">
                     <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
                     {compsError}
                   </div>
                 )}
 
                 {!loadingComps && listings.length > 0 && (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
                     {listings.map((comp) => {
                       const selIdx = selectedIds.indexOf(comp.id)
                       return (
@@ -1452,11 +1508,11 @@ function CompFinderInner() {
                   </div>
                 )}
 
-                <div className="flex items-center gap-3 mt-6">
+                <div className="flex items-center gap-3 pt-2">
                   <Button
                     onClick={() => setStep(1)}
                     variant="outline"
-                    className="border-gray-200 text-gray-700 hover:bg-gray-100"
+                    className="border-gray-200 text-gray-600 hover:bg-gray-50 rounded-lg font-semibold"
                   >
                     <ChevronLeft className="w-4 h-4 mr-1" />
                     Back
@@ -1464,7 +1520,7 @@ function CompFinderInner() {
                   <Button
                     onClick={() => setStep(3)}
                     disabled={selectedIds.length < 3}
-                    className="bg-blue-600 hover:bg-blue-500 text-white ml-auto"
+                    className="bg-blue-600 hover:bg-blue-500 text-white ml-auto rounded-lg font-bold"
                   >
                     Next: Adjustments
                     <ArrowRight className="w-4 h-4 ml-2" />
