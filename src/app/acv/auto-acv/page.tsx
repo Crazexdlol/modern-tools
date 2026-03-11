@@ -1189,18 +1189,10 @@ function AutoACVInner() {
   const [editingId, setEditingId] = useState<string | null>(null)
 
   const SESSION_KEY = 'modern-tools-auto-acv-draft'
+  const hydrated = useRef(false)
 
-  // Persist form state to sessionStorage on every change
+  // Restore draft state on mount (runs first, before save effect)
   useEffect(() => {
-    try {
-      sessionStorage.setItem(SESSION_KEY, JSON.stringify({
-        step, claim, adjustments, finalComps, finalResult, finalAdj, editingId,
-      }))
-    } catch { /* ignore */ }
-  }, [step, claim, adjustments, finalComps, finalResult, finalAdj, editingId])
-
-  useEffect(() => {
-    // Load claim from sessionStorage if editing
     if (searchParams.get('edit') === 'true') {
       try {
         const raw = sessionStorage.getItem('modern-tools-acv-edit')
@@ -1211,7 +1203,6 @@ function AutoACVInner() {
           setClaim(entry.claim)
           setAdjustments(entry.adjustments)
           setEditingId(entry.id)
-          // Restore saved comps so user can go straight to review
           if (entry.comps && entry.comps.length > 0) {
             setFinalComps(entry.comps)
             setFinalResult(entry.result)
@@ -1219,23 +1210,34 @@ function AutoACVInner() {
           }
         }
       } catch { /* ignore */ }
-      return
+    } else {
+      try {
+        const raw = sessionStorage.getItem(SESSION_KEY)
+        if (raw) {
+          const draft = JSON.parse(raw)
+          if (draft.claim) setClaim(draft.claim)
+          if (draft.adjustments) setAdjustments(draft.adjustments)
+          if (draft.finalComps) setFinalComps(draft.finalComps)
+          if (draft.finalResult) setFinalResult(draft.finalResult)
+          if (draft.finalAdj) setFinalAdj(draft.finalAdj)
+          if (draft.editingId) setEditingId(draft.editingId)
+          if (draft.step) setStep(draft.step)
+        }
+      } catch { /* ignore */ }
     }
-    // Restore draft state on mount (page refresh)
+    hydrated.current = true
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Persist form state to sessionStorage on every change (skip until hydrated)
+  useEffect(() => {
+    if (!hydrated.current) return
     try {
-      const raw = sessionStorage.getItem(SESSION_KEY)
-      if (raw) {
-        const draft = JSON.parse(raw)
-        if (draft.claim) setClaim(draft.claim)
-        if (draft.adjustments) setAdjustments(draft.adjustments)
-        if (draft.finalComps) setFinalComps(draft.finalComps)
-        if (draft.finalResult) setFinalResult(draft.finalResult)
-        if (draft.finalAdj) setFinalAdj(draft.finalAdj)
-        if (draft.editingId) setEditingId(draft.editingId)
-        if (draft.step) setStep(draft.step)
-      }
+      sessionStorage.setItem(SESSION_KEY, JSON.stringify({
+        step, claim, adjustments, finalComps, finalResult, finalAdj, editingId,
+      }))
     } catch { /* ignore */ }
-  }, [searchParams])
+  }, [step, claim, adjustments, finalComps, finalResult, finalAdj, editingId])
 
   const canProceedStep1 =
     claim.year > 0 && claim.make && claim.model && claim.mileage > 0 && claim.zip.length === 5

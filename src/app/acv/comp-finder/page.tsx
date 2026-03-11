@@ -1149,18 +1149,10 @@ function CompFinderInner() {
   const [editingId, setEditingId] = useState<string | null>(null)
 
   const SESSION_KEY = 'modern-tools-comp-finder-draft'
+  const hydrated = useRef(false)
 
-  // Persist form state to sessionStorage on every change
+  // Restore draft state on mount (runs first, before save effect)
   useEffect(() => {
-    try {
-      sessionStorage.setItem(SESSION_KEY, JSON.stringify({
-        step, claim, listings, selectedIds, compAdjs, adjustments, editingId,
-      }))
-    } catch { /* ignore */ }
-  }, [step, claim, listings, selectedIds, compAdjs, adjustments, editingId])
-
-  useEffect(() => {
-    // Load claim from sessionStorage if editing
     if (searchParams.get('edit') === 'true') {
       try {
         const raw = sessionStorage.getItem('modern-tools-acv-edit')
@@ -1171,7 +1163,6 @@ function CompFinderInner() {
           setClaim(entry.claim)
           setAdjustments(entry.adjustments)
           setEditingId(entry.id)
-          // Restore saved comps into listings and selections
           if (entry.comps && entry.comps.length > 0) {
             setListings(entry.comps)
             setSelectedIds(entry.comps.map(c => c.id))
@@ -1182,23 +1173,34 @@ function CompFinderInner() {
           }
         }
       } catch { /* ignore */ }
-      return
+    } else {
+      try {
+        const raw = sessionStorage.getItem(SESSION_KEY)
+        if (raw) {
+          const draft = JSON.parse(raw)
+          if (draft.claim) setClaim(draft.claim)
+          if (draft.listings) setListings(draft.listings)
+          if (draft.selectedIds) setSelectedIds(draft.selectedIds)
+          if (draft.compAdjs) setCompAdjs(draft.compAdjs)
+          if (draft.adjustments) setAdjustments(draft.adjustments)
+          if (draft.editingId) setEditingId(draft.editingId)
+          if (draft.step) setStep(draft.step)
+        }
+      } catch { /* ignore */ }
     }
-    // Restore draft state on mount (page refresh)
+    hydrated.current = true
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Persist form state to sessionStorage on every change (skip until hydrated)
+  useEffect(() => {
+    if (!hydrated.current) return
     try {
-      const raw = sessionStorage.getItem(SESSION_KEY)
-      if (raw) {
-        const draft = JSON.parse(raw)
-        if (draft.claim) setClaim(draft.claim)
-        if (draft.listings) setListings(draft.listings)
-        if (draft.selectedIds) setSelectedIds(draft.selectedIds)
-        if (draft.compAdjs) setCompAdjs(draft.compAdjs)
-        if (draft.adjustments) setAdjustments(draft.adjustments)
-        if (draft.editingId) setEditingId(draft.editingId)
-        if (draft.step) setStep(draft.step)
-      }
+      sessionStorage.setItem(SESSION_KEY, JSON.stringify({
+        step, claim, listings, selectedIds, compAdjs, adjustments, editingId,
+      }))
     } catch { /* ignore */ }
-  }, [searchParams])
+  }, [step, claim, listings, selectedIds, compAdjs, adjustments, editingId])
 
   const selectedComps = selectedIds
     .map((id) => listings.find((l) => l.id === id))
