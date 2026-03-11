@@ -1,4 +1,4 @@
-import { PDFDocument, PDFName, PDFBool, PDFArray } from 'pdf-lib'
+import { PDFDocument, PDFName, PDFBool, PDFArray, PDFDict, PDFNumber } from 'pdf-lib'
 import fs from 'fs'
 import path from 'path'
 import type { ClaimInfo, SelectedComp, ACVAdjustments, ACVResult } from './types'
@@ -185,6 +185,28 @@ export async function fillACVPdf(
   })
   // Remove the calculation order array from the AcroForm
   form.acroForm.dict.delete(PDFName.of('CO'))
+
+  // Set cover page (page 0) field widget backgrounds to white
+  const coverPageRef = doc.getPages()[0].ref
+  form.getFields().forEach(f => {
+    f.acroField.getWidgets().forEach(w => {
+      const pageRef = w.P()
+      if (pageRef === coverPageRef) {
+        let mk = w.dict.get(PDFName.of('MK'))
+        if (!mk) {
+          mk = doc.context.obj({})
+          w.dict.set(PDFName.of('MK'), mk)
+        }
+        if (mk instanceof PDFDict) {
+          const bg = PDFArray.withContext(doc.context)
+          bg.push(PDFNumber.of(1))
+          bg.push(PDFNumber.of(1))
+          bg.push(PDFNumber.of(1))
+          mk.set(PDFName.of('BG'), bg)
+        }
+      }
+    })
+  })
 
   return doc.save()
 }
