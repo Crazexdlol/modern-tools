@@ -611,19 +611,29 @@ function AdjustmentsForm({
               />
             </div>
             <div>
-              <label className={labelCls}>Deductions</label>
+              <label className={labelCls}>Deductions Note</label>
               <input
-                className={cn(inputCls, 'opacity-60 cursor-not-allowed')}
-                value="Dealer Vs. Private ($500.00)"
-                readOnly
+                className={inputCls}
+                placeholder="Dealer Vs. Private ($500.00)"
+                value={adjustments.deductionsNote}
+                onChange={(e) =>
+                  onAdjChange({ ...adjustments, deductionsNote: e.target.value })
+                }
               />
             </div>
             <div>
               <label className={labelCls}>Deductions ($)</label>
               <input
-                className={cn(inputCls, 'opacity-60 cursor-not-allowed text-red-500')}
-                value="-$500.00"
-                readOnly
+                type="number"
+                className={inputCls}
+                placeholder="-500"
+                value={adjustments.deductions || ''}
+                onChange={(e) =>
+                  onAdjChange({
+                    ...adjustments,
+                    deductions: parseFloat(e.target.value) || 0,
+                  })
+                }
               />
             </div>
             <div>
@@ -1144,9 +1154,11 @@ function CompFinderInner() {
                 const done = step > n
                 return (
                   <div key={n} className="flex items-center gap-2 shrink-0">
-                    <div
+                    <button
+                      type="button"
+                      onClick={() => setStep(n)}
                       className={cn(
-                        'flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium transition-all',
+                        'flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium transition-all cursor-pointer hover:opacity-80',
                         active
                           ? 'bg-blue-600 text-white'
                           : done
@@ -1156,7 +1168,7 @@ function CompFinderInner() {
                     >
                       {done ? <Check className="w-3 h-3" /> : <span>{n}</span>}
                       {label}
-                    </div>
+                    </button>
                     {i < steps.length - 1 && (
                       <ChevronRight className="w-3 h-3 text-gray-300 shrink-0" />
                     )}
