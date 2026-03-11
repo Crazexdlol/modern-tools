@@ -39,6 +39,7 @@ export async function GET(request: NextRequest) {
     const listings = (data.listings ?? []).filter((l: Record<string, unknown>) => l.price && Number(l.price) > 0).map((l: Record<string, unknown>) => {
       const dealer = (l.dealer as Record<string, unknown>) ?? {}
       const media = (l.media as Record<string, unknown>) ?? {}
+      const build = (l.build as Record<string, unknown>) ?? {}
       const photoLinks = (media.photo_links as string[]) ?? []
       return {
         id: l.id ?? l.vin ?? String(Math.random()),
@@ -49,6 +50,9 @@ export async function GET(request: NextRequest) {
         make: l.make ?? '',
         model: l.model ?? '',
         trim: l.trim ?? '',
+        engine: build.engine ?? l.engine ?? '',
+        drivetrain: build.drivetrain ?? l.drivetrain ?? '',
+        transmission: build.transmission ?? l.transmission ?? '',
         dealerName: dealer.name ?? '',
         dealerPhone: dealer.phone ?? '',
         dealerCity: dealer.city ?? '',

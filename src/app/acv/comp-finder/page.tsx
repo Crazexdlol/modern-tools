@@ -18,7 +18,13 @@ import {
   Car,
   MapPin,
   Phone,
+  Eye,
+  Printer,
+  X,
+  Cog,
+  Fuel,
 } from 'lucide-react'
+import { useRef } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -372,80 +378,219 @@ function ClaimInfoForm({
   )
 }
 
+// ── Comp detail modal ────────────────────────────────────────────────────────
+function CompDetailModal({
+  comp,
+  onClose,
+}: {
+  comp: MarketComp
+  onClose: () => void
+}) {
+  const printRef = useRef<HTMLDivElement>(null)
+
+  const handlePrint = () => {
+    if (!printRef.current) return
+    const printWindow = window.open('', '_blank')
+    if (!printWindow) return
+    printWindow.document.write(`
+      <html>
+        <head>
+          <title>${comp.year} ${comp.make} ${comp.model} - Comp Detail</title>
+          <style>
+            body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; padding: 24px; color: #111; }
+            .header { display: flex; gap: 20px; margin-bottom: 20px; }
+            .photo { width: 300px; height: 200px; object-fit: cover; border-radius: 8px; }
+            .title { font-size: 20px; font-weight: 700; margin-bottom: 4px; }
+            .price { font-size: 22px; font-weight: 700; color: #059669; margin-bottom: 8px; }
+            .vin { font-family: monospace; font-size: 13px; color: #555; margin-bottom: 12px; }
+            .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 24px; font-size: 13px; }
+            .grid dt { color: #888; } .grid dd { font-weight: 500; margin: 0; }
+            .dealer { margin-top: 16px; padding-top: 12px; border-top: 1px solid #e5e7eb; font-size: 13px; }
+            @media print { body { padding: 0; } }
+          </style>
+        </head>
+        <body>
+          ${printRef.current.innerHTML}
+        </body>
+      </html>
+    `)
+    printWindow.document.close()
+    printWindow.focus()
+    printWindow.print()
+    printWindow.close()
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={onClose}>
+      <div
+        className="bg-white rounded-xl shadow-2xl max-w-lg w-full mx-4 max-h-[90vh] overflow-y-auto"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between p-4 border-b border-gray-200">
+          <h3 className="text-sm font-semibold text-gray-900">Comp Detail</h3>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handlePrint}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors"
+            >
+              <Printer className="w-3.5 h-3.5" />
+              Print
+            </button>
+            <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+        </div>
+        <div ref={printRef} className="p-4 space-y-4">
+          {comp.photoUrl && (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={comp.photoUrl}
+              alt={comp.heading}
+              className="w-full h-48 object-cover rounded-lg"
+            />
+          )}
+          <div>
+            <p className="text-lg font-bold text-gray-900">
+              {comp.year} {comp.make} {comp.model}
+              {comp.trim ? ` ${comp.trim}` : ''}
+            </p>
+            <p className="text-xl font-bold text-emerald-600 mt-1">
+              {formatCurrency(comp.price)}
+            </p>
+            <p className="text-xs font-mono text-gray-500 mt-1">VIN: {comp.vin || 'N/A'}</p>
+          </div>
+          <dl className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
+            <dt className="text-gray-400">Mileage</dt>
+            <dd className="font-medium text-gray-900">{(comp.miles ?? 0).toLocaleString()}</dd>
+            <dt className="text-gray-400">Trim</dt>
+            <dd className="font-medium text-gray-900">{comp.trim || '—'}</dd>
+            <dt className="text-gray-400">Engine</dt>
+            <dd className="font-medium text-gray-900">{comp.engine || '—'}</dd>
+            <dt className="text-gray-400">Drivetrain</dt>
+            <dd className="font-medium text-gray-900">{comp.drivetrain || '—'}</dd>
+            <dt className="text-gray-400">Transmission</dt>
+            <dd className="font-medium text-gray-900">{comp.transmission || '—'}</dd>
+          </dl>
+          {comp.dealerName && (
+            <div className="pt-3 border-t border-gray-200 text-sm space-y-1">
+              <p className="font-medium text-gray-900">{comp.dealerName}</p>
+              {(comp.dealerCity || comp.dealerState) && (
+                <p className="text-gray-500">
+                  {comp.dealerCity}{comp.dealerCity && comp.dealerState ? ', ' : ''}{comp.dealerState}
+                </p>
+              )}
+              {comp.dealerPhone && <p className="text-gray-500">{comp.dealerPhone}</p>}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── Comp card ────────────────────────────────────────────────────────────────
 function CompCard({
   comp,
   selected,
   selectionIndex,
   onToggle,
+  onView,
   disabled,
 }: {
   comp: MarketComp
   selected: boolean
   selectionIndex: number
   onToggle: () => void
+  onView: () => void
   disabled: boolean
 }) {
   return (
-    <button
-      onClick={onToggle}
-      disabled={disabled && !selected}
+    <div
       className={cn(
         'w-full text-left rounded-lg border transition-all duration-150 overflow-hidden',
         selected
           ? 'border-blue-500 bg-blue-50 ring-1 ring-blue-500/40'
           : 'border-gray-200 bg-white hover:border-gray-300 shadow-sm',
-        disabled && !selected ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'
+        disabled && !selected ? 'opacity-40' : ''
       )}
     >
-      {comp.photoUrl && (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          src={comp.photoUrl}
-          alt={comp.heading}
-          className="w-full h-36 object-cover"
-        />
-      )}
-      <div className="p-3">
-        <div className="flex items-start justify-between gap-2 mb-1.5">
-          <p className="text-sm font-semibold text-gray-900 leading-snug">
-            {comp.year} {comp.make} {comp.model}
-            {comp.trim ? ` ${comp.trim}` : ''}
+      <button
+        onClick={onToggle}
+        disabled={disabled && !selected}
+        className={cn(
+          'w-full text-left',
+          disabled && !selected ? 'cursor-not-allowed' : 'cursor-pointer'
+        )}
+      >
+        {comp.photoUrl && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={comp.photoUrl}
+            alt={comp.heading}
+            className="w-full h-36 object-cover"
+          />
+        )}
+        <div className="p-3">
+          <div className="flex items-start justify-between gap-2 mb-1.5">
+            <p className="text-sm font-semibold text-gray-900 leading-snug">
+              {comp.year} {comp.make} {comp.model}
+              {comp.trim ? ` ${comp.trim}` : ''}
+            </p>
+            {selected && (
+              <span className="shrink-0 flex items-center justify-center w-5 h-5 rounded-full bg-blue-500">
+                <Check className="w-3 h-3 text-white" />
+              </span>
+            )}
+            {selected && selectionIndex > 0 && (
+              <Badge className="shrink-0 text-xs bg-blue-600 hover:bg-blue-600 text-white ml-1">
+                #{selectionIndex}
+              </Badge>
+            )}
+          </div>
+          <p className="text-lg font-bold text-emerald-600">
+            {formatCurrency(comp.price)}
           </p>
-          {selected && (
-            <span className="shrink-0 flex items-center justify-center w-5 h-5 rounded-full bg-blue-500">
-              <Check className="w-3 h-3 text-white" />
-            </span>
+          <p className="text-xs font-mono text-gray-400 mt-1 truncate">
+            {comp.vin || 'No VIN'}
+          </p>
+          <p className="text-xs text-gray-500 flex items-center gap-1 mt-1">
+            <Car className="w-3 h-3" />
+            {(comp.miles ?? 0).toLocaleString()} miles
+          </p>
+          {(comp.engine || comp.drivetrain || comp.transmission) && (
+            <div className="flex flex-wrap gap-x-2 gap-y-0.5 mt-1">
+              {comp.drivetrain && (
+                <span className="text-xs text-gray-400">{comp.drivetrain}</span>
+              )}
+              {comp.transmission && (
+                <span className="text-xs text-gray-400">{comp.transmission}</span>
+              )}
+              {comp.engine && (
+                <span className="text-xs text-gray-400 truncate">{comp.engine}</span>
+              )}
+            </div>
           )}
-          {selected && selectionIndex > 0 && (
-            <Badge className="shrink-0 text-xs bg-blue-600 hover:bg-blue-600 text-white ml-1">
-              #{selectionIndex}
-            </Badge>
+          {comp.dealerName && (
+            <p className="text-xs text-gray-400 flex items-center gap-1 mt-0.5 truncate">
+              <MapPin className="w-3 h-3 shrink-0" />
+              {comp.dealerName}
+              {comp.dealerCity ? `, ${comp.dealerCity}` : ''}
+              {comp.dealerState ? `, ${comp.dealerState}` : ''}
+            </p>
           )}
         </div>
-        <p className="text-lg font-bold text-emerald-600">
-          {formatCurrency(comp.price)}
-        </p>
-        <p className="text-xs text-gray-500 flex items-center gap-1 mt-1">
-          <Car className="w-3 h-3" />
-          {(comp.miles ?? 0).toLocaleString()} miles
-        </p>
-        {comp.dealerName && (
-          <p className="text-xs text-gray-400 flex items-center gap-1 mt-0.5 truncate">
-            <MapPin className="w-3 h-3 shrink-0" />
-            {comp.dealerName}
-            {comp.dealerCity ? `, ${comp.dealerCity}` : ''}
-            {comp.dealerState ? `, ${comp.dealerState}` : ''}
-          </p>
-        )}
-        {comp.dealerPhone && (
-          <p className="text-xs text-gray-400 flex items-center gap-1 mt-0.5">
-            <Phone className="w-3 h-3 shrink-0" />
-            {comp.dealerPhone}
-          </p>
-        )}
+      </button>
+      <div className="px-3 pb-3">
+        <button
+          onClick={(e) => { e.stopPropagation(); onView(); }}
+          className="w-full flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-medium text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-md transition-colors"
+        >
+          <Eye className="w-3.5 h-3.5" />
+          View Details
+        </button>
       </div>
-    </button>
+    </div>
   )
 }
 
@@ -993,6 +1138,7 @@ function CompFinderInner() {
   const [loadingComps, setLoadingComps] = useState(false)
   const [compsError, setCompsError] = useState<string | null>(null)
   const [selectedIds, setSelectedIds] = useState<string[]>([])
+  const [viewingComp, setViewingComp] = useState<MarketComp | null>(null)
   // Per-comp adjustments
   const [compAdjs, setCompAdjs] = useState<{ mileageAdj: number; yearAdj: number }[]>([
     { mileageAdj: 0, yearAdj: 0 },
@@ -1253,6 +1399,7 @@ function CompFinderInner() {
                           selected={selIdx !== -1}
                           selectionIndex={selIdx + 1}
                           onToggle={() => toggleComp(comp.id)}
+                          onView={() => setViewingComp(comp)}
                           disabled={selectedIds.length >= 3}
                         />
                       )
@@ -1338,6 +1485,10 @@ function CompFinderInner() {
               </div>
             )}
       </main>
+
+      {viewingComp && (
+        <CompDetailModal comp={viewingComp} onClose={() => setViewingComp(null)} />
+      )}
     </div>
   )
 }

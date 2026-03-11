@@ -30,6 +30,9 @@ export interface MarketComp {
   make: string
   model: string
   trim: string
+  engine: string
+  drivetrain: string
+  transmission: string
   dealerName: string
   dealerPhone: string
   dealerCity: string
