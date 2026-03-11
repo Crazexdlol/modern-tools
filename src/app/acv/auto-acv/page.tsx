@@ -1188,6 +1188,17 @@ function AutoACVInner() {
   const [processKey, setProcessKey] = useState(0)
   const [editingId, setEditingId] = useState<string | null>(null)
 
+  const SESSION_KEY = 'modern-tools-auto-acv-draft'
+
+  // Persist form state to sessionStorage on every change
+  useEffect(() => {
+    try {
+      sessionStorage.setItem(SESSION_KEY, JSON.stringify({
+        step, claim, adjustments, finalComps, finalResult, finalAdj, editingId,
+      }))
+    } catch { /* ignore */ }
+  }, [step, claim, adjustments, finalComps, finalResult, finalAdj, editingId])
+
   useEffect(() => {
     // Load claim from sessionStorage if editing
     if (searchParams.get('edit') === 'true') {
@@ -1196,6 +1207,7 @@ function AutoACVInner() {
         if (raw) {
           const entry: ACVHistoryEntry = JSON.parse(raw)
           sessionStorage.removeItem('modern-tools-acv-edit')
+          sessionStorage.removeItem(SESSION_KEY)
           setClaim(entry.claim)
           setAdjustments(entry.adjustments)
           setEditingId(entry.id)
@@ -1207,7 +1219,22 @@ function AutoACVInner() {
           }
         }
       } catch { /* ignore */ }
+      return
     }
+    // Restore draft state on mount (page refresh)
+    try {
+      const raw = sessionStorage.getItem(SESSION_KEY)
+      if (raw) {
+        const draft = JSON.parse(raw)
+        if (draft.claim) setClaim(draft.claim)
+        if (draft.adjustments) setAdjustments(draft.adjustments)
+        if (draft.finalComps) setFinalComps(draft.finalComps)
+        if (draft.finalResult) setFinalResult(draft.finalResult)
+        if (draft.finalAdj) setFinalAdj(draft.finalAdj)
+        if (draft.editingId) setEditingId(draft.editingId)
+        if (draft.step) setStep(draft.step)
+      }
+    } catch { /* ignore */ }
   }, [searchParams])
 
   const canProceedStep1 =
@@ -1235,6 +1262,7 @@ function AutoACVInner() {
     setFinalAdj(defaultAdjustments())
     setProcessKey((k) => k + 1)
     setEditingId(null)
+    sessionStorage.removeItem(SESSION_KEY)
   }
 
   const goToStep3 = () => {

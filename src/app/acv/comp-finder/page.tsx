@@ -1148,6 +1148,17 @@ function CompFinderInner() {
   const [adjustments, setAdjustments] = useState<ACVAdjustments>(defaultAdjustments)
   const [editingId, setEditingId] = useState<string | null>(null)
 
+  const SESSION_KEY = 'modern-tools-comp-finder-draft'
+
+  // Persist form state to sessionStorage on every change
+  useEffect(() => {
+    try {
+      sessionStorage.setItem(SESSION_KEY, JSON.stringify({
+        step, claim, listings, selectedIds, compAdjs, adjustments, editingId,
+      }))
+    } catch { /* ignore */ }
+  }, [step, claim, listings, selectedIds, compAdjs, adjustments, editingId])
+
   useEffect(() => {
     // Load claim from sessionStorage if editing
     if (searchParams.get('edit') === 'true') {
@@ -1156,6 +1167,7 @@ function CompFinderInner() {
         if (raw) {
           const entry: ACVHistoryEntry = JSON.parse(raw)
           sessionStorage.removeItem('modern-tools-acv-edit')
+          sessionStorage.removeItem(SESSION_KEY)
           setClaim(entry.claim)
           setAdjustments(entry.adjustments)
           setEditingId(entry.id)
@@ -1170,7 +1182,22 @@ function CompFinderInner() {
           }
         }
       } catch { /* ignore */ }
+      return
     }
+    // Restore draft state on mount (page refresh)
+    try {
+      const raw = sessionStorage.getItem(SESSION_KEY)
+      if (raw) {
+        const draft = JSON.parse(raw)
+        if (draft.claim) setClaim(draft.claim)
+        if (draft.listings) setListings(draft.listings)
+        if (draft.selectedIds) setSelectedIds(draft.selectedIds)
+        if (draft.compAdjs) setCompAdjs(draft.compAdjs)
+        if (draft.adjustments) setAdjustments(draft.adjustments)
+        if (draft.editingId) setEditingId(draft.editingId)
+        if (draft.step) setStep(draft.step)
+      }
+    } catch { /* ignore */ }
   }, [searchParams])
 
   const selectedComps = selectedIds
@@ -1275,6 +1302,7 @@ function CompFinderInner() {
     setAdjustments(defaultAdjustments())
     setCompsError(null)
     setEditingId(null)
+    sessionStorage.removeItem(SESSION_KEY)
   }
 
   return (
