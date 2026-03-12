@@ -1,37 +1,52 @@
 import Link from "next/link";
 import Image from "next/image";
-import { Wrench, DollarSign, TrendingDown } from "lucide-react";
 
 const apps = [
   {
     id: "estimate-dispute",
     title: "Estimate Dispute",
-    icon: Wrench,
+    description: "Review & dispute repair estimates",
     href: "/estimate-dispute",
     status: "active" as const,
+    accentColor: "border-l-blue-500 hover:border-l-blue-600",
   },
   {
     id: "acv",
     title: "ACV",
-    icon: DollarSign,
+    description: "Actual cash value reports",
     href: "/acv",
     status: "active" as const,
+    accentColor: "border-l-emerald-500 hover:border-l-emerald-600",
+  },
+  {
+    id: "rules-laws",
+    title: "Rules / Laws",
+    description: "State laws & appraisal clauses",
+    href: "/rules-laws",
+    status: "active" as const,
+    accentColor: "border-l-amber-500 hover:border-l-amber-600",
   },
   {
     id: "dv",
     title: "DV",
-    icon: TrendingDown,
+    description: "Diminished value claims",
     href: "/dv",
     status: "coming-soon" as const,
+    accentColor: "border-l-gray-300 hover:border-l-gray-400",
   },
 ];
 
 export default function Dashboard() {
   return (
     <div className="min-h-screen bg-gray-50 text-gray-900">
-      <header className="border-b border-gray-200 bg-white shadow-sm">
-        <div className="max-w-6xl mx-auto px-6 py-4 flex items-center gap-5">
-          <Image src="/logo.jpg" alt="Modern Appraisers" width={160} height={48} className="h-10 w-auto" priority />
+      <header className="border-b border-gray-800 bg-gray-950 shadow-sm">
+        <div className="max-w-7xl mx-auto px-6 py-4 flex items-center gap-8">
+          <Link href="/"><Image src="/logo.png" alt="Modern Appraisers" width={160} height={48} className="h-9 w-auto" priority /></Link>
+          <nav className="flex items-center gap-6">
+            <Link href="/estimate-dispute" className="text-sm font-medium text-gray-400 hover:text-white transition-colors">Estimate Dispute</Link>
+            <Link href="/acv" className="text-sm font-medium text-gray-400 hover:text-white transition-colors">ACV</Link>
+            <Link href="/rules-laws" className="text-sm font-medium text-gray-400 hover:text-white transition-colors">Rules / Laws</Link>
+          </nav>
         </div>
       </header>
 
@@ -41,9 +56,8 @@ export default function Dashboard() {
           <p className="text-gray-400 text-sm">Select a tool to get started.</p>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
           {apps.map((app) => {
-            const Icon = app.icon;
             const isActive = app.status === "active";
             return (
               <Link
@@ -51,20 +65,16 @@ export default function Dashboard() {
                 href={isActive ? app.href : "#"}
                 className={isActive ? "group" : "cursor-not-allowed"}
               >
-                <div className={`relative rounded-2xl border bg-white shadow-sm h-48 flex flex-col items-center justify-center gap-4 transition-all duration-200 ${
+                <div className={`relative rounded-lg border border-gray-200 border-l-4 bg-white px-6 py-8 transition-all duration-200 ${app.accentColor} ${
                   isActive
-                    ? "border-gray-200 group-hover:border-blue-400 group-hover:shadow-lg group-hover:-translate-y-0.5"
-                    : "border-gray-100 opacity-50"
+                    ? "group-hover:shadow-md group-hover:-translate-y-0.5"
+                    : "opacity-45"
                 }`}>
-                  <div className={`w-14 h-14 rounded-xl flex items-center justify-center ${
-                    isActive ? "bg-blue-50" : "bg-gray-100"
-                  }`}>
-                    <Icon className={`w-7 h-7 ${isActive ? "text-blue-600" : "text-gray-400"}`} strokeWidth={1.75} />
-                  </div>
-                  <span className="text-2xl font-bold tracking-tight text-gray-900">{app.title}</span>
+                  <h3 className="text-xl font-semibold text-gray-900 mb-1">{app.title}</h3>
+                  <p className="text-sm text-gray-500">{app.description}</p>
                   {app.status === "coming-soon" && (
-                    <span className="absolute top-3 right-3 text-[10px] font-medium uppercase tracking-widest text-gray-400">
-                      Soon
+                    <span className="absolute top-3 right-3 text-[10px] font-medium uppercase tracking-wider text-gray-400 bg-gray-100 px-2 py-0.5 rounded">
+                      Coming soon
                     </span>
                   )}
                 </div>

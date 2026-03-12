@@ -362,7 +362,7 @@ function Results({ result, onReset }: { result: ComparisonResult; onReset: () =>
               <Printer className="w-4 h-4" /> Print
             </Button>
             <Button variant="outline" size="sm" onClick={onReset} className="border-gray-200 text-gray-700 hover:bg-gray-100">
-              New Comparison
+              Estimate Scan
             </Button>
           </div>
         </div>
@@ -740,23 +740,29 @@ function DashboardView({ entries, onView, onDelete, onNewComparison }: {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
-        <h2 className="text-2xl font-bold text-gray-900">Claims</h2>
-        <Button onClick={onNewComparison} className="bg-blue-600 hover:bg-blue-500 text-white gap-1.5">
-          <Plus className="w-4 h-4" /> New Claim
-        </Button>
+      {/* Tool card */}
+      <div className="mb-8">
+        <button onClick={onNewComparison} className="group w-full cursor-pointer">
+          <div className="bg-white border border-gray-200 rounded-xl px-6 py-6 text-center transition-all duration-200 group-hover:shadow-md group-hover:border-blue-400 group-hover:-translate-y-0.5">
+            <h3 className="text-lg font-bold text-gray-900">Estimate Scan</h3>
+            <p className="text-xs text-gray-400 mt-1">Upload & compare two estimates</p>
+          </div>
+        </button>
       </div>
 
-      {/* Search */}
-      <div className="relative mb-6 max-w-sm">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-        <input
-          type="text"
-          placeholder="Search claims..."
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          className="w-full bg-white border border-gray-200 rounded-lg pl-10 pr-4 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent shadow-sm"
-        />
+      {/* Claims header + search */}
+      <div className="flex items-center justify-between mb-6">
+        <h2 className="text-xl font-bold text-gray-900">Estimate Dispute Claims</h2>
+        <div className="relative w-72">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+          <input
+            type="text"
+            placeholder="Search claims..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full bg-white border border-gray-200 rounded-lg pl-10 pr-4 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent shadow-sm"
+          />
+        </div>
       </div>
 
       {/* Table */}
@@ -835,7 +841,6 @@ function EstimateDisputePageInner() {
     try {
       const h: HistoryEntry[] = JSON.parse(localStorage.getItem(HISTORY_KEY) ?? "[]");
       setEntries(h);
-      if (h.length === 0) setMode("compare");
     } catch { /* ignore */ }
 
     if (searchParams.get("from") === "history") {
@@ -916,15 +921,14 @@ function EstimateDisputePageInner() {
 
   return (
     <div className="min-h-screen bg-gray-50 text-gray-900">
-      <header className="no-print border-b border-gray-200 bg-white shadow-sm sticky top-0 z-10">
-        <div className="max-w-7xl mx-auto px-6 py-4 flex items-center gap-4">
-          <Link href="/" className="text-gray-400 hover:text-gray-900 transition-colors">
-            <ArrowLeft className="w-5 h-5" />
-          </Link>
-          <Image src="/logo.jpg" alt="Modern Appraisers" width={120} height={36} className="h-8 w-auto" />
-          <div className="ml-2">
-            <h1 className="text-lg font-bold text-gray-900">Estimate Dispute</h1>
-          </div>
+      <header className="no-print border-b border-gray-800 bg-gray-950 shadow-sm sticky top-0 z-10">
+        <div className="max-w-7xl mx-auto px-6 py-4 flex items-center gap-8">
+          <Link href="/"><Image src="/logo.png" alt="Modern Appraisers" width={160} height={48} className="h-9 w-auto" /></Link>
+          <nav className="flex items-center gap-6">
+            <Link href="/estimate-dispute" className="text-sm font-medium text-white">Estimate Dispute</Link>
+            <Link href="/acv" className="text-sm font-medium text-gray-400 hover:text-white transition-colors">ACV</Link>
+            <Link href="/rules-laws" className="text-sm font-medium text-gray-400 hover:text-white transition-colors">Rules / Laws</Link>
+          </nav>
         </div>
       </header>
 

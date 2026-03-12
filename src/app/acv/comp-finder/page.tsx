@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
+import Image from 'next/image'
 import { useSearchParams } from 'next/navigation'
 import { Suspense } from 'react'
 import {
@@ -17,12 +18,11 @@ import {
   AlertCircle,
   Car,
   MapPin,
-  Phone,
   Eye,
   Printer,
   X,
-  Cog,
-  Fuel,
+  Plus,
+  Gauge,
 } from 'lucide-react'
 import { useRef } from 'react'
 import { Button } from '@/components/ui/button'
@@ -84,20 +84,109 @@ function saveToHistory(
   } catch { /* localStorage unavailable */ }
 }
 
-function formatDate(iso: string): string {
-  return new Date(iso).toLocaleString("en-US", {
-    month: "short", day: "numeric", year: "numeric",
-    hour: "numeric", minute: "2-digit",
-  })
-}
-
-// ── Shared claim form fields ────────────────────────────────────────────────
+// ── Claim form (NO vehicle fields — those are on step 2) ─────────────────────
 function ClaimInfoForm({
   claim,
   onChange,
 }: {
   claim: ClaimInfo
   onChange: (updated: ClaimInfo) => void
+}) {
+  const set = (field: keyof ClaimInfo, value: string | number) =>
+    onChange({ ...claim, [field]: value })
+
+  const inputCls =
+    'w-full bg-white border border-gray-200 rounded-lg px-3 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent'
+  const labelCls = 'block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5'
+
+  return (
+    <div className="space-y-8">
+      {/* Report Info */}
+      <div>
+        <h3 className="text-sm font-bold text-gray-900 mb-4">Report Info</h3>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div>
+            <label className={labelCls}>MA Number</label>
+            <input className={inputCls} placeholder="MA-12345" value={claim.maNumber} onChange={(e) => set('maNumber', e.target.value)} />
+          </div>
+          <div>
+            <label className={labelCls}>Insurance Claim #</label>
+            <input className={inputCls} placeholder="CLM-00001" value={claim.claimNumber} onChange={(e) => set('claimNumber', e.target.value)} />
+          </div>
+          <div>
+            <label className={labelCls}>Date of Loss</label>
+            <input type="date" className={inputCls} value={claim.dateOfLoss} onChange={(e) => set('dateOfLoss', e.target.value)} />
+          </div>
+        </div>
+      </div>
+
+      {/* Owner / Client */}
+      <div>
+        <h3 className="text-sm font-bold text-gray-900 mb-4">Owner / Client</h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label className={labelCls}>Client Type</label>
+            <select className={inputCls} value={claim.clientType} onChange={(e) => set('clientType', e.target.value as 'Insured' | 'Claimant')}>
+              <option value="Insured">Insured</option>
+              <option value="Claimant">Claimant</option>
+            </select>
+          </div>
+          <div>
+            <label className={labelCls}>Insured / Owner Name</label>
+            <input className={inputCls} placeholder="John Smith" value={claim.insuredName} onChange={(e) => set('insuredName', e.target.value)} />
+          </div>
+          <div>
+            <label className={labelCls}>Owner Phone</label>
+            <input className={inputCls} placeholder="(555) 000-0000" value={claim.ownerPhone} onChange={(e) => set('ownerPhone', e.target.value)} />
+          </div>
+          <div>
+            <label className={labelCls}>Owner Email</label>
+            <input className={inputCls} placeholder="owner@email.com" value={claim.ownerEmail} onChange={(e) => set('ownerEmail', e.target.value)} />
+          </div>
+          <div className="md:col-span-2">
+            <label className={labelCls}>Owner Address</label>
+            <input className={inputCls} placeholder="123 Main St, City, ST 00000" value={claim.ownerAddress} onChange={(e) => set('ownerAddress', e.target.value)} />
+          </div>
+        </div>
+      </div>
+
+      {/* Insurance */}
+      <div>
+        <h3 className="text-sm font-bold text-gray-900 mb-4">Insurance</h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label className={labelCls}>Insurance Company</label>
+            <input className={inputCls} placeholder="State Farm" value={claim.insuranceCompany} onChange={(e) => set('insuranceCompany', e.target.value)} />
+          </div>
+          <div>
+            <label className={labelCls}>Adjuster Name</label>
+            <input className={inputCls} placeholder="Jane Doe" value={claim.adjuster} onChange={(e) => set('adjuster', e.target.value)} />
+          </div>
+          <div>
+            <label className={labelCls}>Adjuster Phone</label>
+            <input className={inputCls} placeholder="(555) 000-0000" value={claim.adjusterPhone} onChange={(e) => set('adjusterPhone', e.target.value)} />
+          </div>
+          <div>
+            <label className={labelCls}>Adjuster Email</label>
+            <input className={inputCls} placeholder="adjuster@insurer.com" value={claim.adjusterEmail} onChange={(e) => set('adjusterEmail', e.target.value)} />
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Search parameters panel (shown on step 2) ──────────────────────────────
+function SearchParametersPanel({
+  claim,
+  onChange,
+  onSearch,
+  loading,
+}: {
+  claim: ClaimInfo
+  onChange: (updated: ClaimInfo) => void
+  onSearch: () => void
+  loading: boolean
 }) {
   const [decoding, setDecoding] = useState(false)
   const [decodeError, setDecodeError] = useState<string | null>(null)
@@ -131,259 +220,110 @@ function ClaimInfoForm({
   }
 
   const inputCls =
-    'w-full bg-white border border-gray-200 rounded-md px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent'
-  const labelCls = 'block text-xs font-medium text-gray-500 mb-1'
+    'w-full bg-white border border-gray-200 rounded-lg px-3 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent'
+  const labelCls = 'block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5'
+
+  const canSearch = claim.year > 0 && claim.make && claim.model && (claim.radius === 0 || claim.zip.length === 5)
 
   return (
-    <div className="space-y-6">
-      {/* Header fields */}
-      <div>
-        <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wider mb-3">
-          Report Info
-        </h3>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+    <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm">
+      <div className="flex items-center justify-between mb-5">
+        <h3 className="text-sm font-bold text-gray-900 uppercase tracking-wider">Search Parameters</h3>
+      </div>
+
+      {/* VIN row */}
+      <div className="mb-4">
+        <label className={labelCls}>VIN</label>
+        <div className="flex gap-2">
+          <input
+            className={cn(inputCls, 'flex-1 font-mono uppercase')}
+            placeholder="17-character VIN"
+            maxLength={17}
+            value={claim.vin}
+            onChange={(e) => set('vin', e.target.value.toUpperCase())}
+          />
+          <Button
+            onClick={decodeVin}
+            disabled={decoding || claim.vin.length !== 17}
+            className="shrink-0 bg-blue-600 hover:bg-blue-500 text-white"
+            size="sm"
+          >
+            {decoding ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Decode'}
+          </Button>
+        </div>
+        {decodeError && (
+          <p className="text-xs text-red-500 mt-1 flex items-center gap-1">
+            <AlertCircle className="w-3 h-3" />
+            {decodeError}
+          </p>
+        )}
+      </div>
+
+      {/* Vehicle fields grid */}
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-4">
+        <div>
+          <label className={labelCls}>Year <span className="text-red-400">*</span></label>
+          <input type="number" className={inputCls} placeholder="2020" value={claim.year || ''} onChange={(e) => set('year', parseInt(e.target.value) || 0)} />
+        </div>
+        <div>
+          <label className={labelCls}>Make <span className="text-red-400">*</span></label>
+          <input className={inputCls} placeholder="Toyota" value={claim.make} onChange={(e) => set('make', e.target.value)} />
+        </div>
+        <div>
+          <label className={labelCls}>Model <span className="text-red-400">*</span></label>
+          <input className={inputCls} placeholder="Camry" value={claim.model} onChange={(e) => set('model', e.target.value)} />
+        </div>
+        <div>
+          <label className={labelCls}>Trim</label>
+          <input className={inputCls} placeholder="XLE" value={claim.trim} onChange={(e) => set('trim', e.target.value)} />
+        </div>
+        <div>
+          <label className={labelCls}>Mileage</label>
+          <input type="number" className={inputCls} placeholder="45000" value={claim.mileage || ''} onChange={(e) => set('mileage', parseInt(e.target.value) || 0)} />
+        </div>
+        {claim.radius !== 0 && (
           <div>
-            <label className={labelCls}>MA Number</label>
-            <input
-              className={inputCls}
-              placeholder="MA-12345"
-              value={claim.maNumber}
-              onChange={(e) => set('maNumber', e.target.value)}
-            />
+            <label className={labelCls}>ZIP Code</label>
+            <input className={inputCls} placeholder="90210" maxLength={5} value={claim.zip} onChange={(e) => set('zip', e.target.value)} />
           </div>
-          <div>
-            <label className={labelCls}>Insurance Claim #</label>
-            <input
-              className={inputCls}
-              placeholder="CLM-00001"
-              value={claim.claimNumber}
-              onChange={(e) => set('claimNumber', e.target.value)}
-            />
-          </div>
-          <div>
-            <label className={labelCls}>Date of Loss</label>
-            <input
-              type="date"
-              className={inputCls}
-              value={claim.dateOfLoss}
-              onChange={(e) => set('dateOfLoss', e.target.value)}
-            />
-          </div>
+        )}
+      </div>
+
+      {/* Radius */}
+      <div className="flex items-end gap-4 mb-5">
+        <div className="w-48">
+          <label className={labelCls}>Radius</label>
+          <select
+            className={inputCls}
+            value={claim.radius}
+            onChange={(e) => {
+              const val = parseInt(e.target.value)
+              onChange({ ...claim, radius: val, ...(val === 0 ? { zip: '' } : {}) })
+            }}
+          >
+            <option value={25}>25 mi</option>
+            <option value={50}>50 mi</option>
+            <option value={100}>100 mi</option>
+            <option value={200}>200 mi</option>
+            <option value={500}>500 mi</option>
+            <option value={0}>Nationwide</option>
+          </select>
         </div>
       </div>
 
-      {/* Owner fields */}
-      <div>
-        <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wider mb-3">
-          Owner / Client
-        </h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div>
-            <label className={labelCls}>Client Type</label>
-            <select
-              className={inputCls}
-              value={claim.clientType}
-              onChange={(e) => set('clientType', e.target.value as 'Insured' | 'Claimant')}
-            >
-              <option value="Insured">Insured</option>
-              <option value="Claimant">Claimant</option>
-            </select>
-          </div>
-          <div>
-            <label className={labelCls}>Insured / Owner Name</label>
-            <input
-              className={inputCls}
-              placeholder="John Smith"
-              value={claim.insuredName}
-              onChange={(e) => set('insuredName', e.target.value)}
-            />
-          </div>
-          <div>
-            <label className={labelCls}>Owner Phone</label>
-            <input
-              className={inputCls}
-              placeholder="(555) 000-0000"
-              value={claim.ownerPhone}
-              onChange={(e) => set('ownerPhone', e.target.value)}
-            />
-          </div>
-          <div>
-            <label className={labelCls}>Owner Email</label>
-            <input
-              className={inputCls}
-              placeholder="owner@email.com"
-              value={claim.ownerEmail}
-              onChange={(e) => set('ownerEmail', e.target.value)}
-            />
-          </div>
-          <div className="md:col-span-2">
-            <label className={labelCls}>Owner Address</label>
-            <input
-              className={inputCls}
-              placeholder="123 Main St, City, ST 00000"
-              value={claim.ownerAddress}
-              onChange={(e) => set('ownerAddress', e.target.value)}
-            />
-          </div>
-        </div>
-      </div>
-
-      {/* Insurance fields */}
-      <div>
-        <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wider mb-3">
-          Insurance
-        </h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div>
-            <label className={labelCls}>Insurance Company</label>
-            <input
-              className={inputCls}
-              placeholder="State Farm"
-              value={claim.insuranceCompany}
-              onChange={(e) => set('insuranceCompany', e.target.value)}
-            />
-          </div>
-          <div>
-            <label className={labelCls}>Adjuster Name</label>
-            <input
-              className={inputCls}
-              placeholder="Jane Doe"
-              value={claim.adjuster}
-              onChange={(e) => set('adjuster', e.target.value)}
-            />
-          </div>
-          <div>
-            <label className={labelCls}>Adjuster Phone</label>
-            <input
-              className={inputCls}
-              placeholder="(555) 000-0000"
-              value={claim.adjusterPhone}
-              onChange={(e) => set('adjusterPhone', e.target.value)}
-            />
-          </div>
-          <div>
-            <label className={labelCls}>Adjuster Email</label>
-            <input
-              className={inputCls}
-              placeholder="adjuster@insurer.com"
-              value={claim.adjusterEmail}
-              onChange={(e) => set('adjusterEmail', e.target.value)}
-            />
-          </div>
-        </div>
-      </div>
-
-      {/* Vehicle fields */}
-      <div>
-        <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wider mb-3">
-          Vehicle
-        </h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className="md:col-span-2">
-            <label className={labelCls}>VIN</label>
-            <div className="flex gap-2">
-              <input
-                className={cn(inputCls, 'flex-1 font-mono uppercase')}
-                placeholder="17-character VIN"
-                maxLength={17}
-                value={claim.vin}
-                onChange={(e) => set('vin', e.target.value.toUpperCase())}
-              />
-              <Button
-                onClick={decodeVin}
-                disabled={decoding || claim.vin.length !== 17}
-                className="shrink-0 bg-blue-600 hover:bg-blue-500 text-white"
-                size="sm"
-              >
-                {decoding ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Decode'}
-              </Button>
-            </div>
-            {decodeError && (
-              <p className="text-xs text-red-500 mt-1 flex items-center gap-1">
-                <AlertCircle className="w-3 h-3" />
-                {decodeError}
-              </p>
-            )}
-          </div>
-          <div>
-            <label className={labelCls}>Year</label>
-            <input
-              type="number"
-              className={inputCls}
-              placeholder="2020"
-              value={claim.year || ''}
-              onChange={(e) => set('year', parseInt(e.target.value) || 0)}
-            />
-          </div>
-          <div>
-            <label className={labelCls}>Make</label>
-            <input
-              className={inputCls}
-              placeholder="Toyota"
-              value={claim.make}
-              onChange={(e) => set('make', e.target.value)}
-            />
-          </div>
-          <div>
-            <label className={labelCls}>Model</label>
-            <input
-              className={inputCls}
-              placeholder="Camry"
-              value={claim.model}
-              onChange={(e) => set('model', e.target.value)}
-            />
-          </div>
-          <div>
-            <label className={labelCls}>Trim</label>
-            <input
-              className={inputCls}
-              placeholder="XLE"
-              value={claim.trim}
-              onChange={(e) => set('trim', e.target.value)}
-            />
-          </div>
-          <div>
-            <label className={labelCls}>Mileage</label>
-            <input
-              type="number"
-              className={inputCls}
-              placeholder="45000"
-              value={claim.mileage || ''}
-              onChange={(e) => set('mileage', parseInt(e.target.value) || 0)}
-            />
-          </div>
-          <div>
-            <label className={labelCls}>Search Radius</label>
-            <select
-              className={inputCls}
-              value={claim.radius}
-              onChange={(e) => {
-                const val = parseInt(e.target.value)
-                onChange({ ...claim, radius: val, ...(val === 0 ? { zip: '' } : {}) })
-              }}
-            >
-              <option value={25}>25 miles</option>
-              <option value={50}>50 miles</option>
-              <option value={100}>100 miles</option>
-              <option value={200}>200 miles</option>
-              <option value={500}>500 miles</option>
-              <option value={0}>Nationwide</option>
-            </select>
-          </div>
-          {claim.radius !== 0 && (
-            <div>
-              <label className={labelCls}>ZIP Code</label>
-              <input
-                className={inputCls}
-                placeholder="90210"
-                maxLength={5}
-                value={claim.zip}
-                onChange={(e) => set('zip', e.target.value)}
-              />
-            </div>
-          )}
-        </div>
-      </div>
+      {/* Search button */}
+      <Button
+        onClick={onSearch}
+        disabled={loading || !canSearch}
+        className="bg-blue-600 hover:bg-blue-500 text-white font-bold gap-2 h-11 px-6"
+      >
+        {loading ? (
+          <Loader2 className="w-4 h-4 animate-spin" />
+        ) : (
+          <Search className="w-4 h-4" />
+        )}
+        Search Comparable Vehicles
+      </Button>
     </div>
   )
 }
@@ -433,11 +373,8 @@ function CompDetailModal({
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4">
-          <div className="flex items-center gap-2">
-            <div className="w-2 h-2 rounded-full bg-blue-500" />
-            <span className="text-xs font-semibold text-gray-400 uppercase tracking-widest">Comparable</span>
-          </div>
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+          <span className="text-sm font-bold text-gray-900">Vehicle Details</span>
           <div className="flex items-center gap-1.5">
             <button
               onClick={handlePrint}
@@ -446,59 +383,51 @@ function CompDetailModal({
               <Printer className="w-3.5 h-3.5" />
               Print
             </button>
-            <button onClick={onClose} className="p-1.5 text-gray-300 hover:text-gray-500 rounded-lg hover:bg-gray-50 transition-all">
+            <button onClick={onClose} className="p-1.5 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-50 transition-all">
               <X className="w-4 h-4" />
             </button>
           </div>
         </div>
 
-        <div ref={printRef} className="px-6 pb-6">
+        <div ref={printRef} className="px-6 pb-6 pt-4">
           {comp.photoUrl && (
             // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={comp.photoUrl}
-              alt={vehicle}
-              className="w-full h-56 object-cover rounded-xl mb-5"
-            />
+            <img src={comp.photoUrl} alt={vehicle} className="w-full h-56 object-cover rounded-xl mb-5" />
           )}
 
-          {/* Vehicle title */}
           <p className="text-xl font-extrabold text-gray-900 tracking-tight leading-tight">{vehicle}</p>
-          {trimLine && <p className="text-sm text-gray-400 font-medium mt-0.5">{trimLine}</p>}
+          {trimLine && <p className="text-sm text-gray-500 font-medium mt-0.5">{trimLine}</p>}
           <p className="text-2xl font-extrabold text-blue-600 mt-2 tracking-tight">
             {formatCurrency(comp.price)}
           </p>
-          <p className="text-[11px] font-mono text-gray-300 tracking-wider mt-1.5 mb-5">
+          <p className="text-[11px] font-mono text-gray-400 tracking-wider mt-1.5 mb-5">
             {comp.vin || 'VIN N/A'}
           </p>
 
-          {/* Specs grid */}
           <div className="grid grid-cols-3 gap-4 py-5 border-t border-b border-gray-100">
             {[
               { label: 'Mileage', value: `${(comp.miles ?? 0).toLocaleString()}` },
-              { label: 'Drivetrain', value: comp.drivetrain || '—' },
-              { label: 'Distance', value: comp.distanceMi ? `${comp.distanceMi} mi` : '—' },
-              { label: 'Engine', value: comp.engine || '—' },
-              { label: 'Trans', value: comp.transmission || '—' },
-              { label: 'Trim', value: comp.trim || '—' },
+              { label: 'Drivetrain', value: comp.drivetrain || '--' },
+              { label: 'Distance', value: comp.distanceMi ? `${comp.distanceMi} mi` : '--' },
+              { label: 'Engine', value: comp.engine || '--' },
+              { label: 'Trans', value: comp.transmission || '--' },
+              { label: 'Trim', value: comp.trim || '--' },
             ].map(({ label, value }) => (
               <div key={label}>
-                <p className="text-[10px] font-bold text-gray-300 uppercase tracking-widest">{label}</p>
+                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">{label}</p>
                 <p className="text-[13px] font-bold text-gray-800 mt-1 truncate">{value}</p>
               </div>
             ))}
           </div>
 
-          {/* Dealer */}
           {comp.dealerName && (
             <div className="pt-5 space-y-0.5">
               <p className="text-sm font-bold text-gray-900">{comp.dealerName}</p>
               {(comp.dealerCity || comp.dealerState) && (
-                <p className="text-xs text-gray-400">
+                <p className="text-xs text-gray-500">
                   {[comp.dealerCity, comp.dealerState].filter(Boolean).join(', ')}
                 </p>
               )}
-              {comp.dealerPhone && <p className="text-xs text-gray-400">{comp.dealerPhone}</p>}
             </div>
           )}
         </div>
@@ -507,7 +436,7 @@ function CompDetailModal({
   )
 }
 
-// ── Comp card ────────────────────────────────────────────────────────────────
+// ── Comp card (redesigned like reference) ─────────────────────────────────────
 function CompCard({
   comp,
   selected,
@@ -523,105 +452,113 @@ function CompCard({
   onView: () => void
   disabled: boolean
 }) {
-  const vehicle = [comp.year || '', comp.make, comp.model].filter(Boolean).join(' ')
+  const vehicle = `${comp.year || ''} ${comp.make} ${comp.model} ${comp.trim || ''}`.trim()
+  const specs = [comp.engine, comp.transmission, comp.drivetrain].filter(Boolean).join(' \u00B7 ')
 
   return (
     <div
       className={cn(
-        'group relative rounded-xl border overflow-hidden transition-all duration-200',
+        'relative bg-white border rounded-xl overflow-hidden transition-all duration-200',
         selected
-          ? 'border-blue-500 ring-2 ring-blue-500/20 bg-white'
-          : 'border-gray-200/80 bg-white hover:border-gray-300 hover:shadow-md',
-        disabled && !selected ? 'opacity-35 pointer-events-none' : ''
+          ? 'border-blue-500 ring-2 ring-blue-500/20 shadow-md'
+          : 'border-gray-200 hover:shadow-lg hover:border-gray-300',
+        disabled && !selected ? 'opacity-40 pointer-events-none' : ''
       )}
     >
       {/* Selection badge */}
       {selected && selectionIndex > 0 && (
-        <div className="absolute top-3 left-3 z-10 w-7 h-7 rounded-lg bg-blue-600 text-white flex items-center justify-center text-xs font-bold shadow-lg shadow-blue-600/30">
+        <div className="absolute top-3 left-3 z-10 w-7 h-7 rounded-full bg-blue-600 text-white flex items-center justify-center text-xs font-bold shadow-lg">
           {selectionIndex}
         </div>
       )}
 
-      {/* Image */}
-      <button
-        onClick={onToggle}
-        disabled={disabled && !selected}
-        className="w-full text-left cursor-pointer"
-      >
-        <div className="relative h-40 bg-gray-100">
-          {comp.photoUrl ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={comp.photoUrl} alt={vehicle} className="w-full h-full object-cover" />
-          ) : (
-            <div className="w-full h-full flex items-center justify-center">
-              <Car className="w-8 h-8 text-gray-300" />
-            </div>
-          )}
-          {/* Price overlay */}
-          <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/60 to-transparent pt-8 pb-2.5 px-3">
-            <p className="text-lg font-extrabold text-white tracking-tight">
-              {formatCurrency(comp.price)}
-            </p>
+      {/* Image with price overlay */}
+      <div className="relative h-44 bg-gray-100">
+        {comp.photoUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={comp.photoUrl} alt={vehicle} className="w-full h-full object-cover" />
+        ) : (
+          <div className="w-full h-full flex items-center justify-center">
+            <Car className="w-10 h-10 text-gray-300" />
           </div>
+        )}
+        <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/70 via-black/30 to-transparent pt-10 pb-3 px-3">
+          <p className="text-xl font-extrabold text-white drop-shadow-sm">
+            {formatCurrency(comp.price)}
+          </p>
+        </div>
+      </div>
+
+      {/* Content */}
+      <div className="p-4">
+        <p className="text-[13px] font-extrabold text-gray-900 leading-snug tracking-tight">
+          {comp.year && comp.make ? `${comp.year} ${comp.make} ${comp.model}` : comp.heading || 'Unknown Vehicle'}
+        </p>
+        {comp.trim && (
+          <p className="text-xs font-semibold text-gray-500 mt-0.5">{comp.trim}</p>
+        )}
+        {specs && (
+          <p className="text-[11px] text-gray-400 mt-1">{specs}</p>
+        )}
+        <p className="text-[10px] font-mono text-gray-400 mt-1.5 tracking-wider">
+          {comp.vin || 'No VIN'}
+        </p>
+
+        {/* Stats */}
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-3 text-xs text-gray-500">
+          <span className="flex items-center gap-1">
+            <Gauge className="w-3 h-3" />
+            {(comp.miles ?? 0).toLocaleString()} mi
+          </span>
+          {comp.distanceMi > 0 && (
+            <span className="flex items-center gap-1">
+              <MapPin className="w-3 h-3" />
+              {comp.dealerCity ? `${comp.dealerCity}, ${comp.dealerState}` : `${comp.distanceMi} mi away`}
+            </span>
+          )}
         </div>
 
-        {/* Info */}
-        <div className="p-3.5">
-          <p className="text-[13px] font-bold text-gray-900 leading-snug tracking-tight">
-            {vehicle}
+        {/* Dealer */}
+        {comp.dealerName && !comp.distanceMi && (
+          <p className="text-[11px] text-gray-400 mt-2 truncate">
+            {comp.dealerName}
+            {comp.dealerCity ? ` \u00B7 ${comp.dealerCity}, ${comp.dealerState}` : ''}
           </p>
-          {comp.trim && (
-            <p className="text-[11px] text-gray-400 font-medium mt-0.5">{comp.trim}</p>
-          )}
+        )}
+        {comp.dealerName && comp.distanceMi > 0 && (
+          <p className="text-[11px] text-gray-400 mt-1 truncate">{comp.dealerName}</p>
+        )}
+      </div>
 
-          <p className="text-[10px] font-mono text-gray-300 mt-1.5 truncate tracking-wide">
-            {comp.vin || 'No VIN'}
-          </p>
-
-          {/* Stats row */}
-          <div className="flex items-center gap-2.5 mt-2.5 text-[11px] text-gray-500 font-medium">
-            <span>{(comp.miles ?? 0).toLocaleString()} mi</span>
-            <span className="w-0.5 h-0.5 rounded-full bg-gray-300" />
-            {comp.distanceMi > 0 && (
-              <>
-                <span>{comp.distanceMi} mi away</span>
-                <span className="w-0.5 h-0.5 rounded-full bg-gray-300" />
-              </>
-            )}
-            {comp.drivetrain && <span>{comp.drivetrain}</span>}
-          </div>
-
-          {/* Spec pills */}
-          {(comp.transmission || comp.engine) && (
-            <div className="flex flex-wrap gap-1 mt-2">
-              {comp.transmission && (
-                <span className="text-[10px] font-semibold px-2 py-0.5 bg-gray-50 text-gray-500 rounded-full">{comp.transmission}</span>
-              )}
-              {comp.engine && (
-                <span className="text-[10px] font-semibold px-2 py-0.5 bg-gray-50 text-gray-500 rounded-full truncate max-w-[160px]">{comp.engine}</span>
-              )}
-            </div>
-          )}
-
-          {/* Dealer */}
-          {comp.dealerName && (
-            <p className="text-[11px] text-gray-300 font-medium mt-2.5 truncate">
-              {comp.dealerName}
-              {comp.dealerCity ? ` · ${comp.dealerCity}` : ''}
-              {comp.dealerState ? `, ${comp.dealerState}` : ''}
-            </p>
-          )}
-        </div>
-      </button>
-
-      {/* View button */}
-      <div className="px-3.5 pb-3.5">
+      {/* Action buttons */}
+      <div className="flex gap-2 px-4 pb-4">
         <button
-          onClick={(e) => { e.stopPropagation(); onView(); }}
-          className="w-full flex items-center justify-center gap-1.5 py-2 text-[11px] font-bold text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors uppercase tracking-wider"
+          onClick={onToggle}
+          disabled={disabled && !selected}
+          className={cn(
+            'flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs font-bold rounded-lg transition-all',
+            selected
+              ? 'bg-blue-600 text-white hover:bg-blue-700'
+              : 'bg-blue-600 text-white hover:bg-blue-700'
+          )}
         >
-          <Eye className="w-3 h-3" />
-          View Details
+          {selected ? (
+            <>
+              <Check className="w-3.5 h-3.5" />
+              Selected
+            </>
+          ) : (
+            <>
+              <Plus className="w-3.5 h-3.5" />
+              Select
+            </>
+          )}
+        </button>
+        <button
+          onClick={(e) => { e.stopPropagation(); onView() }}
+          className="px-4 py-2.5 text-xs font-bold text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-lg transition-all"
+        >
+          View
         </button>
       </div>
     </div>
@@ -647,12 +584,12 @@ function AdjustmentsForm({
   result: ACVResult
 }) {
   const inputCls =
-    'w-full bg-white border border-gray-200 rounded-md px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent'
-  const labelCls = 'block text-xs font-medium text-gray-500 mb-1'
+    'w-full bg-white border border-gray-200 rounded-lg px-3 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent'
+  const labelCls = 'block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5'
 
   return (
     <div className="space-y-6">
-      {/* Per-comp adjustments — side by side */}
+      {/* Per-comp adjustments */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {selectedComps.map((comp, i) => {
           const mileageDiff = comp.miles - claim.mileage
@@ -713,133 +650,45 @@ function AdjustmentsForm({
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className={labelCls}>Vehicle History Note</label>
-              <input
-                className={inputCls}
-                placeholder="e.g. Clean title"
-                value={adjustments.vehicleHistoryNote}
-                onChange={(e) =>
-                  onAdjChange({ ...adjustments, vehicleHistoryNote: e.target.value })
-                }
-              />
+              <input className={inputCls} placeholder="e.g. Clean title" value={adjustments.vehicleHistoryNote} onChange={(e) => onAdjChange({ ...adjustments, vehicleHistoryNote: e.target.value })} />
             </div>
             <div>
               <label className={labelCls}>Vehicle History ($)</label>
-              <input
-                type="number"
-                className={inputCls}
-                placeholder="0"
-                value={adjustments.vehicleHistory || ''}
-                onChange={(e) =>
-                  onAdjChange({
-                    ...adjustments,
-                    vehicleHistory: parseFloat(e.target.value) || 0,
-                  })
-                }
-              />
+              <input type="number" className={inputCls} placeholder="0" value={adjustments.vehicleHistory || ''} onChange={(e) => onAdjChange({ ...adjustments, vehicleHistory: parseFloat(e.target.value) || 0 })} />
             </div>
             <div>
               <label className={labelCls}>Prior Damages Note</label>
-              <input
-                className={inputCls}
-                placeholder="e.g. No prior damage"
-                value={adjustments.priorDamagesNote}
-                onChange={(e) =>
-                  onAdjChange({ ...adjustments, priorDamagesNote: e.target.value })
-                }
-              />
+              <input className={inputCls} placeholder="e.g. No prior damage" value={adjustments.priorDamagesNote} onChange={(e) => onAdjChange({ ...adjustments, priorDamagesNote: e.target.value })} />
             </div>
             <div>
               <label className={labelCls}>Prior Damages ($)</label>
-              <input
-                type="number"
-                className={inputCls}
-                placeholder="0"
-                value={adjustments.priorDamages || ''}
-                onChange={(e) =>
-                  onAdjChange({
-                    ...adjustments,
-                    priorDamages: parseFloat(e.target.value) || 0,
-                  })
-                }
-              />
+              <input type="number" className={inputCls} placeholder="0" value={adjustments.priorDamages || ''} onChange={(e) => onAdjChange({ ...adjustments, priorDamages: parseFloat(e.target.value) || 0 })} />
             </div>
             <div>
               <label className={labelCls}>Additions Note</label>
-              <input
-                className={inputCls}
-                placeholder="e.g. Aftermarket rims"
-                value={adjustments.additionsNote}
-                onChange={(e) =>
-                  onAdjChange({ ...adjustments, additionsNote: e.target.value })
-                }
-              />
+              <input className={inputCls} placeholder="e.g. Aftermarket rims" value={adjustments.additionsNote} onChange={(e) => onAdjChange({ ...adjustments, additionsNote: e.target.value })} />
             </div>
             <div>
               <label className={labelCls}>Additions ($)</label>
-              <input
-                type="number"
-                className={inputCls}
-                placeholder="0"
-                value={adjustments.additions || ''}
-                onChange={(e) =>
-                  onAdjChange({
-                    ...adjustments,
-                    additions: parseFloat(e.target.value) || 0,
-                  })
-                }
-              />
+              <input type="number" className={inputCls} placeholder="0" value={adjustments.additions || ''} onChange={(e) => onAdjChange({ ...adjustments, additions: parseFloat(e.target.value) || 0 })} />
             </div>
             <div>
               <label className={labelCls}>Deductions Note</label>
-              <input
-                className={inputCls}
-                placeholder="Dealer Vs. Private ($500.00)"
-                value={adjustments.deductionsNote}
-                onChange={(e) =>
-                  onAdjChange({ ...adjustments, deductionsNote: e.target.value })
-                }
-              />
+              <input className={inputCls} placeholder="Dealer Vs. Private ($500.00)" value={adjustments.deductionsNote} onChange={(e) => onAdjChange({ ...adjustments, deductionsNote: e.target.value })} />
             </div>
             <div>
               <label className={labelCls}>Deductions ($)</label>
-              <input
-                type="number"
-                className={inputCls}
-                placeholder="-500"
-                value={adjustments.deductions || ''}
-                onChange={(e) =>
-                  onAdjChange({
-                    ...adjustments,
-                    deductions: parseFloat(e.target.value) || 0,
-                  })
-                }
-              />
+              <input type="number" className={inputCls} placeholder="-500" value={adjustments.deductions || ''} onChange={(e) => onAdjChange({ ...adjustments, deductions: parseFloat(e.target.value) || 0 })} />
             </div>
             <div>
               <label className={labelCls}>Tax Rate (%)</label>
-              <input
-                type="number"
-                step="0.01"
-                className={inputCls}
-                placeholder="0.00"
-                value={adjustments.taxRate || ''}
-                onChange={(e) =>
-                  onAdjChange({
-                    ...adjustments,
-                    taxRate: parseFloat(e.target.value) || 0,
-                  })
-                }
-              />
+              <input type="number" step="0.01" className={inputCls} placeholder="0.00" value={adjustments.taxRate || ''} onChange={(e) => onAdjChange({ ...adjustments, taxRate: parseFloat(e.target.value) || 0 })} />
             </div>
           </div>
 
           <div>
             <label className={labelCls}>Notes</label>
-            <textarea
-              className={cn(inputCls, 'resize-none h-24')}
-              value={adjustments.notes}
-              onChange={(e) => onAdjChange({ ...adjustments, notes: e.target.value })}
-            />
+            <textarea className={cn(inputCls, 'resize-none h-24')} value={adjustments.notes} onChange={(e) => onAdjChange({ ...adjustments, notes: e.target.value })} />
           </div>
         </CardContent>
       </Card>
@@ -953,12 +802,12 @@ function ReviewStep({
             {[
               { label: 'VIN', value: claim.vin },
               { label: 'Vehicle', value: `${claim.year} ${claim.make} ${claim.model}` },
-              { label: 'Trim', value: claim.trim || '—' },
+              { label: 'Trim', value: claim.trim || '--' },
               { label: 'Mileage', value: claim.mileage.toLocaleString() },
-              { label: 'Owner', value: claim.insuredName || '—' },
-              { label: 'Insurance', value: claim.insuranceCompany || '—' },
-              { label: 'MA #', value: claim.maNumber || '—' },
-              { label: 'Claim #', value: claim.claimNumber || '—' },
+              { label: 'Owner', value: claim.insuredName || '--' },
+              { label: 'Insurance', value: claim.insuranceCompany || '--' },
+              { label: 'MA #', value: claim.maNumber || '--' },
+              { label: 'Claim #', value: claim.claimNumber || '--' },
             ].map(({ label, value }) => (
               <div key={label}>
                 <p className="text-xs text-gray-400 mb-0.5">{label}</p>
@@ -1002,20 +851,10 @@ function ReviewStep({
                   <td className="px-4 py-2.5 text-right tabular-nums text-gray-700">
                     {(comp.miles ?? 0).toLocaleString()}
                   </td>
-                  <td
-                    className={cn(
-                      'px-4 py-2.5 text-right tabular-nums',
-                      comp.mileageAdjDollar < 0 ? 'text-red-500' : 'text-emerald-600'
-                    )}
-                  >
+                  <td className={cn('px-4 py-2.5 text-right tabular-nums', comp.mileageAdjDollar < 0 ? 'text-red-500' : 'text-emerald-600')}>
                     {formatCurrency(comp.mileageAdjDollar)}
                   </td>
-                  <td
-                    className={cn(
-                      'px-4 py-2.5 text-right tabular-nums',
-                      comp.yearAdjDollar < 0 ? 'text-red-500' : 'text-emerald-600'
-                    )}
-                  >
+                  <td className={cn('px-4 py-2.5 text-right tabular-nums', comp.yearAdjDollar < 0 ? 'text-red-500' : 'text-emerald-600')}>
                     {formatCurrency(comp.yearAdjDollar)}
                   </td>
                   <td className="px-4 py-2.5 text-right tabular-nums font-semibold text-gray-900">
@@ -1059,18 +898,11 @@ function ReviewStep({
             )}
             <div className="flex justify-between text-gray-500 text-xs">
               <span>Deductions ({adjustments.deductionsNote})</span>
-              <span className="tabular-nums text-red-500">
-                {formatCurrency(adjustments.deductions)}
-              </span>
+              <span className="tabular-nums text-red-500">{formatCurrency(adjustments.deductions)}</span>
             </div>
             <div className="flex justify-between text-gray-700 border-t border-gray-200 pt-2">
               <span>Total Adjustments</span>
-              <span
-                className={cn(
-                  'tabular-nums',
-                  result.totalAdjustments < 0 ? 'text-red-500' : 'text-emerald-600'
-                )}
-              >
+              <span className={cn('tabular-nums', result.totalAdjustments < 0 ? 'text-red-500' : 'text-emerald-600')}>
                 {formatCurrency(result.totalAdjustments)}
               </span>
             </div>
@@ -1096,38 +928,18 @@ function ReviewStep({
       )}
 
       <div className="flex items-center gap-3">
-        <Button
-          onClick={onBack}
-          variant="outline"
-          className="border-gray-200 text-gray-700 hover:bg-gray-100"
-        >
+        <Button onClick={onBack} variant="outline" className="border-gray-200 text-gray-700 hover:bg-gray-100">
           <ChevronLeft className="w-4 h-4 mr-1" />
           Back
         </Button>
-        <Button
-          onClick={onSave}
-          variant="outline"
-          className="border-blue-200 text-blue-600 hover:bg-blue-50"
-        >
+        <Button onClick={onSave} variant="outline" className="border-blue-200 text-blue-600 hover:bg-blue-50">
           Save Claim
         </Button>
-        <Button
-          onClick={downloadPdf}
-          disabled={downloading}
-          className="bg-blue-600 hover:bg-blue-500 text-white"
-        >
-          {downloading ? (
-            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-          ) : (
-            <Download className="w-4 h-4 mr-2" />
-          )}
+        <Button onClick={downloadPdf} disabled={downloading} className="bg-blue-600 hover:bg-blue-500 text-white">
+          {downloading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Download className="w-4 h-4 mr-2" />}
           Download PDF
         </Button>
-        <Button
-          onClick={onStartOver}
-          variant="outline"
-          className="border-gray-200 text-gray-700 hover:bg-gray-100 ml-auto"
-        >
+        <Button onClick={onStartOver} variant="outline" className="border-gray-200 text-gray-700 hover:bg-gray-100 ml-auto">
           <RotateCcw className="w-4 h-4 mr-1" />
           Start Over
         </Button>
@@ -1162,7 +974,6 @@ function defaultClaim(): ClaimInfo {
   }
 }
 
-// ── History Dashboard ────────────────────────────────────────────────────────
 // ── Main page ────────────────────────────────────────────────────────────────
 const COMP_FINDER_SESSION_KEY = 'modern-tools-comp-finder-draft'
 
@@ -1196,7 +1007,7 @@ function CompFinderInner() {
   )
   const [editingId, setEditingId] = useState<string | null>(() => draft.current?.editingId ?? null)
 
-  // Handle edit mode (from history) — overrides draft
+  // Handle edit mode (from history)
   useEffect(() => {
     if (searchParams.get('edit') !== 'true') return
     try {
@@ -1220,7 +1031,7 @@ function CompFinderInner() {
     } catch { /* ignore */ }
   }, [searchParams])
 
-  // Persist form state to sessionStorage on every change
+  // Persist form state
   useEffect(() => {
     try {
       sessionStorage.setItem(COMP_FINDER_SESSION_KEY, JSON.stringify({
@@ -1233,7 +1044,6 @@ function CompFinderInner() {
     .map((id) => listings.find((l) => l.id === id))
     .filter((c): c is MarketComp => !!c)
 
-  // Build SelectedComp[] with current adj values
   const builtComps: SelectedComp[] = selectedComps.map((comp, i) => {
     const adj = compAdjs[i] ?? { mileageAdj: 0, yearAdj: 0 }
     return {
@@ -1280,12 +1090,6 @@ function CompFinderInner() {
     }
   }, [claim])
 
-  useEffect(() => {
-    if (step === 2) {
-      searchComps()
-    }
-  }, [step, searchComps])
-
   const toggleComp = (id: string) => {
     setSelectedIds((prev) => {
       if (prev.includes(id)) return prev.filter((x) => x !== id)
@@ -1302,15 +1106,13 @@ function CompFinderInner() {
     })
   }
 
-  const canProceedStep1 =
-    claim.year > 0 && claim.make && claim.model && claim.mileage > 0 && (claim.radius === 0 || claim.zip.length === 5)
+  const canProceedStep1 = claim.maNumber.length > 0 || claim.insuredName.length > 0
 
   const steps = ['Claim Info', 'Select Comps', 'Adjustments', 'Review & Generate']
 
   const handleSaveClaim = () => {
     if (builtComps.length < 3) return
     saveToHistory(claim, builtComps, adjustments, result, 'comp-finder', editingId)
-    // If this was a new claim, capture the new ID so subsequent saves update it
     if (!editingId) {
       try {
         const h: ACVHistoryEntry[] = JSON.parse(localStorage.getItem(HISTORY_KEY) ?? '[]')
@@ -1337,254 +1139,209 @@ function CompFinderInner() {
 
   return (
     <div className="min-h-screen bg-gray-50 text-gray-900">
-      <header className="border-b border-gray-200 bg-white shadow-sm sticky top-0 z-10">
-        <div className="max-w-5xl mx-auto px-6 py-4 flex items-center gap-4">
-          <Link href="/acv" className="text-gray-400 hover:text-gray-900 transition-colors">
-            <ArrowLeft className="w-5 h-5" />
-          </Link>
-          <div>
-            <h1 className="text-lg font-bold text-gray-900">Comp Finder</h1>
-            <p className="text-xs text-gray-500">Manual ACV · 4-step workflow</p>
-          </div>
+      <header className="border-b border-gray-800 bg-gray-950 shadow-sm sticky top-0 z-10">
+        <div className="max-w-7xl mx-auto px-6 py-4 flex items-center gap-8">
+          <Link href="/"><Image src="/logo.png" alt="Modern Appraisers" width={160} height={48} className="h-9 w-auto" /></Link>
+          <nav className="flex items-center gap-6">
+            <Link href="/estimate-dispute" className="text-sm font-medium text-gray-400 hover:text-white transition-colors">Estimate Dispute</Link>
+            <Link href="/acv" className="text-sm font-medium text-white">ACV</Link>
+            <Link href="/rules-laws" className="text-sm font-medium text-gray-400 hover:text-white transition-colors">Rules / Laws</Link>
+          </nav>
         </div>
       </header>
 
-      <main className="max-w-5xl mx-auto px-6 py-8">
-          {/* Step indicators */}
-            <div className="flex items-center gap-2 mb-8 overflow-x-auto pb-2">
-              {steps.map((label, i) => {
-                const n = i + 1
-                const active = step === n
-                const done = step > n
-                return (
-                  <div key={n} className="flex items-center gap-2 shrink-0">
-                    <button
-                      type="button"
-                      onClick={() => setStep(n)}
-                      className={cn(
-                        'flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium transition-all cursor-pointer hover:opacity-80',
-                        active
-                          ? 'bg-blue-600 text-white'
-                          : done
-                          ? 'bg-gray-200 text-gray-700'
-                          : 'bg-gray-100 text-gray-400'
-                      )}
-                    >
-                      {done ? <Check className="w-3 h-3" /> : <span>{n}</span>}
-                      {label}
-                    </button>
-                    {i < steps.length - 1 && (
-                      <ChevronRight className="w-3 h-3 text-gray-300 shrink-0" />
-                    )}
-                  </div>
-                )
-              })}
+      <main className="max-w-6xl mx-auto px-6 py-8">
+        <div className="flex items-center gap-3 mb-6">
+          <Link href="/acv" className="text-gray-400 hover:text-gray-900 transition-colors"><ArrowLeft className="w-5 h-5" /></Link>
+          <h1 className="text-2xl font-bold text-gray-900">Comp Finder</h1>
+        </div>
+        {/* Step indicators */}
+        <div className="flex items-center gap-2 mb-8 overflow-x-auto pb-2">
+          {steps.map((label, i) => {
+            const n = i + 1
+            const active = step === n
+            const done = step > n
+            return (
+              <div key={n} className="flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setStep(n)}
+                  className={cn(
+                    'flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium transition-all cursor-pointer hover:opacity-80',
+                    active
+                      ? 'bg-blue-600 text-white'
+                      : done
+                      ? 'bg-gray-200 text-gray-700'
+                      : 'bg-gray-100 text-gray-400'
+                  )}
+                >
+                  {done ? <Check className="w-3 h-3" /> : <span>{n}</span>}
+                  {label}
+                </button>
+                {i < steps.length - 1 && (
+                  <ChevronRight className="w-3 h-3 text-gray-300 shrink-0" />
+                )}
+              </div>
+            )
+          })}
+        </div>
+
+        {/* Step 1: Claim Info (no vehicle fields) */}
+        {step === 1 && (
+          <div>
+            <Card className="bg-white border-gray-200 shadow-sm">
+              <CardHeader>
+                <CardTitle className="text-gray-900">Claim Information</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <ClaimInfoForm claim={claim} onChange={setClaim} />
+              </CardContent>
+            </Card>
+            <div className="flex justify-end mt-6">
+              <Button
+                onClick={() => setStep(2)}
+                className="bg-blue-600 hover:bg-blue-500 text-white"
+              >
+                Next: Select Comps
+                <ArrowRight className="w-4 h-4 ml-2" />
+              </Button>
             </div>
+          </div>
+        )}
 
-            {/* Step 1: Claim Info */}
-            {step === 1 && (
-              <div>
-                <Card className="bg-white border-gray-200 shadow-sm">
-                  <CardHeader>
-                    <CardTitle className="text-gray-900">Claim Information</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <ClaimInfoForm claim={claim} onChange={setClaim} />
-                  </CardContent>
-                </Card>
-                <div className="flex justify-end mt-6">
-                  <Button
-                    onClick={() => setStep(2)}
-                    disabled={!canProceedStep1}
-                    className="bg-blue-600 hover:bg-blue-500 text-white"
-                  >
-                    Next: Select Comps
-                    <ArrowRight className="w-4 h-4 ml-2" />
-                  </Button>
+        {/* Step 2: Search & Select Comps */}
+        {step === 2 && (
+          <div className="space-y-6">
+            {/* Search parameters panel */}
+            <SearchParametersPanel
+              claim={claim}
+              onChange={setClaim}
+              onSearch={searchComps}
+              loading={loadingComps}
+            />
+
+            {/* Results header */}
+            {listings.length > 0 && (
+              <div className="flex items-center justify-between">
+                <p className="text-sm text-gray-500">
+                  Showing <span className="font-bold text-gray-900">{listings.length}</span> listings
+                </p>
+                <div className="flex items-center gap-2">
+                  {[1, 2, 3].map((n) => (
+                    <div
+                      key={n}
+                      className={cn(
+                        'w-2.5 h-2.5 rounded-full transition-colors',
+                        selectedIds.length >= n ? 'bg-blue-500' : 'bg-gray-200'
+                      )}
+                    />
+                  ))}
+                  <span className="text-sm font-bold text-gray-700 ml-1">
+                    {selectedIds.length}/3 selected
+                  </span>
                 </div>
               </div>
             )}
 
-            {/* Step 2: Search & Select */}
-            {step === 2 && (
-              <div className="space-y-6">
-                {/* Subject vehicle banner */}
-                <div className="bg-gradient-to-r from-gray-900 to-gray-800 rounded-2xl p-5 text-white">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-1">Subject Vehicle</p>
-                      <p className="text-xl font-extrabold tracking-tight">
-                        {claim.year} {claim.make} {claim.model}
-                      </p>
-                      {claim.trim && <p className="text-sm text-gray-400 font-medium">{claim.trim}</p>}
-                      <div className="flex items-center gap-3 mt-2 text-xs text-gray-400 font-medium">
-                        {claim.vin && <span className="font-mono tracking-wide">{claim.vin}</span>}
-                        <span className="w-0.5 h-0.5 rounded-full bg-gray-600" />
-                        <span>{claim.mileage.toLocaleString()} mi</span>
-                        {claim.zip && (
-                          <>
-                            <span className="w-0.5 h-0.5 rounded-full bg-gray-600" />
-                            <span>ZIP {claim.zip}</span>
-                          </>
-                        )}
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-1">Radius</p>
-                      <p className="text-sm font-bold text-white">
-                        {claim.radius === 0 ? 'Nationwide' : `${claim.radius} mi`}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Toolbar */}
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <h2 className="text-lg font-extrabold text-gray-900 tracking-tight">Comparables</h2>
-                    <div className="flex items-center gap-1.5">
-                      {[1, 2, 3].map((n) => (
-                        <div
-                          key={n}
-                          className={cn(
-                            'w-2 h-2 rounded-full transition-colors',
-                            selectedIds.length >= n ? 'bg-blue-500' : 'bg-gray-200'
-                          )}
-                        />
-                      ))}
-                      <span className="text-xs text-gray-400 font-semibold ml-1">
-                        {selectedIds.length}/3
-                      </span>
-                    </div>
-                    {listings.length > 0 && (
-                      <span className="text-xs text-gray-300 font-medium">{listings.length} found</span>
-                    )}
-                  </div>
-                  <Button
-                    onClick={searchComps}
-                    disabled={loadingComps}
-                    size="sm"
-                    className="bg-gray-900 hover:bg-gray-800 text-white text-xs font-bold gap-1.5 rounded-lg"
-                  >
-                    {loadingComps ? (
-                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    ) : (
-                      <Search className="w-3.5 h-3.5" />
-                    )}
-                    Refresh
-                  </Button>
-                </div>
-
-                {loadingComps && (
-                  <div className="flex flex-col items-center justify-center py-20">
-                    <Loader2 className="w-8 h-8 animate-spin text-blue-500 mb-3" />
-                    <p className="text-sm font-semibold text-gray-400">Searching comparables...</p>
-                  </div>
-                )}
-
-                {compsError && !loadingComps && (
-                  <div className="flex items-start gap-3 p-4 rounded-xl bg-red-50 border border-red-100 text-red-600 text-sm font-medium">
-                    <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
-                    {compsError}
-                  </div>
-                )}
-
-                {!loadingComps && listings.length > 0 && (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-                    {listings.map((comp) => {
-                      const selIdx = selectedIds.indexOf(comp.id)
-                      return (
-                        <CompCard
-                          key={comp.id}
-                          comp={comp}
-                          selected={selIdx !== -1}
-                          selectionIndex={selIdx + 1}
-                          onToggle={() => toggleComp(comp.id)}
-                          onView={() => setViewingComp(comp)}
-                          disabled={selectedIds.length >= 3}
-                        />
-                      )
-                    })}
-                  </div>
-                )}
-
-                <div className="flex items-center gap-3 pt-2">
-                  <Button
-                    onClick={() => setStep(1)}
-                    variant="outline"
-                    className="border-gray-200 text-gray-600 hover:bg-gray-50 rounded-lg font-semibold"
-                  >
-                    <ChevronLeft className="w-4 h-4 mr-1" />
-                    Back
-                  </Button>
-                  <Button
-                    onClick={() => setStep(3)}
-                    disabled={selectedIds.length < 3}
-                    className="bg-blue-600 hover:bg-blue-500 text-white ml-auto rounded-lg font-bold"
-                  >
-                    Next: Adjustments
-                    <ArrowRight className="w-4 h-4 ml-2" />
-                  </Button>
-                </div>
+            {loadingComps && (
+              <div className="flex flex-col items-center justify-center py-20">
+                <Loader2 className="w-8 h-8 animate-spin text-blue-500 mb-3" />
+                <p className="text-sm font-medium text-gray-400">Searching comparables...</p>
               </div>
             )}
 
-            {/* Step 3: Adjustments */}
-            {step === 3 && (
-              <div>
-                <h2 className="text-lg font-semibold text-gray-900 mb-4">Adjustments</h2>
-                <AdjustmentsForm
-                  claim={claim}
-                  selectedComps={selectedComps}
-                  compAdjustments={compAdjs}
-                  onCompAdjChange={updateCompAdj}
-                  adjustments={adjustments}
-                  onAdjChange={setAdjustments}
-                  result={result}
-                />
-                <div className="flex items-center gap-3 mt-6">
-                  <Button
-                    onClick={() => setStep(2)}
-                    variant="outline"
-                    className="border-gray-200 text-gray-700 hover:bg-gray-100"
-                  >
-                    <ChevronLeft className="w-4 h-4 mr-1" />
-                    Back
-                  </Button>
-                  <Button
-                    onClick={handleSaveClaim}
-                    variant="outline"
-                    className="border-blue-200 text-blue-600 hover:bg-blue-50 ml-auto"
-                  >
-                    Save Claim
-                  </Button>
-                  <Button
-                    onClick={() => setStep(4)}
-                    className="bg-blue-600 hover:bg-blue-500 text-white"
-                  >
-                    Next: Review & Generate
-                    <ArrowRight className="w-4 h-4 ml-2" />
-                  </Button>
-                </div>
+            {compsError && !loadingComps && (
+              <div className="flex items-start gap-3 p-4 rounded-xl bg-red-50 border border-red-100 text-red-600 text-sm font-medium">
+                <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
+                {compsError}
               </div>
             )}
 
-            {/* Step 4: Review & Generate */}
-            {step === 4 && (
-              <div>
-                <h2 className="text-lg font-semibold text-gray-900 mb-4">Review & Generate</h2>
-                <ReviewStep
-                  claim={claim}
-                  selectedComps={builtComps}
-                  adjustments={adjustments}
-                  result={result}
-                  onBack={() => setStep(3)}
-                  onStartOver={startOver}
-                  onSave={handleSaveClaim}
-                  editId={editingId}
-                />
+            {!loadingComps && listings.length > 0 && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                {listings.map((comp) => {
+                  const selIdx = selectedIds.indexOf(comp.id)
+                  return (
+                    <CompCard
+                      key={comp.id}
+                      comp={comp}
+                      selected={selIdx !== -1}
+                      selectionIndex={selIdx + 1}
+                      onToggle={() => toggleComp(comp.id)}
+                      onView={() => setViewingComp(comp)}
+                      disabled={selectedIds.length >= 3}
+                    />
+                  )
+                })}
               </div>
             )}
+
+            <div className="flex items-center gap-3 pt-2">
+              <Button
+                onClick={() => setStep(1)}
+                variant="outline"
+                className="border-gray-200 text-gray-600 hover:bg-gray-50 rounded-lg font-semibold"
+              >
+                <ChevronLeft className="w-4 h-4 mr-1" />
+                Back
+              </Button>
+              <Button
+                onClick={() => setStep(3)}
+                disabled={selectedIds.length < 3}
+                className="bg-blue-600 hover:bg-blue-500 text-white ml-auto rounded-lg font-bold"
+              >
+                Next: Adjustments
+                <ArrowRight className="w-4 h-4 ml-2" />
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {/* Step 3: Adjustments */}
+        {step === 3 && (
+          <div>
+            <h2 className="text-lg font-semibold text-gray-900 mb-4">Adjustments</h2>
+            <AdjustmentsForm
+              claim={claim}
+              selectedComps={selectedComps}
+              compAdjustments={compAdjs}
+              onCompAdjChange={updateCompAdj}
+              adjustments={adjustments}
+              onAdjChange={setAdjustments}
+              result={result}
+            />
+            <div className="flex items-center gap-3 mt-6">
+              <Button onClick={() => setStep(2)} variant="outline" className="border-gray-200 text-gray-700 hover:bg-gray-100">
+                <ChevronLeft className="w-4 h-4 mr-1" />
+                Back
+              </Button>
+              <Button onClick={handleSaveClaim} variant="outline" className="border-blue-200 text-blue-600 hover:bg-blue-50 ml-auto">
+                Save Claim
+              </Button>
+              <Button onClick={() => setStep(4)} className="bg-blue-600 hover:bg-blue-500 text-white">
+                Next: Review & Generate
+                <ArrowRight className="w-4 h-4 ml-2" />
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {/* Step 4: Review & Generate */}
+        {step === 4 && (
+          <div>
+            <h2 className="text-lg font-semibold text-gray-900 mb-4">Review & Generate</h2>
+            <ReviewStep
+              claim={claim}
+              selectedComps={builtComps}
+              adjustments={adjustments}
+              result={result}
+              onBack={() => setStep(3)}
+              onStartOver={startOver}
+              onSave={handleSaveClaim}
+              editId={editingId}
+            />
+          </div>
+        )}
       </main>
 
       {viewingComp && (

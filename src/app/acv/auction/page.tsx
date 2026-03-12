@@ -435,19 +435,22 @@ function LossSearchInner() {
 
   return (
     <div className="min-h-screen bg-gray-50 text-gray-900">
-      <header className="border-b border-gray-200 bg-white shadow-sm sticky top-0 z-10">
-        <div className="max-w-7xl mx-auto px-6 py-4 flex items-center gap-4">
-          <Link href="/acv" className="text-gray-400 hover:text-gray-900 transition-colors">
-            <ArrowLeft className="w-5 h-5" />
-          </Link>
-          <Image src="/logo.jpg" alt="Modern Appraisers" width={120} height={36} className="h-8 w-auto" />
-          <div className="ml-2">
-            <h1 className="text-lg font-bold text-gray-900">Loss Search</h1>
-          </div>
+      <header className="border-b border-gray-800 bg-gray-950 shadow-sm sticky top-0 z-10">
+        <div className="max-w-7xl mx-auto px-6 py-4 flex items-center gap-8">
+          <Link href="/"><Image src="/logo.png" alt="Modern Appraisers" width={160} height={48} className="h-9 w-auto" /></Link>
+          <nav className="flex items-center gap-6">
+            <Link href="/estimate-dispute" className="text-sm font-medium text-gray-400 hover:text-white transition-colors">Estimate Dispute</Link>
+            <Link href="/acv" className="text-sm font-medium text-white">ACV</Link>
+            <Link href="/rules-laws" className="text-sm font-medium text-gray-400 hover:text-white transition-colors">Rules / Laws</Link>
+          </nav>
         </div>
       </header>
 
       <main className="max-w-7xl mx-auto px-6 py-8 space-y-8">
+        <div className="flex items-center gap-3 mb-2">
+          <Link href="/acv" className="text-gray-400 hover:text-gray-900 transition-colors"><ArrowLeft className="w-5 h-5" /></Link>
+          <h1 className="text-2xl font-bold text-gray-900">Loss Search</h1>
+        </div>
         {/* Claim Info */}
         <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-6">
           <ClaimInfoForm claim={claim} onChange={setClaim} />
