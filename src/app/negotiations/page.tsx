@@ -113,7 +113,8 @@ export default function NegotiationsPage() {
   const [expandedSections, setExpandedSections] = useState<Set<string>>(
     new Set([
       "overview",
-      "weaknesses",
+      "iaWeaknesses",
+      "ourWeaknesses",
       "response",
       "emailAnalysis",
       "documentCritique",
@@ -646,18 +647,18 @@ export default function NegotiationsPage() {
               </Section>
             )}
 
-            {/* Weaknesses */}
-            {result.weaknesses?.length > 0 && (
+            {/* IA Weaknesses */}
+            {result.iaWeaknesses?.length > 0 && (
               <Section
-                id="weaknesses"
-                title="Weaknesses in Their Position"
+                id="iaWeaknesses"
+                title="IA Weaknesses — Exploit These"
                 icon={AlertTriangle}
                 expandedSections={expandedSections}
                 toggleSection={toggleSection}
-                badge={`${result.weaknesses.length} found`}
+                badge={`${result.iaWeaknesses.length} found`}
               >
                 <div className="space-y-4">
-                  {result.weaknesses.map((w: any, i: number) => (
+                  {result.iaWeaknesses.map((w: any, i: number) => (
                     <div
                       key={i}
                       className="rounded-lg border border-red-100 bg-red-50/50 p-4"
@@ -685,18 +686,57 @@ export default function NegotiationsPage() {
               </Section>
             )}
 
-            {/* Strengths */}
-            {result.strengths?.length > 0 && (
+            {/* Our Weaknesses */}
+            {result.ourWeaknesses?.length > 0 && (
               <Section
-                id="strengths"
-                title="Strong Points to Address"
+                id="ourWeaknesses"
+                title="Our Weaknesses — Fix These"
+                icon={AlertCircle}
+                expandedSections={expandedSections}
+                toggleSection={toggleSection}
+                badge={`${result.ourWeaknesses.length}`}
+              >
+                <div className="space-y-4">
+                  {result.ourWeaknesses.map((w: any, i: number) => (
+                    <div
+                      key={i}
+                      className="rounded-lg border border-amber-200 bg-amber-50/50 p-4"
+                    >
+                      <div className="font-medium text-sm text-amber-900 mb-1">
+                        {w.point}
+                      </div>
+                      <p className="text-sm text-gray-700 mb-2">
+                        {w.explanation}
+                      </p>
+                      <div className="flex items-start gap-2 bg-white rounded-md p-3 border border-amber-200">
+                        <CheckCircle2 className="w-4 h-4 text-green-600 mt-0.5 shrink-0" />
+                        <div>
+                          <div className="text-xs font-medium text-green-700 mb-0.5">
+                            How to Fix
+                          </div>
+                          <p className="text-sm text-gray-800">
+                            {w.fix}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </Section>
+            )}
+
+            {/* IA Strengths */}
+            {result.iaStrengths?.length > 0 && (
+              <Section
+                id="iaStrengths"
+                title="IA Strong Points — Handle These"
                 icon={Shield}
                 expandedSections={expandedSections}
                 toggleSection={toggleSection}
-                badge={`${result.strengths.length}`}
+                badge={`${result.iaStrengths.length}`}
               >
                 <div className="space-y-3">
-                  {result.strengths.map((s: any, i: number) => (
+                  {result.iaStrengths.map((s: any, i: number) => (
                     <div
                       key={i}
                       className="rounded-lg border border-blue-100 bg-blue-50/50 p-4"

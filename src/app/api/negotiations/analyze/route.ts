@@ -43,7 +43,7 @@ Your role is to help the independent appraiser (our user) win negotiations again
 - OEM vs aftermarket vs used parts arguments
 - Labor rate disputes and methodology differences
 
-Always be strategic, professional, and assertive. Identify every weakness in the opposing position and provide ammunition for our side.
+Always be strategic, professional, and assertive. Identify every weakness in the opposing position and provide ammunition for our side. BUT ALSO be honest about flaws or vulnerabilities in OUR position — point out where our arguments are weak, our methodology has gaps, or the IA has a valid point we need to address. This helps us fix our own weak spots before the IA exploits them.
 
 Always respond with valid JSON only. No markdown, no explanation outside the JSON.`;
 
@@ -145,8 +145,9 @@ Return JSON with this structure. Use null for sections without applicable data:
     "patterns": ["pattern"]
   },` : `"emailAnalysis": null,`}
   ${hasDocs ? `"documentCritique": [{"document": "name", "documentType": "type", "issues": [{"issue": "problem", "severity": "high/medium/low", "explanation": "why", "counterPoint": "counter"}], "missingItems": ["missing"], "favorableItems": ["favorable"]}],` : `"documentCritique": null,`}
-  "weaknesses": [{"point": "weakness", "explanation": "why weak", "counterArgument": "counter"}],
-  "strengths": [{"point": "their strong point", "strategy": "how to handle"}],
+  "iaWeaknesses": [{"point": "IA weakness", "explanation": "why weak", "counterArgument": "how to exploit"}],
+  "ourWeaknesses": [{"point": "flaw in OUR position", "explanation": "why this is a problem", "fix": "how to address or fix this before the IA uses it against us"}],
+  "iaStrengths": [{"point": "their strong point", "strategy": "how to handle"}],
   "negotiationStrategy": {
     "approach": "recommended approach",
     "tips": ["tip"],
