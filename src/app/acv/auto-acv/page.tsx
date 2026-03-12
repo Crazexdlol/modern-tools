@@ -1272,25 +1272,39 @@ function AutoACVInner() {
   const [processKey, setProcessKey] = useState(0)
   const [editingId, setEditingId] = useState<string | null>(() => draft.current?.editingId ?? null)
 
-  // Handle edit mode (from history) — overrides draft
+  // On mount: if not in edit mode, clear any stale draft so a fresh form loads
+  const initialized = useRef(false)
   useEffect(() => {
-    if (searchParams.get('edit') !== 'true') return
-    try {
-      const raw = sessionStorage.getItem('modern-tools-acv-edit')
-      if (raw) {
-        const entry: ACVHistoryEntry = JSON.parse(raw)
-        sessionStorage.removeItem('modern-tools-acv-edit')
-        sessionStorage.removeItem(AUTO_ACV_SESSION_KEY)
-        setClaim(entry.claim)
-        setAdjustments(entry.adjustments)
-        setEditingId(entry.id)
-        if (entry.comps && entry.comps.length > 0) {
-          setFinalComps(entry.comps)
-          setFinalResult(entry.result)
-          setFinalAdj(entry.adjustments)
+    if (initialized.current) return
+    initialized.current = true
+    if (searchParams.get('edit') === 'true') {
+      // Edit mode: load from history
+      try {
+        const raw = sessionStorage.getItem('modern-tools-acv-edit')
+        if (raw) {
+          const entry: ACVHistoryEntry = JSON.parse(raw)
+          sessionStorage.removeItem('modern-tools-acv-edit')
+          sessionStorage.removeItem(AUTO_ACV_SESSION_KEY)
+          setClaim(entry.claim)
+          setAdjustments(entry.adjustments)
+          setEditingId(entry.id)
+          if (entry.comps && entry.comps.length > 0) {
+            setFinalComps(entry.comps)
+            setFinalResult(entry.result)
+            setFinalAdj(entry.adjustments)
+          }
         }
-      }
-    } catch { /* ignore */ }
+      } catch { /* ignore */ }
+    } else {
+      // Fresh start: clear old draft
+      sessionStorage.removeItem(AUTO_ACV_SESSION_KEY)
+      setClaim(defaultClaim())
+      setAdjustments(defaultAdjustments())
+      setFinalComps([])
+      setFinalResult(null)
+      setFinalAdj(defaultAdjustments())
+      setEditingId(null)
+    }
   }, [searchParams])
 
   // Persist form state to sessionStorage on every change
