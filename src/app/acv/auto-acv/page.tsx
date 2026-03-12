@@ -856,6 +856,7 @@ function AutoProcessStep({
       model: claim.model,
       radius: String(radius),
       ...(isNationwide ? { nationwide: 'true' } : { zip: claim.zip }),
+      ...(claim.trim ? { trim: claim.trim } : {}),
     })
     const res = await fetch(`/api/acv/search-comps?${params}`)
     if (!res.ok) return []
@@ -928,6 +929,17 @@ function AutoProcessStep({
           return
         } else {
           updateStatus('expanding', 'done', 'Radius expansion not needed')
+        }
+
+        // Filter by trim: prefer exact trim matches, fall back to all if < 3
+        if (claim.trim) {
+          const trimLower = claim.trim.toLowerCase()
+          const trimMatched = listings.filter((l) =>
+            (l.trim as string || '').toLowerCase().includes(trimLower)
+          )
+          if (trimMatched.length >= 3) {
+            listings = trimMatched
+          }
         }
 
         // Step 3: Depreciation
