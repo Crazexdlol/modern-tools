@@ -1,7 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
-import { extractTextFromPDF } from "@/lib/pdf-extractor";
-import { extractTextFromImage } from "@/lib/image-extractor";
 
 const client = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
@@ -12,9 +10,11 @@ async function extractText(file: File): Promise<string> {
   const type = file.type.toLowerCase();
 
   if (type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf")) {
+    const { extractTextFromPDF } = await import("@/lib/pdf-extractor");
     return extractTextFromPDF(buffer);
   }
   if (type.startsWith("image/")) {
+    const { extractTextFromImage } = await import("@/lib/image-extractor");
     return extractTextFromImage(buffer);
   }
   return buffer.toString("utf-8");
