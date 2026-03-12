@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useDropzone } from "react-dropzone";
 import Link from "next/link";
 import Image from "next/image";
@@ -121,6 +121,31 @@ export default function NegotiationsPage() {
     ])
   );
 
+  // Load last result from localStorage on mount
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("modern-tools-negotiations");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed.result) setResult(parsed.result);
+        if (parsed.context) setContext(parsed.context);
+        if (parsed.emailText) setEmailText(parsed.emailText);
+      }
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  // Save result to localStorage whenever it changes
+  useEffect(() => {
+    if (result) {
+      localStorage.setItem(
+        "modern-tools-negotiations",
+        JSON.stringify({ result, context, emailText })
+      );
+    }
+  }, [result, context, emailText]);
+
   const onDropChain = useCallback((accepted: File[]) => {
     setChainFiles((prev) => [...prev, ...accepted]);
   }, []);
@@ -170,8 +195,14 @@ export default function NegotiationsPage() {
       });
 
       if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error || "Analysis failed");
+        let errorMsg = `Analysis failed (${res.status})`;
+        try {
+          const data = await res.json();
+          if (data.error) errorMsg = data.error;
+        } catch {
+          // Response wasn't JSON (e.g. HTML error page)
+        }
+        throw new Error(errorMsg);
       }
 
       const data = await res.json();
@@ -187,6 +218,7 @@ export default function NegotiationsPage() {
     setResult(null);
     setEmailText("");
     setContext("");
+    localStorage.removeItem("modern-tools-negotiations");
     setChainFiles([]);
     setDocFiles([]);
     setError(null);
