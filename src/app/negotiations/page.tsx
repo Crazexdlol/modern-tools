@@ -198,18 +198,30 @@ export default function NegotiationsPage() {
         let errorMsg = `Analysis failed (${res.status})`;
         try {
           const text = await res.text();
-          const data = JSON.parse(text.trim());
-          if (data.error) errorMsg = data.error;
+          const parsed = JSON.parse(text.trim());
+          if (parsed.error) errorMsg = parsed.error;
         } catch {
           // Response wasn't JSON
         }
         throw new Error(errorMsg);
       }
 
-      // Response is streamed: spaces (keepalive) followed by JSON
-      const rawText = await res.text();
-      const jsonStr = rawText.trim();
-      const data = JSON.parse(jsonStr);
+      // Read SSE stream — wait for the "done" event with final JSON
+      const reader = res.body!.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+      }
+
+      // Parse the last "done" event data from the SSE stream
+      const doneMatch = buffer.match(/event: done\ndata: (.+)\n/);
+      if (!doneMatch) throw new Error("No result received from server");
+
+      const data = JSON.parse(doneMatch[1]);
       if (data.error) throw new Error(data.error);
       setResult(data.result);
     } catch (err) {

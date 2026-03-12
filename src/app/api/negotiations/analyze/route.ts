@@ -187,7 +187,7 @@ Return a JSON object with this exact structure. Include ALL sections — if a se
   "suggestedResponse": "A complete, professional email response ready to send. Address their points, present counter-arguments, reference documents where applicable, and advance our position strategically. If no email was provided, write a proactive email based on the document analysis."
 }`;
 
-    // Stream response to keep connection alive (avoids Vercel 60s timeout)
+    // Use SSE to stream keepalives, then send final JSON result
     const anthropicStream = client.messages.stream({
       model: "claude-sonnet-4-6",
       max_tokens: 16000,
@@ -198,6 +198,10 @@ Return a JSON object with this exact structure. Include ALL sections — if a se
     const encoder = new TextEncoder();
     const readable = new ReadableStream({
       async start(controller) {
+        const send = (event: string, data: string) => {
+          controller.enqueue(encoder.encode(`event: ${event}\ndata: ${data}\n\n`));
+        };
+
         try {
           let fullText = "";
           for await (const event of anthropicStream) {
@@ -206,35 +210,29 @@ Return a JSON object with this exact structure. Include ALL sections — if a se
               event.delta.type === "text_delta"
             ) {
               fullText += event.delta.text;
-              // Send a keepalive chunk so the connection doesn't timeout
-              controller.enqueue(encoder.encode(" "));
+              send("ping", "{}");
             }
           }
 
-          // Parse and send the final result
           const cleaned = fullText
             .replace(/```json\n?/g, "")
             .replace(/```\n?/g, "")
             .trim();
           const result = JSON.parse(cleaned);
-          controller.enqueue(
-            encoder.encode(JSON.stringify({ result }))
-          );
-          controller.close();
+          send("done", JSON.stringify({ result }));
         } catch (err) {
           const msg = err instanceof Error ? err.message : "Unknown error";
-          controller.enqueue(
-            encoder.encode(JSON.stringify({ error: msg }))
-          );
-          controller.close();
+          send("done", JSON.stringify({ error: msg }));
         }
+        controller.close();
       },
     });
 
     return new Response(readable, {
       headers: {
-        "Content-Type": "application/json",
-        "Transfer-Encoding": "chunked",
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache",
+        Connection: "keep-alive",
       },
     });
   } catch (error) {
