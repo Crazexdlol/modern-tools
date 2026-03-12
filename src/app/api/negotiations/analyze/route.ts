@@ -5,12 +5,19 @@ const client = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
 });
 
+async function extractTextFromPDF(buffer: Buffer): Promise<string> {
+  const { extractText: extract } = await import("unpdf");
+  const result = await extract(new Uint8Array(buffer), { mergePages: true });
+  return typeof result.text === "string"
+    ? result.text
+    : (result.text as string[]).join("\n");
+}
+
 async function extractText(file: File): Promise<string> {
   const buffer = Buffer.from(await file.arrayBuffer());
   const type = file.type.toLowerCase();
 
   if (type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf")) {
-    const { extractTextFromPDF } = await import("@/lib/pdf-extractor");
     return extractTextFromPDF(buffer);
   }
   if (type.startsWith("image/")) {
