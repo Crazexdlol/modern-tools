@@ -194,34 +194,35 @@ export default function NegotiationsPage() {
         body: formData,
       });
 
-      if (!res.ok) {
-        let errorMsg = `Analysis failed (${res.status})`;
-        try {
-          const text = await res.text();
-          const parsed = JSON.parse(text.trim());
-          if (parsed.error) errorMsg = parsed.error;
-        } catch {
-          // Response wasn't JSON
-        }
-        throw new Error(errorMsg);
+      if (!res.ok || !res.body) {
+        throw new Error(`Analysis failed (${res.status})`);
       }
 
-      // Read SSE stream — wait for the "done" event with final JSON
-      const reader = res.body!.getReader();
+      // Read SSE stream chunk by chunk
+      const reader = res.body.getReader();
       const decoder = new TextDecoder();
-      let buffer = "";
+      let fullBuffer = "";
 
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
-        buffer += decoder.decode(value, { stream: true });
+        fullBuffer += decoder.decode(value, { stream: true });
       }
 
-      // Parse the last "done" event data from the SSE stream
-      const doneMatch = buffer.match(/event: done\ndata: (.+)\n/);
-      if (!doneMatch) throw new Error("No result received from server");
+      // Find the JSON payload after the last "event: done" line
+      // Handle both \n and \r\n line endings
+      const lines = fullBuffer.split(/\r?\n/);
+      let jsonPayload: string | null = null;
+      for (let i = lines.length - 1; i >= 0; i--) {
+        if (lines[i].startsWith("data: ") && lines[i] !== "data: {}") {
+          jsonPayload = lines[i].slice(6);
+          break;
+        }
+      }
 
-      const data = JSON.parse(doneMatch[1]);
+      if (!jsonPayload) throw new Error("No result received — please try again");
+
+      const data = JSON.parse(jsonPayload);
       if (data.error) throw new Error(data.error);
       setResult(data.result);
     } catch (err) {
