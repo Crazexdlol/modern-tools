@@ -17,7 +17,6 @@ async function extractText(file: File): Promise<string> {
   if (type.startsWith("image/")) {
     return extractTextFromImage(buffer);
   }
-  // Try as plain text
   return buffer.toString("utf-8");
 }
 
@@ -42,148 +41,112 @@ Always respond with valid JSON only. No markdown, no explanation outside the JSO
 export async function POST(request: NextRequest) {
   try {
     const formData = await request.formData();
-    const mode = formData.get("mode") as string; // "email" | "document" | "email-chain"
     const context = formData.get("context") as string | null;
-    const content = formData.get("content") as string | null; // pasted text
-    const files = formData.getAll("files") as File[];
+    const emailText = formData.get("emailText") as string | null;
+    const emailChainFiles = formData.getAll("emailChain") as File[];
+    const documentFiles = formData.getAll("documents") as File[];
 
-    // Extract text from files if provided
-    let extractedTexts: { name: string; text: string }[] = [];
-    if (files.length > 0) {
-      extractedTexts = await Promise.all(
-        files.map(async (file) => ({
-          name: file.name,
-          text: await extractText(file),
-        }))
-      );
+    // Build content sections
+    const sections: string[] = [];
+
+    // 1. Pasted email text
+    if (emailText?.trim()) {
+      sections.push(`=== PASTED EMAIL / TEXT ===\n${emailText.trim()}`);
     }
 
-    const allContent = [
-      content ? `PASTED CONTENT:\n${content}` : "",
-      ...extractedTexts.map((f) => `FILE: ${f.name}\n${f.text}`),
-    ]
-      .filter(Boolean)
-      .join("\n\n---\n\n");
+    // 2. Email chain files
+    if (emailChainFiles.length > 0) {
+      const chainTexts = await Promise.all(
+        emailChainFiles.map(async (f) => {
+          const text = await extractText(f);
+          return `[${f.name}]\n${text}`;
+        })
+      );
+      sections.push(`=== EMAIL CHAIN ===\n${chainTexts.join("\n\n")}`);
+    }
 
-    if (!allContent.trim()) {
+    // 3. Claim documents
+    if (documentFiles.length > 0) {
+      const docTexts = await Promise.all(
+        documentFiles.map(async (f) => {
+          const text = await extractText(f);
+          return `[${f.name}]\n${text}`;
+        })
+      );
+      sections.push(`=== CLAIM DOCUMENTS ===\n${docTexts.join("\n\n---\n\n")}`);
+    }
+
+    if (sections.length === 0) {
       return NextResponse.json(
         { error: "No content provided to analyze" },
         { status: 400 }
       );
     }
 
-    let userPrompt = "";
+    const hasEmail = !!(emailText?.trim()) || emailChainFiles.length > 0;
+    const hasDocs = documentFiles.length > 0;
 
-    if (mode === "email") {
-      userPrompt = `Analyze this email from the insurance company's appraiser (IA) and help me craft a strong response.
+    const userPrompt = `Analyze everything I've provided and give me a comprehensive negotiation strategy. I may have provided some or all of: a pasted email/text from the IA, an email chain (PDF/image), and claim documents (invoices, comps, reports, etc.). Use ALL available information together to build the strongest possible position.
 
-${context ? `NEGOTIATION CONTEXT:\n${context}\n\n` : ""}EMAIL CONTENT:
-${allContent}
+${context ? `NEGOTIATION CONTEXT:\n${context}\n\n` : ""}${sections.join("\n\n")}
 
-Return a JSON object with this exact structure:
+Return a JSON object with this exact structure. Include ALL sections — if a section isn't applicable based on what was provided, use an empty array or null:
 {
-  "analysis": {
-    "theirPosition": "Summary of the IA's position and what they're arguing",
-    "theirValue": "The value or position they're pushing for (if mentioned)",
-    "tone": "Assessment of their tone (aggressive, cooperative, dismissive, etc.)",
-    "confidence": "How confident they seem in their position (high/medium/low)"
+  "overview": {
+    "situationSummary": "Brief summary of the negotiation situation based on everything provided",
+    "theirPosition": "The IA's position, value, or argument (from emails/documents)",
+    "theirValue": "Dollar amount they're pushing if mentioned, or null",
+    "currentStage": "Where the negotiation stands (early, mid, near resolution, stalled, etc.)",
+    "tone": "Assessment of the IA's tone (aggressive, cooperative, dismissive, etc.)"
   },
+  ${hasEmail ? `"emailAnalysis": {
+    "timeline": [
+      {
+        "from": "Us or IA",
+        "date": "date if available",
+        "keyPoints": ["main points made"],
+        "movementOrConcession": "any movement in position"
+      }
+    ],
+    "patterns": ["Patterns in IA behavior (stalling, anchoring, cherry-picking, etc.)"]
+  },` : `"emailAnalysis": null,`}
+  ${hasDocs ? `"documentCritique": [
+    {
+      "document": "which document this is about",
+      "documentType": "ACV report, estimate, comp sheet, invoice, etc.",
+      "issues": [
+        {
+          "issue": "specific problem or questionable item",
+          "severity": "high | medium | low",
+          "explanation": "why this is problematic",
+          "counterPoint": "how to argue against it"
+        }
+      ],
+      "missingItems": ["things that should be in the document but aren't"],
+      "favorableItems": ["items that actually support OUR position"]
+    }
+  ],` : `"documentCritique": null,`}
   "weaknesses": [
     {
-      "point": "A specific weak point in their argument",
+      "point": "A specific weakness in the IA's overall position",
       "explanation": "Why this is weak",
-      "counterArgument": "How to counter this specific point"
+      "counterArgument": "How to counter this"
     }
   ],
   "strengths": [
     {
-      "point": "A strong point they made that we need to address carefully",
-      "strategy": "How to handle or neutralize this point"
+      "point": "A strong point they have that we need to address",
+      "strategy": "How to handle or neutralize it"
     }
   ],
-  "negotiationTips": [
-    "Specific tactical advice for this negotiation"
-  ],
-  "suggestedResponse": "A complete, professional email response that addresses their points, presents counter-arguments, and advances our position. Write this as a ready-to-send email.",
-  "keyDataToGather": [
-    "Specific data, comps, or evidence that would strengthen our position"
-  ]
-}`;
-    } else if (mode === "email-chain") {
-      userPrompt = `Analyze this email chain between me (the independent appraiser) and the insurance company's appraiser (IA). Track the full negotiation progression and help me with next steps.
-
-${context ? `NEGOTIATION CONTEXT:\n${context}\n\n` : ""}EMAIL CHAIN:
-${allContent}
-
-Return a JSON object with this exact structure:
-{
-  "analysis": {
-    "negotiationSummary": "Overview of how the negotiation has progressed",
-    "currentStage": "Where we are in the negotiation (early, mid, near resolution, stalled, etc.)",
-    "ourPosition": "Summary of our stated position through the chain",
-    "theirPosition": "Summary of the IA's stated position through the chain",
-    "gapRemaining": "The gap between positions (dollar amount or description)"
+  "negotiationStrategy": {
+    "approach": "Overall recommended negotiation approach",
+    "tips": ["Specific tactical advice"],
+    "keyDataToGather": ["Evidence or data that would strengthen our position"],
+    "leveragePoints": ["Specific leverage we can use from the provided materials"]
   },
-  "timeline": [
-    {
-      "from": "who sent this email (Us/IA)",
-      "date": "date if available",
-      "keyPoints": ["main points made in this email"],
-      "movementOrConcession": "any movement in position or concession made"
-    }
-  ],
-  "weaknesses": [
-    {
-      "point": "A weakness in the IA's overall position across the chain",
-      "explanation": "Why this is weak",
-      "counterArgument": "How to exploit this"
-    }
-  ],
-  "patterns": [
-    "Patterns in the IA's negotiation behavior (stalling, anchoring, cherry-picking, etc.)"
-  ],
-  "negotiationTips": [
-    "Specific tactical advice for the next move"
-  ],
-  "suggestedResponse": "A complete, professional email response for the next step in this negotiation. Build on the chain history and advance our position strategically.",
-  "keyDataToGather": [
-    "Specific evidence or data that would help close the gap"
-  ]
+  "suggestedResponse": "A complete, professional email response ready to send. Address their points, present counter-arguments, reference documents where applicable, and advance our position strategically. If no email was provided, write a proactive email based on the document analysis."
 }`;
-    } else {
-      // document mode
-      userPrompt = `Analyze this document from the insurance company's appraiser (IA) and provide a thorough critique from our perspective as the independent appraiser.
-
-${context ? `NEGOTIATION CONTEXT:\n${context}\n\n` : ""}DOCUMENT:
-${allContent}
-
-Return a JSON object with this exact structure:
-{
-  "documentType": "What type of document this is (ACV report, repair estimate, comp analysis, invoice, valuation report, etc.)",
-  "summary": "Brief summary of what this document contains and its purpose",
-  "critique": [
-    {
-      "issue": "A specific problem, error, or questionable item in the document",
-      "severity": "high | medium | low",
-      "explanation": "Detailed explanation of why this is problematic",
-      "counterPoint": "How to argue against this specific item",
-      "evidence": "What evidence or data would support our counter-argument"
-    }
-  ],
-  "missingItems": [
-    "Things that should be in this document but are missing or omitted"
-  ],
-  "favorableItems": [
-    "Items in the document that actually support OUR position"
-  ],
-  "negotiationLeverage": [
-    "How to use findings from this document in negotiations"
-  ],
-  "suggestedActions": [
-    "Specific next steps to take based on this document analysis"
-  ]
-}`;
-    }
 
     const stream = await client.beta.messages.stream({
       model: "claude-sonnet-4-6",
@@ -212,7 +175,7 @@ Return a JSON object with this exact structure:
       );
     }
 
-    return NextResponse.json({ result, mode });
+    return NextResponse.json({ result });
   } catch (error) {
     console.error("Negotiations analyze error:", error);
     return NextResponse.json(
