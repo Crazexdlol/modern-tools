@@ -38,13 +38,29 @@ Always be strategic, professional, and assertive. Identify every weakness in the
 
 Always respond with valid JSON only. No markdown, no explanation outside the JSON.`;
 
+export const maxDuration = 60;
+
 export async function POST(request: NextRequest) {
   try {
-    const formData = await request.formData();
+    let formData: FormData;
+    try {
+      formData = await request.formData();
+    } catch (err) {
+      console.error("FormData parse error:", err);
+      return NextResponse.json(
+        { error: "Failed to parse form data" },
+        { status: 400 }
+      );
+    }
+
     const context = formData.get("context") as string | null;
     const emailText = formData.get("emailText") as string | null;
-    const emailChainFiles = formData.getAll("emailChain") as File[];
-    const documentFiles = formData.getAll("documents") as File[];
+    const emailChainFiles = (formData.getAll("emailChain") || []).filter(
+      (f): f is File => f instanceof File && f.size > 0
+    );
+    const documentFiles = (formData.getAll("documents") || []).filter(
+      (f): f is File => f instanceof File && f.size > 0
+    );
 
     // Build content sections
     const sections: string[] = [];
@@ -56,24 +72,40 @@ export async function POST(request: NextRequest) {
 
     // 2. Email chain files
     if (emailChainFiles.length > 0) {
-      const chainTexts = await Promise.all(
-        emailChainFiles.map(async (f) => {
-          const text = await extractText(f);
-          return `[${f.name}]\n${text}`;
-        })
-      );
-      sections.push(`=== EMAIL CHAIN ===\n${chainTexts.join("\n\n")}`);
+      try {
+        const chainTexts = await Promise.all(
+          emailChainFiles.map(async (f) => {
+            const text = await extractText(f);
+            return `[${f.name}]\n${text}`;
+          })
+        );
+        sections.push(`=== EMAIL CHAIN ===\n${chainTexts.join("\n\n")}`);
+      } catch (err) {
+        console.error("Email chain extraction error:", err);
+        return NextResponse.json(
+          { error: `Failed to extract text from email chain: ${err instanceof Error ? err.message : "Unknown error"}` },
+          { status: 500 }
+        );
+      }
     }
 
     // 3. Claim documents
     if (documentFiles.length > 0) {
-      const docTexts = await Promise.all(
-        documentFiles.map(async (f) => {
-          const text = await extractText(f);
-          return `[${f.name}]\n${text}`;
-        })
-      );
-      sections.push(`=== CLAIM DOCUMENTS ===\n${docTexts.join("\n\n---\n\n")}`);
+      try {
+        const docTexts = await Promise.all(
+          documentFiles.map(async (f) => {
+            const text = await extractText(f);
+            return `[${f.name}]\n${text}`;
+          })
+        );
+        sections.push(`=== CLAIM DOCUMENTS ===\n${docTexts.join("\n\n---\n\n")}`);
+      } catch (err) {
+        console.error("Document extraction error:", err);
+        return NextResponse.json(
+          { error: `Failed to extract text from documents: ${err instanceof Error ? err.message : "Unknown error"}` },
+          { status: 500 }
+        );
+      }
     }
 
     if (sections.length === 0) {
