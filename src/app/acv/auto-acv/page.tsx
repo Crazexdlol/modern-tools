@@ -1045,7 +1045,9 @@ function AutoProcessStep({
         // Step 5: Calculate final ACV
         // Build final notes
         const radiusDesc = radiusUsed === 0 ? 'nationwide' : `within a ${radiusUsed}-mile radius`
-        const autoNotes = `Based on the information provided, I have attached the recommended ACV on this vehicle. This report was generated using ${listings.length} available comparables ${radiusDesc}, with an average market value of ${formatCurrency(overallAvg)}. The subject vehicle's ACV has been established at ${formatCurrency(calculateACV(top3, adjustments).acv)}.`
+        const top3Avg = (top3[0].compValue + top3[1].compValue + top3[2].compValue) / 3
+        const finalAcvPreview = calculateACV(top3, adjustments)
+        const autoNotes = `Based on the information provided, I have attached the recommended ACV on this vehicle. This report was generated using 3 comparable vehicles selected from ${listings.length} available listings ${radiusDesc}. The average adjusted value of the selected comparables is ${formatCurrency(top3Avg)}, and the subject vehicle's ACV has been established at ${formatCurrency(finalAcvPreview.acv)}.`
 
         const finalAdj: ACVAdjustments = { ...adjustments, notes: autoNotes }
         const finalResult = calculateACV(top3, finalAdj)
