@@ -211,6 +211,9 @@ function SearchParametersPanel({
         make: data.make ?? claim.make,
         model: data.model ?? claim.model,
         trim: data.trim ?? claim.trim,
+        engine: data.engine ?? claim.engine,
+        drivetrain: data.drivetrain ?? claim.drivetrain,
+        transmission: data.transmission ?? claim.transmission,
       })
     } catch (err) {
       setDecodeError(err instanceof Error ? err.message : 'VIN decode failed')
@@ -647,42 +650,51 @@ function AdjustmentsForm({
           <CardTitle className="text-gray-900 text-sm">Report Adjustments</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className={labelCls}>Vehicle History Note</label>
-              <input className={inputCls} placeholder="e.g. Clean title" value={adjustments.vehicleHistoryNote} onChange={(e) => onAdjChange({ ...adjustments, vehicleHistoryNote: e.target.value })} />
-            </div>
-            <div>
-              <label className={labelCls}>Vehicle History ($)</label>
-              <input type="number" className={inputCls} placeholder="0" value={adjustments.vehicleHistory || ''} onChange={(e) => onAdjChange({ ...adjustments, vehicleHistory: parseFloat(e.target.value) || 0 })} />
-            </div>
-            <div>
-              <label className={labelCls}>Prior Damages Note</label>
-              <input className={inputCls} placeholder="e.g. No prior damage" value={adjustments.priorDamagesNote} onChange={(e) => onAdjChange({ ...adjustments, priorDamagesNote: e.target.value })} />
-            </div>
-            <div>
-              <label className={labelCls}>Prior Damages ($)</label>
-              <input type="number" className={inputCls} placeholder="0" value={adjustments.priorDamages || ''} onChange={(e) => onAdjChange({ ...adjustments, priorDamages: parseFloat(e.target.value) || 0 })} />
-            </div>
-            <div>
-              <label className={labelCls}>Additions Note</label>
-              <input className={inputCls} placeholder="e.g. Aftermarket rims" value={adjustments.additionsNote} onChange={(e) => onAdjChange({ ...adjustments, additionsNote: e.target.value })} />
-            </div>
-            <div>
-              <label className={labelCls}>Additions ($)</label>
-              <input type="number" className={inputCls} placeholder="0" value={adjustments.additions || ''} onChange={(e) => onAdjChange({ ...adjustments, additions: parseFloat(e.target.value) || 0 })} />
-            </div>
-            <div>
-              <label className={labelCls}>Deductions Note</label>
-              <input className={inputCls} placeholder="Dealer Vs. Private ($500.00)" value={adjustments.deductionsNote} onChange={(e) => onAdjChange({ ...adjustments, deductionsNote: e.target.value })} />
-            </div>
-            <div>
-              <label className={labelCls}>Deductions ($)</label>
-              <input type="number" className={inputCls} placeholder="-500" value={adjustments.deductions || ''} onChange={(e) => onAdjChange({ ...adjustments, deductions: parseFloat(e.target.value) || 0 })} />
-            </div>
-            <div>
-              <label className={labelCls}>Tax Rate (%)</label>
-              <input type="number" step="0.01" className={inputCls} placeholder="0.00" value={adjustments.taxRate || ''} onChange={(e) => onAdjChange({ ...adjustments, taxRate: parseFloat(e.target.value) || 0 })} />
+          <div className="space-y-3">
+            {[
+              { label: 'Vehicle History', noteKey: 'vehicleHistoryNote' as const, valKey: 'vehicleHistory' as const, placeholder: 'e.g. Clean title' },
+              { label: 'Prior Damages', noteKey: 'priorDamagesNote' as const, valKey: 'priorDamages' as const, placeholder: 'e.g. No prior damage' },
+              { label: 'Additions', noteKey: 'additionsNote' as const, valKey: 'additions' as const, placeholder: 'e.g. Aftermarket rims' },
+              { label: 'Deductions', noteKey: 'deductionsNote' as const, valKey: 'deductions' as const, placeholder: 'Dealer Vs. Private ($500.00)' },
+            ].map((row) => (
+              <div key={row.label} className="flex items-center gap-3">
+                <span className="w-28 shrink-0 text-xs font-medium text-gray-500">{row.label}</span>
+                <input
+                  className={`${inputCls} flex-1`}
+                  placeholder={row.placeholder}
+                  value={adjustments[row.noteKey]}
+                  onChange={(e) => onAdjChange({ ...adjustments, [row.noteKey]: e.target.value })}
+                />
+                <div className="relative w-28 shrink-0">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-gray-400">$</span>
+                  <input
+                    type="number"
+                    className={`${inputCls} pl-7 text-right`}
+                    placeholder="0"
+                    value={adjustments[row.valKey] || ''}
+                    onChange={(e) =>
+                      onAdjChange({ ...adjustments, [row.valKey]: parseFloat(e.target.value) || 0 })
+                    }
+                  />
+                </div>
+              </div>
+            ))}
+            <div className="flex items-center gap-3">
+              <span className="w-28 shrink-0 text-xs font-medium text-gray-500">Tax Rate</span>
+              <div className="flex-1" />
+              <div className="relative w-28 shrink-0">
+                <input
+                  type="number"
+                  step="0.01"
+                  className={`${inputCls} text-right`}
+                  placeholder="0.00"
+                  value={adjustments.taxRate || ''}
+                  onChange={(e) =>
+                    onAdjChange({ ...adjustments, taxRate: parseFloat(e.target.value) || 0 })
+                  }
+                />
+                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-gray-400">%</span>
+              </div>
             </div>
           </div>
 
@@ -968,6 +980,9 @@ function defaultClaim(): ClaimInfo {
     make: '',
     model: '',
     trim: '',
+    engine: '',
+    drivetrain: '',
+    transmission: '',
     mileage: 0,
     zip: '',
     radius: 200,

@@ -18,9 +18,10 @@ export async function GET(request: NextRequest) {
       make: data.make,
       model: data.model,
       trim: data.trim,
-      engine: data.engine,
-      drivetrain: data.drivetrain,
-      bodyStyle: data.body_style,
+      engine: data.engine || '',
+      drivetrain: data.drivetrain || '',
+      transmission: data.transmission || '',
+      bodyStyle: data.body_style || '',
     })
   } catch (err) {
     return NextResponse.json(

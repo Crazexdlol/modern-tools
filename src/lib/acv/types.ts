@@ -16,6 +16,9 @@ export interface ClaimInfo {
   make: string
   model: string
   trim: string
+  engine: string
+  drivetrain: string
+  transmission: string
   mileage: number
   zip: string
   radius: number

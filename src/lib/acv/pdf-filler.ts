@@ -50,7 +50,14 @@ export async function fillACVPdf(
   form.acroForm.dict.set(PDFName.of('NeedAppearances'), PDFBool.True)
 
   const today = new Date().toLocaleDateString('en-US')
-  const vehicleStr = `${claim.year} ${claim.make} ${claim.model}`
+  const vehicleParts = [
+    `${claim.year} ${claim.make} ${claim.model}`,
+    claim.trim,
+    claim.engine,
+    claim.drivetrain,
+    claim.transmission,
+  ].filter(Boolean)
+  const vehicleStr = vehicleParts.join(' | ')
 
   // Header
   setField(form, 'Modern file #', claim.maNumber)
