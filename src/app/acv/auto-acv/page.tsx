@@ -850,18 +850,42 @@ function AutoProcessStep({
 
   const searchAtRadius = async (radius: number): Promise<MarketComp[]> => {
     const isNationwide = radius === 0
-    const params = new URLSearchParams({
+    const baseParams = {
       year: String(claim.year),
       make: claim.make,
-      model: claim.model,
       radius: String(radius),
       ...(isNationwide ? { nationwide: 'true' } : { zip: claim.zip }),
+    }
+
+    // Try with trim as separate param first
+    const params = new URLSearchParams({
+      ...baseParams,
+      model: claim.model,
       ...(claim.trim ? { trim: claim.trim } : {}),
     })
     const res = await fetch(`/api/acv/search-comps?${params}`)
     if (!res.ok) return []
     const data = await res.json()
-    return data.listings ?? []
+    let results: MarketComp[] = data.listings ?? []
+
+    // If trim provided but results are sparse or wrong trims, retry with trim in model name
+    // e.g. model="RC" trim="F" → model="RC F" (common in MarketCheck for performance trims)
+    if (claim.trim && results.length < 3) {
+      const altParams = new URLSearchParams({
+        ...baseParams,
+        model: `${claim.model} ${claim.trim}`,
+      })
+      const altRes = await fetch(`/api/acv/search-comps?${altParams}`)
+      if (altRes.ok) {
+        const altData = await altRes.json()
+        const altResults: MarketComp[] = altData.listings ?? []
+        if (altResults.length > results.length) {
+          results = altResults
+        }
+      }
+    }
+
+    return results
   }
 
   useEffect(() => {
@@ -933,12 +957,23 @@ function AutoProcessStep({
 
         // Filter by trim: prefer exact trim matches, fall back to all if < 3
         if (claim.trim) {
-          const trimLower = claim.trim.toLowerCase()
-          const trimMatched = listings.filter((l) =>
-            (l.trim as string || '').toLowerCase().includes(trimLower)
+          const trimLower = claim.trim.toLowerCase().trim()
+          // Try exact match first, then word-boundary match
+          const exactMatch = listings.filter((l) =>
+            (l.trim as string || '').toLowerCase().trim() === trimLower
           )
-          if (trimMatched.length >= 3) {
-            listings = trimMatched
+          if (exactMatch.length >= 3) {
+            listings = exactMatch
+          } else {
+            // Word-boundary match: split into words so "F" doesn't match "200t F Sport"
+            const trimWords = trimLower.split(/\s+/)
+            const wordMatch = listings.filter((l) => {
+              const compTrimWords = (l.trim as string || '').toLowerCase().trim().split(/\s+/)
+              return trimWords.every((tw) => compTrimWords.includes(tw))
+            })
+            if (wordMatch.length >= 3) {
+              listings = wordMatch
+            }
           }
         }
 
