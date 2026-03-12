@@ -197,15 +197,20 @@ export default function NegotiationsPage() {
       if (!res.ok) {
         let errorMsg = `Analysis failed (${res.status})`;
         try {
-          const data = await res.json();
+          const text = await res.text();
+          const data = JSON.parse(text.trim());
           if (data.error) errorMsg = data.error;
         } catch {
-          // Response wasn't JSON (e.g. HTML error page)
+          // Response wasn't JSON
         }
         throw new Error(errorMsg);
       }
 
-      const data = await res.json();
+      // Response is streamed: spaces (keepalive) followed by JSON
+      const rawText = await res.text();
+      const jsonStr = rawText.trim();
+      const data = JSON.parse(jsonStr);
+      if (data.error) throw new Error(data.error);
       setResult(data.result);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong");

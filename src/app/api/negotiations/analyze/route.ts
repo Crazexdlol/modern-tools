@@ -187,34 +187,56 @@ Return a JSON object with this exact structure. Include ALL sections — if a se
   "suggestedResponse": "A complete, professional email response ready to send. Address their points, present counter-arguments, reference documents where applicable, and advance our position strategically. If no email was provided, write a proactive email based on the document analysis."
 }`;
 
-    const stream = await client.beta.messages.stream({
+    // Stream response to keep connection alive (avoids Vercel 60s timeout)
+    const anthropicStream = client.messages.stream({
       model: "claude-sonnet-4-6",
-      max_tokens: 64000,
-      betas: ["output-128k-2025-02-19"],
+      max_tokens: 16000,
       messages: [{ role: "user", content: userPrompt }],
       system: systemPrompt,
     });
 
-    const message = await stream.finalMessage();
-    const responseText =
-      message.content[0].type === "text" ? message.content[0].text : "";
+    const encoder = new TextEncoder();
+    const readable = new ReadableStream({
+      async start(controller) {
+        try {
+          let fullText = "";
+          for await (const event of anthropicStream) {
+            if (
+              event.type === "content_block_delta" &&
+              event.delta.type === "text_delta"
+            ) {
+              fullText += event.delta.text;
+              // Send a keepalive chunk so the connection doesn't timeout
+              controller.enqueue(encoder.encode(" "));
+            }
+          }
 
-    let result;
-    try {
-      const cleaned = responseText
-        .replace(/```json\n?/g, "")
-        .replace(/```\n?/g, "")
-        .trim();
-      result = JSON.parse(cleaned);
-    } catch {
-      console.error("Parse error, raw response:", responseText);
-      return NextResponse.json(
-        { error: "Failed to parse AI response" },
-        { status: 500 }
-      );
-    }
+          // Parse and send the final result
+          const cleaned = fullText
+            .replace(/```json\n?/g, "")
+            .replace(/```\n?/g, "")
+            .trim();
+          const result = JSON.parse(cleaned);
+          controller.enqueue(
+            encoder.encode(JSON.stringify({ result }))
+          );
+          controller.close();
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : "Unknown error";
+          controller.enqueue(
+            encoder.encode(JSON.stringify({ error: msg }))
+          );
+          controller.close();
+        }
+      },
+    });
 
-    return NextResponse.json({ result });
+    return new Response(readable, {
+      headers: {
+        "Content-Type": "application/json",
+        "Transfer-Encoding": "chunked",
+      },
+    });
   } catch (error) {
     console.error("Negotiations analyze error:", error);
     return NextResponse.json(
