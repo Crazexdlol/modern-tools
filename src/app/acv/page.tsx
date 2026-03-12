@@ -81,6 +81,7 @@ export default function ACVPage() {
             <Link href="/estimate-dispute" className="text-sm font-medium text-gray-400 hover:text-white transition-colors">Estimate Dispute</Link>
             <Link href="/acv" className="text-sm font-medium text-white">ACV</Link>
             <Link href="/rules-laws" className="text-sm font-medium text-gray-400 hover:text-white transition-colors">Rules / Laws</Link>
+            <Link href="/negotiations" className="text-sm font-medium text-gray-400 hover:text-white transition-colors">Negotiations</Link>
           </nav>
         </div>
       </header>

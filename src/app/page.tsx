@@ -27,6 +27,14 @@ const apps = [
     accentColor: "border-l-amber-500 hover:border-l-amber-600",
   },
   {
+    id: "negotiations",
+    title: "Negotiations",
+    description: "Email analysis & negotiation strategy",
+    href: "/negotiations",
+    status: "active" as const,
+    accentColor: "border-l-orange-500 hover:border-l-orange-600",
+  },
+  {
     id: "dv",
     title: "DV",
     description: "Diminished value claims",
@@ -46,6 +54,7 @@ export default function Dashboard() {
             <Link href="/estimate-dispute" className="text-sm font-medium text-gray-400 hover:text-white transition-colors">Estimate Dispute</Link>
             <Link href="/acv" className="text-sm font-medium text-gray-400 hover:text-white transition-colors">ACV</Link>
             <Link href="/rules-laws" className="text-sm font-medium text-gray-400 hover:text-white transition-colors">Rules / Laws</Link>
+            <Link href="/negotiations" className="text-sm font-medium text-gray-400 hover:text-white transition-colors">Negotiations</Link>
           </nav>
         </div>
       </header>
