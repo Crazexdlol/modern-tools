@@ -194,36 +194,16 @@ export default function NegotiationsPage() {
         body: formData,
       });
 
-      if (!res.ok || !res.body) {
-        throw new Error(`Analysis failed (${res.status})`);
+      const text = await res.text();
+      let data;
+      try {
+        data = JSON.parse(text);
+      } catch {
+        throw new Error(`Server error (${res.status}) — please try again`);
       }
 
-      // Read SSE stream chunk by chunk
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let fullBuffer = "";
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        fullBuffer += decoder.decode(value, { stream: true });
-      }
-
-      // Find the JSON payload after the last "event: done" line
-      // Handle both \n and \r\n line endings
-      const lines = fullBuffer.split(/\r?\n/);
-      let jsonPayload: string | null = null;
-      for (let i = lines.length - 1; i >= 0; i--) {
-        if (lines[i].startsWith("data: ") && lines[i] !== "data: {}") {
-          jsonPayload = lines[i].slice(6);
-          break;
-        }
-      }
-
-      if (!jsonPayload) throw new Error("No result received — please try again");
-
-      const data = JSON.parse(jsonPayload);
       if (data.error) throw new Error(data.error);
+      if (!data.result) throw new Error("No result received");
       setResult(data.result);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong");

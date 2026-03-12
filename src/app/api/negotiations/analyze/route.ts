@@ -125,116 +125,61 @@ export async function POST(request: NextRequest) {
     const hasEmail = !!(emailText?.trim()) || emailChainFiles.length > 0;
     const hasDocs = documentFiles.length > 0;
 
-    const userPrompt = `Analyze everything I've provided and give me a comprehensive negotiation strategy. I may have provided some or all of: a pasted email/text from the IA, an email chain (PDF/image), and claim documents (invoices, comps, reports, etc.). Use ALL available information together to build the strongest possible position.
+    const userPrompt = `Analyze the provided materials and give a negotiation strategy. Be CONCISE — each field should be 1-3 sentences max. Limit arrays to 3-5 items. The suggestedResponse should be a professional but brief email (under 300 words).
 
-${context ? `NEGOTIATION CONTEXT:\n${context}\n\n` : ""}${sections.join("\n\n")}
+${context ? `CONTEXT:\n${context}\n\n` : ""}${sections.join("\n\n")}
 
-Return a JSON object with this exact structure. Include ALL sections — if a section isn't applicable based on what was provided, use an empty array or null:
+Return JSON with this structure. Use null for sections without applicable data:
 {
   "overview": {
-    "situationSummary": "Brief summary of the negotiation situation based on everything provided",
-    "theirPosition": "The IA's position, value, or argument (from emails/documents)",
-    "theirValue": "Dollar amount they're pushing if mentioned, or null",
-    "currentStage": "Where the negotiation stands (early, mid, near resolution, stalled, etc.)",
-    "tone": "Assessment of the IA's tone (aggressive, cooperative, dismissive, etc.)"
+    "situationSummary": "1-2 sentence summary",
+    "theirPosition": "their argument",
+    "theirValue": "$amount or null",
+    "currentStage": "early/mid/near resolution/stalled",
+    "tone": "aggressive/cooperative/dismissive/etc"
   },
   ${hasEmail ? `"emailAnalysis": {
-    "timeline": [
-      {
-        "from": "Us or IA",
-        "date": "date if available",
-        "keyPoints": ["main points made"],
-        "movementOrConcession": "any movement in position"
-      }
-    ],
-    "patterns": ["Patterns in IA behavior (stalling, anchoring, cherry-picking, etc.)"]
+    "timeline": [{"from": "Us or IA", "date": "date or null", "keyPoints": ["point"], "movementOrConcession": "movement or null"}],
+    "patterns": ["pattern"]
   },` : `"emailAnalysis": null,`}
-  ${hasDocs ? `"documentCritique": [
-    {
-      "document": "which document this is about",
-      "documentType": "ACV report, estimate, comp sheet, invoice, etc.",
-      "issues": [
-        {
-          "issue": "specific problem or questionable item",
-          "severity": "high | medium | low",
-          "explanation": "why this is problematic",
-          "counterPoint": "how to argue against it"
-        }
-      ],
-      "missingItems": ["things that should be in the document but aren't"],
-      "favorableItems": ["items that actually support OUR position"]
-    }
-  ],` : `"documentCritique": null,`}
-  "weaknesses": [
-    {
-      "point": "A specific weakness in the IA's overall position",
-      "explanation": "Why this is weak",
-      "counterArgument": "How to counter this"
-    }
-  ],
-  "strengths": [
-    {
-      "point": "A strong point they have that we need to address",
-      "strategy": "How to handle or neutralize it"
-    }
-  ],
+  ${hasDocs ? `"documentCritique": [{"document": "name", "documentType": "type", "issues": [{"issue": "problem", "severity": "high/medium/low", "explanation": "why", "counterPoint": "counter"}], "missingItems": ["missing"], "favorableItems": ["favorable"]}],` : `"documentCritique": null,`}
+  "weaknesses": [{"point": "weakness", "explanation": "why weak", "counterArgument": "counter"}],
+  "strengths": [{"point": "their strong point", "strategy": "how to handle"}],
   "negotiationStrategy": {
-    "approach": "Overall recommended negotiation approach",
-    "tips": ["Specific tactical advice"],
-    "keyDataToGather": ["Evidence or data that would strengthen our position"],
-    "leveragePoints": ["Specific leverage we can use from the provided materials"]
+    "approach": "recommended approach",
+    "tips": ["tip"],
+    "keyDataToGather": ["data needed"],
+    "leveragePoints": ["leverage"]
   },
-  "suggestedResponse": "A complete, professional email response ready to send. Address their points, present counter-arguments, reference documents where applicable, and advance our position strategically. If no email was provided, write a proactive email based on the document analysis."
+  "suggestedResponse": "Professional email response under 300 words"
 }`;
 
-    // Use SSE to stream keepalives, then send final JSON result
-    const anthropicStream = client.messages.stream({
-      model: "claude-sonnet-4-6",
-      max_tokens: 16000,
+    const message = await client.messages.create({
+      model: "claude-haiku-4-5-20251001",
+      max_tokens: 4000,
       messages: [{ role: "user", content: userPrompt }],
       system: systemPrompt,
     });
 
-    const encoder = new TextEncoder();
-    const readable = new ReadableStream({
-      async start(controller) {
-        const send = (event: string, data: string) => {
-          controller.enqueue(encoder.encode(`event: ${event}\ndata: ${data}\n\n`));
-        };
+    const responseText =
+      message.content[0].type === "text" ? message.content[0].text : "";
 
-        try {
-          let fullText = "";
-          for await (const event of anthropicStream) {
-            if (
-              event.type === "content_block_delta" &&
-              event.delta.type === "text_delta"
-            ) {
-              fullText += event.delta.text;
-              send("ping", "{}");
-            }
-          }
+    let result;
+    try {
+      const cleaned = responseText
+        .replace(/```json\n?/g, "")
+        .replace(/```\n?/g, "")
+        .trim();
+      result = JSON.parse(cleaned);
+    } catch {
+      console.error("Parse error, raw response:", responseText);
+      return NextResponse.json(
+        { error: "Failed to parse AI response" },
+        { status: 500 }
+      );
+    }
 
-          const cleaned = fullText
-            .replace(/```json\n?/g, "")
-            .replace(/```\n?/g, "")
-            .trim();
-          const result = JSON.parse(cleaned);
-          send("done", JSON.stringify({ result }));
-        } catch (err) {
-          const msg = err instanceof Error ? err.message : "Unknown error";
-          send("done", JSON.stringify({ error: msg }));
-        }
-        controller.close();
-      },
-    });
-
-    return new Response(readable, {
-      headers: {
-        "Content-Type": "text/event-stream",
-        "Cache-Control": "no-cache",
-        Connection: "keep-alive",
-      },
-    });
+    return NextResponse.json({ result });
   } catch (error) {
     console.error("Negotiations analyze error:", error);
     return NextResponse.json(
