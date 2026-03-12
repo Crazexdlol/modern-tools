@@ -31,6 +31,7 @@ import {
   calculateCompValue,
   defaultAdjustments,
   formatCurrency,
+  getMileageRate,
 } from '@/lib/acv/calculations'
 
 const HISTORY_KEY = 'modern-tools-acv-history'
@@ -1003,12 +1004,11 @@ function AutoProcessStep({
         )
 
         // Step 4: Calculate comp values, find average, select 3 closest
-        updateStatus('selecting', 'running', 'Calculating comp values and selecting best 3...')
-
+        const mileageRate = getMileageRate(claim.make, claim.model, claim.trim, claim.year)
+        updateStatus('selecting', 'running', `Mileage rate: $${mileageRate.toFixed(3)}/mile — selecting best 3...`)
         const compsWithValues = listings.map((comp) => {
           const mileageDiffRaw = comp.miles - claim.mileage
-          // $0.10 per mile
-          const mileageAdjDollar = -(mileageDiffRaw * 0.1)
+          const mileageAdjDollar = -(mileageDiffRaw * mileageRate)
           const yearDiffRaw = comp.year - claim.year
           const yearAdjDollar = yearDiffRaw * depreciationPerYear
           const compValue = calculateCompValue({

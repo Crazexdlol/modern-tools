@@ -1,4 +1,4 @@
-import { PDFDocument, PDFName, PDFBool, PDFArray, PDFString } from 'pdf-lib'
+import { PDFDocument, PDFName, PDFBool, PDFArray, PDFString, rgb, StandardFonts } from 'pdf-lib'
 import fs from 'fs'
 import path from 'path'
 import type { ClaimInfo, SelectedComp, ACVAdjustments, ACVResult } from './types'
@@ -132,7 +132,7 @@ export async function fillACVPdf(
   comps.forEach((comp, i) => {
     const f = compFields[i]
     if (!f) return
-    const dealerInfo = [comp.dealerName, `${comp.dealerCity}, ${comp.dealerState}`, comp.dealerPhone]
+    const dealerInfo = [comp.dealerName, comp.dealerPhone]
       .filter(Boolean)
       .join('\n')
     setField(form, f.dealer, dealerInfo)
@@ -220,5 +220,112 @@ export async function fillACVPdf(
     }
   })
 
+  // ── Add comp listing pages ──────────────────────────────────────────────────
+  await addCompPages(doc, claim, comps)
+
   return doc.save()
+}
+
+async function addCompPages(
+  doc: PDFDocument,
+  claim: ClaimInfo,
+  comps: SelectedComp[],
+) {
+  const font = await doc.embedFont(StandardFonts.Helvetica)
+  const fontBold = await doc.embedFont(StandardFonts.HelveticaBold)
+  const PAGE_W = 612
+  const PAGE_H = 792
+  const MARGIN = 50
+
+  for (let i = 0; i < comps.length; i++) {
+    const comp = comps[i]
+    const page = doc.addPage([PAGE_W, PAGE_H])
+    let y = PAGE_H - MARGIN
+
+    // Header
+    page.drawText(`Comparable #${i + 1}`, { x: MARGIN, y, font: fontBold, size: 16, color: rgb(0, 0, 0) })
+    y -= 12
+    page.drawText(
+      `${claim.year} ${claim.make} ${claim.model}${claim.trim ? ` ${claim.trim}` : ''} — ACV Report`,
+      { x: MARGIN, y, font, size: 9, color: rgb(0.4, 0.4, 0.4) },
+    )
+    y -= 24
+
+    // Divider
+    page.drawLine({ start: { x: MARGIN, y }, end: { x: PAGE_W - MARGIN, y }, thickness: 1, color: rgb(0.8, 0.8, 0.8) })
+    y -= 20
+
+    // Try to embed comp photo
+    if (comp.photoUrl) {
+      try {
+        const imgRes = await fetch(comp.photoUrl)
+        if (imgRes.ok) {
+          const imgBuf = await imgRes.arrayBuffer()
+          const imgBytes = new Uint8Array(imgBuf)
+          let image
+          const url = comp.photoUrl.toLowerCase()
+          if (url.includes('.png')) {
+            image = await doc.embedPng(imgBytes)
+          } else {
+            image = await doc.embedJpg(imgBytes)
+          }
+          const maxW = PAGE_W - MARGIN * 2
+          const maxH = 250
+          const scale = Math.min(maxW / image.width, maxH / image.height, 1)
+          const imgW = image.width * scale
+          const imgH = image.height * scale
+          page.drawImage(image, {
+            x: MARGIN + (maxW - imgW) / 2,
+            y: y - imgH,
+            width: imgW,
+            height: imgH,
+          })
+          y -= imgH + 20
+        }
+      } catch {
+        // Skip photo if fetch fails
+      }
+    }
+
+    // Comp details table
+    const rows: [string, string][] = [
+      ['Heading', comp.heading || `${comp.year} ${comp.make} ${comp.model} ${comp.trim}`],
+      ['VIN', comp.vin as string],
+      ['Asking Price', fmt(comp.price)],
+      ['Mileage', (comp.miles ?? 0).toLocaleString()],
+      ['Year / Make / Model', `${comp.year} ${comp.make} ${comp.model}`],
+      ['Trim', (comp.trim as string) || '—'],
+      ['Dealer', comp.dealerName as string || '—'],
+      ['Dealer Phone', comp.dealerPhone as string || '—'],
+    ]
+
+    if (comp.mileageDiffRaw !== undefined) {
+      const sign = comp.mileageDiffRaw >= 0 ? '+' : ''
+      rows.push(['Mileage Difference', `${sign}${comp.mileageDiffRaw.toLocaleString()} miles`])
+      rows.push(['Mileage Adjustment', fmt(comp.mileageAdjDollar)])
+    }
+    if (comp.yearDiffRaw !== undefined) {
+      const sign = comp.yearDiffRaw >= 0 ? '+' : ''
+      rows.push(['Year Difference', `${sign}${comp.yearDiffRaw} year${Math.abs(comp.yearDiffRaw) !== 1 ? 's' : ''}`])
+      rows.push(['Year Adjustment', fmt(comp.yearAdjDollar)])
+    }
+    rows.push(['Adjusted Comp Value', fmt(comp.compValue)])
+
+    const rowH = 22
+    const labelW = 160
+    for (const [label, value] of rows) {
+      if (y < MARGIN + 20) break // don't overflow page
+      // Alternating row bg
+      page.drawRectangle({
+        x: MARGIN,
+        y: y - rowH + 4,
+        width: PAGE_W - MARGIN * 2,
+        height: rowH,
+        color: rows.indexOf([label, value]) % 2 === 0 ? rgb(0.96, 0.96, 0.96) : rgb(1, 1, 1),
+      })
+      page.drawText(label, { x: MARGIN + 8, y: y - 10, font: fontBold, size: 9, color: rgb(0.3, 0.3, 0.3) })
+      page.drawText(value || '', { x: MARGIN + labelW, y: y - 10, font, size: 9, color: rgb(0, 0, 0) })
+      y -= rowH
+    }
+  }
 }
