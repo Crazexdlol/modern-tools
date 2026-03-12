@@ -159,7 +159,7 @@ Return JSON with this structure. Use null for sections without applicable data:
 
     const message = await client.messages.create({
       model: "claude-haiku-4-5-20251001",
-      max_tokens: 4000,
+      max_tokens: 6000,
       messages: [{ role: "user", content: userPrompt }],
       system: systemPrompt,
     });
@@ -169,15 +169,20 @@ Return JSON with this structure. Use null for sections without applicable data:
 
     let result;
     try {
-      const cleaned = responseText
+      let cleaned = responseText
         .replace(/```json\n?/g, "")
         .replace(/```\n?/g, "")
         .trim();
+      // If JSON was truncated, try to find the last complete object
+      if (!cleaned.endsWith("}")) {
+        const lastBrace = cleaned.lastIndexOf("}");
+        if (lastBrace > 0) cleaned = cleaned.substring(0, lastBrace + 1);
+      }
       result = JSON.parse(cleaned);
     } catch {
-      console.error("Parse error, raw response:", responseText);
+      console.error("Parse error, raw response:", responseText.slice(0, 500));
       return NextResponse.json(
-        { error: "Failed to parse AI response" },
+        { error: "AI response was incomplete — try again with shorter input" },
         { status: 500 }
       );
     }
