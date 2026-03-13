@@ -445,17 +445,15 @@ function CompCard({
             </>
           )}
         </button>
-        {comp.vdpUrl && (
-          <a
-            href={comp.vdpUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            onClick={(e) => e.stopPropagation()}
-            className="px-4 py-2.5 text-xs font-bold text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-lg transition-all"
-          >
-            View
-          </a>
-        )}
+        <a
+          href={comp.vdpUrl || `https://www.google.com/search?q=${encodeURIComponent(comp.vin as string)}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          onClick={(e) => e.stopPropagation()}
+          className="px-4 py-2.5 text-xs font-bold text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-lg transition-all"
+        >
+          View
+        </a>
       </div>
     </div>
   )
