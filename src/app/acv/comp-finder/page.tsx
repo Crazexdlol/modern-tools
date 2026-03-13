@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
 import { useSearchParams } from 'next/navigation'
@@ -21,6 +21,7 @@ import {
   X,
   Plus,
   Gauge,
+  ArrowUpDown,
 } from 'lucide-react'
 import { useRef } from 'react'
 import { Button } from '@/components/ui/button'
@@ -942,6 +943,7 @@ function CompFinderInner() {
   )
   const [editingId, setEditingId] = useState<string | null>(() => draft.current?.editingId ?? null)
   const [mileageRate, setMileageRate] = useState(0)
+  const [sortBy, setSortBy] = useState<'default' | 'mileage-closest' | 'mileage-low' | 'mileage-high' | 'price-low' | 'price-high' | 'year-new' | 'year-old' | 'distance'>('default')
 
   // Handle edit mode (from history)
   useEffect(() => {
@@ -975,6 +977,37 @@ function CompFinderInner() {
       }))
     } catch { /* ignore */ }
   }, [step, claim, listings, selectedIds, compAdjs, adjustments, editingId])
+
+  const sortedListings = useMemo(() => {
+    const sorted = [...listings]
+    switch (sortBy) {
+      case 'mileage-closest':
+        sorted.sort((a, b) => Math.abs(a.miles - claim.mileage) - Math.abs(b.miles - claim.mileage))
+        break
+      case 'mileage-low':
+        sorted.sort((a, b) => a.miles - b.miles)
+        break
+      case 'mileage-high':
+        sorted.sort((a, b) => b.miles - a.miles)
+        break
+      case 'price-low':
+        sorted.sort((a, b) => a.price - b.price)
+        break
+      case 'price-high':
+        sorted.sort((a, b) => b.price - a.price)
+        break
+      case 'year-new':
+        sorted.sort((a, b) => b.year - a.year)
+        break
+      case 'year-old':
+        sorted.sort((a, b) => a.year - b.year)
+        break
+      case 'distance':
+        sorted.sort((a, b) => a.distanceMi - b.distanceMi)
+        break
+    }
+    return sorted
+  }, [listings, sortBy, claim.mileage])
 
   const selectedComps = selectedIds
     .map((id) => listings.find((l) => l.id === id))
@@ -1172,23 +1205,52 @@ function CompFinderInner() {
 
             {/* Results header */}
             {listings.length > 0 && (
-              <div className="flex items-center justify-between">
-                <p className="text-sm text-gray-500">
-                  Showing <span className="font-bold text-gray-900">{listings.length}</span> listings
-                </p>
-                <div className="flex items-center gap-2">
-                  {[1, 2, 3].map((n) => (
-                    <div
-                      key={n}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <p className="text-sm text-gray-500">
+                    Showing <span className="font-bold text-gray-900">{listings.length}</span> listings
+                  </p>
+                  <div className="flex items-center gap-2">
+                    {[1, 2, 3].map((n) => (
+                      <div
+                        key={n}
+                        className={cn(
+                          'w-2.5 h-2.5 rounded-full transition-colors',
+                          selectedIds.length >= n ? 'bg-blue-500' : 'bg-gray-200'
+                        )}
+                      />
+                    ))}
+                    <span className="text-sm font-bold text-gray-700 ml-1">
+                      {selectedIds.length}/3 selected
+                    </span>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <ArrowUpDown className="w-3.5 h-3.5 text-gray-400" />
+                  {([
+                    ['default', 'Default'],
+                    ['mileage-closest', 'Mileage (Closest)'],
+                    ['mileage-low', 'Mileage (Low)'],
+                    ['mileage-high', 'Mileage (High)'],
+                    ['price-low', 'Price (Low)'],
+                    ['price-high', 'Price (High)'],
+                    ['year-new', 'Year (Newest)'],
+                    ['year-old', 'Year (Oldest)'],
+                    ['distance', 'Distance'],
+                  ] as const).map(([value, label]) => (
+                    <button
+                      key={value}
+                      onClick={() => setSortBy(value)}
                       className={cn(
-                        'w-2.5 h-2.5 rounded-full transition-colors',
-                        selectedIds.length >= n ? 'bg-blue-500' : 'bg-gray-200'
+                        'px-2.5 py-1 text-xs font-semibold rounded-lg transition-all',
+                        sortBy === value
+                          ? 'bg-blue-600 text-white'
+                          : 'bg-gray-100 text-gray-500 hover:bg-gray-200 hover:text-gray-700'
                       )}
-                    />
+                    >
+                      {label}
+                    </button>
                   ))}
-                  <span className="text-sm font-bold text-gray-700 ml-1">
-                    {selectedIds.length}/3 selected
-                  </span>
                 </div>
               </div>
             )}
@@ -1207,9 +1269,9 @@ function CompFinderInner() {
               </div>
             )}
 
-            {!loadingComps && listings.length > 0 && (
+            {!loadingComps && sortedListings.length > 0 && (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                {listings.map((comp) => {
+                {sortedListings.map((comp) => {
                   const selIdx = selectedIds.indexOf(comp.id)
                   return (
                     <CompCard
