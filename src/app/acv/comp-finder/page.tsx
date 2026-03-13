@@ -468,6 +468,8 @@ function AdjustmentsForm({
   adjustments,
   onAdjChange,
   result,
+  mileageRate,
+  onMileageRateChange,
 }: {
   claim: ClaimInfo
   selectedComps: MarketComp[]
@@ -476,6 +478,8 @@ function AdjustmentsForm({
   adjustments: ACVAdjustments
   onAdjChange: (updated: ACVAdjustments) => void
   result: ACVResult
+  mileageRate: number
+  onMileageRateChange: (rate: number) => void
 }) {
   const inputCls =
     'w-full bg-white border border-gray-200 rounded-lg px-3 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent'
@@ -483,6 +487,32 @@ function AdjustmentsForm({
 
   return (
     <div className="space-y-6">
+      {/* Mileage rate input */}
+      <Card className="bg-white border-gray-200 shadow-sm">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-gray-900 text-sm">Mileage Adjustment Rate</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center gap-3">
+            <div className="relative w-40">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-gray-400">$</span>
+              <input
+                type="number"
+                step="0.01"
+                className={`${inputCls} pl-7 text-right`}
+                placeholder="0.05"
+                value={mileageRate || ''}
+                onChange={(e) => onMileageRateChange(parseFloat(e.target.value) || 0)}
+              />
+            </div>
+            <span className="text-xs text-gray-500">per mile</span>
+            <p className="text-xs text-gray-400 ml-auto">
+              Automatically calculates mileage adjustments for each comp
+            </p>
+          </div>
+        </CardContent>
+      </Card>
+
       {/* Per-comp adjustments */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {selectedComps.map((comp, i) => {
@@ -911,6 +941,7 @@ function CompFinderInner() {
     () => draft.current?.adjustments ?? defaultAdjustments()
   )
   const [editingId, setEditingId] = useState<string | null>(() => draft.current?.editingId ?? null)
+  const [mileageRate, setMileageRate] = useState(0)
 
   // Handle edit mode (from history)
   useEffect(() => {
@@ -1008,6 +1039,19 @@ function CompFinderInner() {
       const next = [...prev]
       next[index] = { ...next[index], [field]: value }
       return next
+    })
+  }
+
+  const handleMileageRateChange = (rate: number) => {
+    setMileageRate(rate)
+    if (rate === 0) return
+    setCompAdjs((prev) => {
+      return selectedComps.map((comp, i) => {
+        const mileageDiff = comp.miles - claim.mileage
+        // Negative diff (comp has fewer miles) = positive adjustment, and vice versa
+        const mileageAdj = Math.round(mileageDiff * -rate * 100) / 100
+        return { ...prev[i], mileageAdj }
+      })
     })
   }
 
@@ -1214,6 +1258,8 @@ function CompFinderInner() {
               adjustments={adjustments}
               onAdjChange={setAdjustments}
               result={result}
+              mileageRate={mileageRate}
+              onMileageRateChange={handleMileageRateChange}
             />
             <div className="flex items-center gap-3 mt-6">
               <Button onClick={() => setStep(2)} variant="outline" className="border-gray-200 text-gray-700 hover:bg-gray-100">
