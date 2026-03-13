@@ -60,6 +60,7 @@ export async function GET(request: NextRequest) {
         photoUrl: photoLinks[0] ?? '',
         heading: l.heading ?? '',
         distanceMi: l.dist ? Math.round(Number(l.dist)) : 0,
+        vdpUrl: l.vdp_url ?? '',
       }
     })
 

@@ -18,8 +18,6 @@ import {
   AlertCircle,
   Car,
   MapPin,
-  Eye,
-  Printer,
   X,
   Plus,
   Gauge,
@@ -331,128 +329,18 @@ function SearchParametersPanel({
   )
 }
 
-// ── Comp detail modal ────────────────────────────────────────────────────────
-function CompDetailModal({
-  comp,
-  onClose,
-}: {
-  comp: MarketComp
-  onClose: () => void
-}) {
-  const printRef = useRef<HTMLDivElement>(null)
-  const vehicle = [comp.year || '', comp.make, comp.model].filter(Boolean).join(' ')
-  const trimLine = comp.trim || ''
-
-  const handlePrint = () => {
-    if (!printRef.current) return
-    const w = window.open('', '_blank')
-    if (!w) return
-    w.document.write(`<html><head><title>${vehicle}</title>
-      <style>
-        *{box-sizing:border-box;margin:0;padding:0}
-        body{font-family:Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;padding:40px;color:#0f172a}
-        img{width:100%;max-height:300px;object-fit:cover;border-radius:12px;margin-bottom:24px}
-        .vehicle{font-size:26px;font-weight:800;letter-spacing:-0.5px}
-        .trim{font-size:14px;color:#64748b;margin-top:2px}
-        .price{font-size:28px;font-weight:800;color:#2563eb;margin:8px 0}
-        .vin{font-family:'SF Mono',Consolas,monospace;font-size:11px;color:#94a3b8;letter-spacing:0.5px;margin-bottom:20px}
-        .grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;padding:20px 0;border-top:1px solid #e2e8f0;border-bottom:1px solid #e2e8f0}
-        .grid .lbl{font-size:10px;text-transform:uppercase;letter-spacing:0.8px;color:#94a3b8;font-weight:600}
-        .grid .val{font-size:14px;font-weight:700;color:#0f172a;margin-top:3px}
-        .dealer{padding-top:20px;font-size:13px;color:#64748b}
-        .dealer b{color:#0f172a}
-        @media print{body{padding:20px}}
-      </style></head><body>${printRef.current.innerHTML}</body></html>`)
-    w.document.close()
-    w.focus()
-    w.print()
-    w.close()
-  }
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={onClose}>
-      <div
-        className="bg-white rounded-2xl shadow-2xl max-w-[520px] w-full mx-4 max-h-[90vh] overflow-y-auto ring-1 ring-black/5"
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
-          <span className="text-sm font-bold text-gray-900">Vehicle Details</span>
-          <div className="flex items-center gap-1.5">
-            <button
-              onClick={handlePrint}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-gray-600 hover:text-gray-900 bg-gray-50 hover:bg-gray-100 rounded-lg transition-all"
-            >
-              <Printer className="w-3.5 h-3.5" />
-              Print
-            </button>
-            <button onClick={onClose} className="p-1.5 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-50 transition-all">
-              <X className="w-4 h-4" />
-            </button>
-          </div>
-        </div>
-
-        <div ref={printRef} className="px-6 pb-6 pt-4">
-          {comp.photoUrl && (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={comp.photoUrl} alt={vehicle} className="w-full h-56 object-cover rounded-xl mb-5" />
-          )}
-
-          <p className="text-xl font-extrabold text-gray-900 tracking-tight leading-tight">{vehicle}</p>
-          {trimLine && <p className="text-sm text-gray-500 font-medium mt-0.5">{trimLine}</p>}
-          <p className="text-2xl font-extrabold text-blue-600 mt-2 tracking-tight">
-            {formatCurrency(comp.price)}
-          </p>
-          <p className="text-[11px] font-mono text-gray-400 tracking-wider mt-1.5 mb-5">
-            {comp.vin || 'VIN N/A'}
-          </p>
-
-          <div className="grid grid-cols-3 gap-4 py-5 border-t border-b border-gray-100">
-            {[
-              { label: 'Mileage', value: `${(comp.miles ?? 0).toLocaleString()}` },
-              { label: 'Drivetrain', value: comp.drivetrain || '--' },
-              { label: 'Distance', value: comp.distanceMi ? `${comp.distanceMi} mi` : '--' },
-              { label: 'Engine', value: comp.engine || '--' },
-              { label: 'Trans', value: comp.transmission || '--' },
-              { label: 'Trim', value: comp.trim || '--' },
-            ].map(({ label, value }) => (
-              <div key={label}>
-                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">{label}</p>
-                <p className="text-[13px] font-bold text-gray-800 mt-1 truncate">{value}</p>
-              </div>
-            ))}
-          </div>
-
-          {comp.dealerName && (
-            <div className="pt-5 space-y-0.5">
-              <p className="text-sm font-bold text-gray-900">{comp.dealerName}</p>
-              {(comp.dealerCity || comp.dealerState) && (
-                <p className="text-xs text-gray-500">
-                  {[comp.dealerCity, comp.dealerState].filter(Boolean).join(', ')}
-                </p>
-              )}
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-  )
-}
-
 // ── Comp card (redesigned like reference) ─────────────────────────────────────
 function CompCard({
   comp,
   selected,
   selectionIndex,
   onToggle,
-  onView,
   disabled,
 }: {
   comp: MarketComp
   selected: boolean
   selectionIndex: number
   onToggle: () => void
-  onView: () => void
   disabled: boolean
 }) {
   const vehicle = `${comp.year || ''} ${comp.make} ${comp.model} ${comp.trim || ''}`.trim()
@@ -557,12 +445,17 @@ function CompCard({
             </>
           )}
         </button>
-        <button
-          onClick={(e) => { e.stopPropagation(); onView() }}
-          className="px-4 py-2.5 text-xs font-bold text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-lg transition-all"
-        >
-          View
-        </button>
+        {comp.vdpUrl && (
+          <a
+            href={comp.vdpUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={(e) => e.stopPropagation()}
+            className="px-4 py-2.5 text-xs font-bold text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-lg transition-all"
+          >
+            View
+          </a>
+        )}
       </div>
     </div>
   )
@@ -1009,7 +902,6 @@ function CompFinderInner() {
   const [loadingComps, setLoadingComps] = useState(false)
   const [compsError, setCompsError] = useState<string | null>(null)
   const [selectedIds, setSelectedIds] = useState<string[]>(() => draft.current?.selectedIds ?? [])
-  const [viewingComp, setViewingComp] = useState<MarketComp | null>(null)
   const [compAdjs, setCompAdjs] = useState<{ mileageAdj: number; yearAdj: number }[]>(
     () => draft.current?.compAdjs ?? [
       { mileageAdj: 0, yearAdj: 0 },
@@ -1284,7 +1176,6 @@ function CompFinderInner() {
                       selected={selIdx !== -1}
                       selectionIndex={selIdx + 1}
                       onToggle={() => toggleComp(comp.id)}
-                      onView={() => setViewingComp(comp)}
                       disabled={selectedIds.length >= 3}
                     />
                   )
@@ -1360,9 +1251,6 @@ function CompFinderInner() {
         )}
       </main>
 
-      {viewingComp && (
-        <CompDetailModal comp={viewingComp} onClose={() => setViewingComp(null)} />
-      )}
     </div>
   )
 }

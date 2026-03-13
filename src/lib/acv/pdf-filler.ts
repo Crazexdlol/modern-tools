@@ -297,6 +297,7 @@ async function addCompPages(
       ['Trim', (comp.trim as string) || '—'],
       ['Dealer', comp.dealerName as string || '—'],
       ['Dealer Phone', comp.dealerPhone as string || '—'],
+      ['Listing URL', comp.vdpUrl || '—'],
     ]
 
     if (comp.mileageDiffRaw !== undefined) {

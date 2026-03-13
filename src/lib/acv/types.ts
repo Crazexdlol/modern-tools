@@ -43,6 +43,7 @@ export interface MarketComp {
   photoUrl: string
   heading: string
   distanceMi: number
+  vdpUrl: string
 }
 
 export interface SelectedComp extends MarketComp {
