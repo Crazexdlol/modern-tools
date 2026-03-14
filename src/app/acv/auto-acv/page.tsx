@@ -220,7 +220,7 @@ function ClaimInfoForm({
             <label className={labelCls}>Client Name</label>
             <input
               className={inputCls}
-              placeholder="Jane Doe"
+              placeholder="Sedgwick"
               value={claim.clientName}
               onChange={(e) => set('clientName', e.target.value)}
             />
