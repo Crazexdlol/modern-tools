@@ -283,10 +283,12 @@ function SearchParametersPanel({
           <label className={labelCls}>Mileage</label>
           <input type="number" className={inputCls} placeholder="45000" value={claim.mileage || ''} onChange={(e) => set('mileage', parseInt(e.target.value) || 0)} />
         </div>
-        <div>
-          <label className={labelCls}>ZIP Code</label>
-          <input className={inputCls} placeholder="90210" maxLength={5} value={claim.zip} onChange={(e) => set('zip', e.target.value)} />
-        </div>
+        {claim.radius !== 0 && (
+          <div>
+            <label className={labelCls}>ZIP Code</label>
+            <input className={inputCls} placeholder="90210" maxLength={5} value={claim.zip} onChange={(e) => set('zip', e.target.value)} />
+          </div>
+        )}
       </div>
 
       {/* Radius */}
@@ -298,7 +300,7 @@ function SearchParametersPanel({
             value={claim.radius}
             onChange={(e) => {
               const val = parseInt(e.target.value)
-              onChange({ ...claim, radius: val })
+              onChange({ ...claim, radius: val, ...(val === 0 ? { zip: '' } : {}) })
             }}
           >
             <option value={25}>25 mi</option>
@@ -977,19 +979,7 @@ function CompFinderInner() {
   }, [step, claim, listings, selectedIds, compAdjs, adjustments, editingId])
 
   const sortedListings = useMemo(() => {
-    const matches = (compVal: string, claimVal: string) => {
-      const a = compVal.toLowerCase().trim()
-      const b = claimVal.toLowerCase().trim()
-      return a === b || a.includes(b) || b.includes(a)
-    }
-    const filtered = listings.filter((comp) => {
-      if (claim.trim && comp.trim && !matches(comp.trim, claim.trim)) return false
-      if (claim.drivetrain && comp.drivetrain && !matches(comp.drivetrain, claim.drivetrain)) return false
-      if (claim.transmission && comp.transmission && !matches(comp.transmission, claim.transmission)) return false
-      if (claim.engine && comp.engine && !matches(comp.engine, claim.engine)) return false
-      return true
-    })
-    const sorted = [...filtered]
+    const sorted = [...listings]
     switch (sortBy) {
       case 'mileage-closest':
         sorted.sort((a, b) => Math.abs(a.miles - claim.mileage) - Math.abs(b.miles - claim.mileage))
@@ -1017,7 +1007,7 @@ function CompFinderInner() {
         break
     }
     return sorted
-  }, [listings, sortBy, claim.mileage, claim.trim, claim.drivetrain, claim.transmission, claim.engine])
+  }, [listings, sortBy, claim.mileage])
 
   const selectedComps = selectedIds
     .map((id) => listings.find((l) => l.id === id))
@@ -1042,7 +1032,7 @@ function CompFinderInner() {
   const result = calculateACV(builtComps, adjustments)
 
   const searchComps = useCallback(async () => {
-    if (!claim.year || !claim.make || !claim.model || !claim.zip) return
+    if (!claim.year || !claim.make || !claim.model || (claim.radius !== 0 && !claim.zip)) return
     setLoadingComps(true)
     setCompsError(null)
     try {
@@ -1051,8 +1041,8 @@ function CompFinderInner() {
         year: String(claim.year),
         make: claim.make,
         model: claim.model,
-        zip: claim.zip,
-        radius: isNationwide ? '5000' : String(claim.radius),
+        radius: String(claim.radius),
+        ...(isNationwide ? { nationwide: 'true' } : { zip: claim.zip }),
         ...(claim.trim ? { trim: claim.trim } : {}),
       })
       const res = await fetch(`/api/acv/search-comps?${params}`)

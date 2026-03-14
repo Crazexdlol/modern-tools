@@ -7,8 +7,9 @@ export async function GET(request: NextRequest) {
   const model = p.get('model')
   const zip = p.get('zip') || ''
   const radius = p.get('radius') || '150'
+  const nationwide = radius === '0' || p.get('nationwide') === 'true'
 
-  if (!year || !make || !model || !zip) {
+  if (!year || !make || !model || (!zip && !nationwide)) {
     return NextResponse.json({ error: 'Missing params' }, { status: 400 })
   }
 
@@ -19,11 +20,10 @@ export async function GET(request: NextRequest) {
     year,
     make,
     model,
-    zip,
-    radius,
     rows: '50',
     sort_by: 'price',
     sort_order: 'asc',
+    ...(zip && !nationwide ? { zip, radius } : {}),
   })
 
   const mapListings = (data: Record<string, unknown>) => {
