@@ -979,7 +979,15 @@ function CompFinderInner() {
   }, [step, claim, listings, selectedIds, compAdjs, adjustments, editingId])
 
   const sortedListings = useMemo(() => {
-    const sorted = [...listings]
+    const eq = (a: string, b: string) => a.toLowerCase().trim() === b.toLowerCase().trim()
+    const filtered = listings.filter((comp) => {
+      if (claim.trim && comp.trim && !eq(comp.trim, claim.trim)) return false
+      if (claim.drivetrain && comp.drivetrain && !eq(comp.drivetrain, claim.drivetrain)) return false
+      if (claim.transmission && comp.transmission && !eq(comp.transmission, claim.transmission)) return false
+      if (claim.engine && comp.engine && !eq(comp.engine, claim.engine)) return false
+      return true
+    })
+    const sorted = [...filtered]
     switch (sortBy) {
       case 'mileage-closest':
         sorted.sort((a, b) => Math.abs(a.miles - claim.mileage) - Math.abs(b.miles - claim.mileage))
@@ -1007,7 +1015,7 @@ function CompFinderInner() {
         break
     }
     return sorted
-  }, [listings, sortBy, claim.mileage])
+  }, [listings, sortBy, claim.mileage, claim.trim, claim.drivetrain, claim.transmission, claim.engine])
 
   const selectedComps = selectedIds
     .map((id) => listings.find((l) => l.id === id))
@@ -1081,8 +1089,8 @@ function CompFinderInner() {
     setCompAdjs((prev) => {
       return selectedComps.map((comp, i) => {
         const mileageDiff = comp.miles - claim.mileage
-        // Negative diff (comp has fewer miles) = positive adjustment, and vice versa
-        const mileageAdj = Math.round(mileageDiff * -rate * 100) / 100
+        // Positive diff (comp has more miles) = positive adjustment, negative diff = negative adjustment
+        const mileageAdj = Math.round(mileageDiff * rate * 100) / 100
         return { ...prev[i], mileageAdj }
       })
     })
