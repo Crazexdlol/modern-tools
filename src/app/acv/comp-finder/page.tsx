@@ -979,7 +979,19 @@ function CompFinderInner() {
   }, [step, claim, listings, selectedIds, compAdjs, adjustments, editingId])
 
   const sortedListings = useMemo(() => {
-    const sorted = [...listings]
+    const matches = (compVal: string, claimVal: string) => {
+      const a = compVal.toLowerCase().trim()
+      const b = claimVal.toLowerCase().trim()
+      return a === b || a.includes(b) || b.includes(a)
+    }
+    const filtered = listings.filter((comp) => {
+      if (claim.trim && comp.trim && !matches(comp.trim, claim.trim)) return false
+      if (claim.drivetrain && comp.drivetrain && !matches(comp.drivetrain, claim.drivetrain)) return false
+      if (claim.transmission && comp.transmission && !matches(comp.transmission, claim.transmission)) return false
+      if (claim.engine && comp.engine && !matches(comp.engine, claim.engine)) return false
+      return true
+    })
+    const sorted = [...filtered]
     switch (sortBy) {
       case 'mileage-closest':
         sorted.sort((a, b) => Math.abs(a.miles - claim.mileage) - Math.abs(b.miles - claim.mileage))
@@ -1007,7 +1019,7 @@ function CompFinderInner() {
         break
     }
     return sorted
-  }, [listings, sortBy, claim.mileage])
+  }, [listings, sortBy, claim.mileage, claim.trim, claim.drivetrain, claim.transmission, claim.engine])
 
   const selectedComps = selectedIds
     .map((id) => listings.find((l) => l.id === id))
@@ -1043,7 +1055,6 @@ function CompFinderInner() {
         model: claim.model,
         radius: String(claim.radius),
         ...(isNationwide ? { nationwide: 'true' } : { zip: claim.zip }),
-        ...(claim.trim ? { trim: claim.trim } : {}),
       })
       const res = await fetch(`/api/acv/search-comps?${params}`)
       const data = await res.json()
