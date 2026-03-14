@@ -65,6 +65,7 @@ const defaultClaim: ClaimInfo = {
   claimNumber: '',
   dateOfLoss: '',
   clientType: 'Insured',
+  clientName: '',
   insuredName: '',
   ownerPhone: '',
   ownerEmail: '',
