@@ -23,9 +23,10 @@ export async function GET(request: NextRequest) {
     year,
     make,
     model,
-    rows: '50',
-    sort_by: 'price',
+    rows: '200',
+    sort_by: 'miles',
     sort_order: 'asc',
+    price_range: '500-500000',
     ...(zip && !nationwide ? { zip, radius } : {}),
     ...(trim ? { trim } : {}),
   })
