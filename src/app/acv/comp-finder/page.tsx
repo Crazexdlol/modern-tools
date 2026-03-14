@@ -131,6 +131,10 @@ function ClaimInfoForm({
             </select>
           </div>
           <div>
+            <label className={labelCls}>Client Name</label>
+            <input className={inputCls} placeholder="Jane Doe" value={claim.clientName} onChange={(e) => set('clientName', e.target.value)} />
+          </div>
+          <div>
             <label className={labelCls}>Insured / Owner Name</label>
             <input className={inputCls} placeholder="John Smith" value={claim.insuredName} onChange={(e) => set('insuredName', e.target.value)} />
           </div>
@@ -889,6 +893,7 @@ function defaultClaim(): ClaimInfo {
     claimNumber: '',
     dateOfLoss: '',
     clientType: 'Insured',
+    clientName: '',
     insuredName: '',
     ownerPhone: '',
     ownerEmail: '',

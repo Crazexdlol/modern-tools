@@ -71,7 +71,7 @@ export async function fillACVPdf(
   setField(form, 'Owner Phone', claim.ownerPhone)
   setField(form, 'Owner Email', claim.ownerEmail)
   setField(form, 'Owner Address', claim.ownerAddress)
-  setField(form, 'Client', claim.insuredName)
+  setField(form, 'Client', claim.clientName || claim.insuredName)
 
   // Insurance
   setField(form, 'Ins. Co', claim.insuranceCompany)

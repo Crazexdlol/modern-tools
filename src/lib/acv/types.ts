@@ -3,6 +3,7 @@ export interface ClaimInfo {
   claimNumber: string
   dateOfLoss: string
   clientType: 'Insured' | 'Claimant'
+  clientName: string
   insuredName: string
   ownerPhone: string
   ownerEmail: string

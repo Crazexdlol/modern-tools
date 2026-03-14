@@ -94,6 +94,7 @@ function defaultClaim(): ClaimInfo {
     claimNumber: '',
     dateOfLoss: '',
     clientType: 'Insured',
+    clientName: '',
     insuredName: '',
     ownerPhone: '',
     ownerEmail: '',
@@ -214,6 +215,15 @@ function ClaimInfoForm({
               <option value="Insured">Insured</option>
               <option value="Claimant">Claimant</option>
             </select>
+          </div>
+          <div>
+            <label className={labelCls}>Client Name</label>
+            <input
+              className={inputCls}
+              placeholder="Jane Doe"
+              value={claim.clientName}
+              onChange={(e) => set('clientName', e.target.value)}
+            />
           </div>
           <div>
             <label className={labelCls}>Insured / Owner Name</label>
