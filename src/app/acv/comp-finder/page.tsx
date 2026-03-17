@@ -989,8 +989,14 @@ function CompFinderInner() {
       const b = claimVal.toLowerCase().trim()
       return a === b || a.includes(b) || b.includes(a)
     }
+    const genericTrims = ['base', 'standard', 'n/a', 'other', '']
     const filtered = listings.filter((comp) => {
-      if (claim.trim && comp.trim && !matches(comp.trim, claim.trim)) return false
+      if (
+        claim.trim &&
+        comp.trim &&
+        !genericTrims.includes(claim.trim.toLowerCase().trim()) &&
+        !matches(comp.trim, claim.trim)
+      ) return false
       if (claim.drivetrain && comp.drivetrain && !matches(comp.drivetrain, claim.drivetrain)) return false
       if (claim.transmission && comp.transmission && !matches(comp.transmission, claim.transmission)) return false
       if (claim.engine && comp.engine && !matches(comp.engine, claim.engine)) return false
@@ -1224,7 +1230,7 @@ function CompFinderInner() {
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
                   <p className="text-sm text-gray-500">
-                    Showing <span className="font-bold text-gray-900">{listings.length}</span> listings
+                    Showing <span className="font-bold text-gray-900">{sortedListings.length}</span> listings
                   </p>
                   <div className="flex items-center gap-2">
                     {[1, 2, 3].map((n) => (
