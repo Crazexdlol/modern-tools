@@ -966,26 +966,61 @@ function AutoProcessStep({
           updateStatus('expanding', 'done', 'Radius expansion not needed')
         }
 
-        // Filter by trim: prefer exact trim matches, fall back to all if < 3
+        // Filter by trim: prefer exact trim matches, then word-boundary,
+        // then partial overlap — only fall back to all if zero matches
         if (claim.trim) {
           const trimLower = claim.trim.toLowerCase().trim()
-          // Try exact match first, then word-boundary match
+          const trimWords = trimLower.split(/\s+/)
+
+          // 1. Exact match
           const exactMatch = listings.filter((l) =>
             (l.trim as string || '').toLowerCase().trim() === trimLower
           )
+          // 2. Word-boundary match: all subject trim words appear in comp trim
+          const wordMatch = listings.filter((l) => {
+            const compTrimWords = (l.trim as string || '').toLowerCase().trim().split(/\s+/)
+            return trimWords.every((tw) => compTrimWords.includes(tw))
+          })
+          // 3. Partial overlap: comp trim contains OR is contained by subject trim
+          const partialMatch = listings.filter((l) => {
+            const compTrim = (l.trim as string || '').toLowerCase().trim()
+            return compTrim.includes(trimLower) || trimLower.includes(compTrim)
+          })
+
           if (exactMatch.length >= 3) {
             listings = exactMatch
+          } else if (wordMatch.length >= 3) {
+            listings = wordMatch
+          } else if (partialMatch.length >= 3) {
+            listings = partialMatch
           } else {
-            // Word-boundary match: split into words so "F" doesn't match "200t F Sport"
-            const trimWords = trimLower.split(/\s+/)
-            const wordMatch = listings.filter((l) => {
-              const compTrimWords = (l.trim as string || '').toLowerCase().trim().split(/\s+/)
-              return trimWords.every((tw) => compTrimWords.includes(tw))
-            })
-            if (wordMatch.length >= 3) {
-              listings = wordMatch
+            // Use the best available trim-matched set, even if < 3
+            // Only fall back to all listings if there are ZERO trim matches
+            const bestMatch = exactMatch.length > 0
+              ? exactMatch
+              : wordMatch.length > 0
+                ? wordMatch
+                : partialMatch
+            if (bestMatch.length > 0) {
+              listings = bestMatch
             }
+            // If all match arrays are empty, keep all listings as last resort
           }
+        }
+
+        // If trim filtering reduced below 3, warn but continue with what we have
+        if (claim.trim && listings.length < 3 && listings.length > 0) {
+          updateStatus(
+            'expanding',
+            'running',
+            `Only ${listings.length} trim-matched comp${listings.length !== 1 ? 's' : ''} found for "${claim.trim}" — report may use fewer than 3 comps`
+          )
+        } else if (claim.trim && listings.length === 0) {
+          setState((prev) => ({
+            ...prev,
+            error: `No comparables found matching trim "${claim.trim}". Try adjusting the trim or searching manually.`,
+          }))
+          return
         }
 
         // Step 3: Depreciation
