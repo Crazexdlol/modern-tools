@@ -299,28 +299,34 @@ function ClaimInfoForm({
             <label className={labelCls}>Mileage</label>
             <input type="number" className={inputCls} placeholder="45000" value={claim.mileage || ''} onChange={(e) => set('mileage', parseInt(e.target.value) || 0)} />
           </div>
-          <div className="md:col-span-2">
-            <label className="inline-flex items-center gap-2 cursor-pointer select-none">
-              <input
-                type="checkbox"
-                checked={nationwide}
-                onChange={(e) => onNationwideChange(e.target.checked)}
-                className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-              />
-              <span className="text-sm font-medium text-gray-700">Search Nationwide</span>
-            </label>
+          <div>
+            <label className={labelCls}>Search Radius</label>
+            <select
+              className={inputCls}
+              value={nationwide ? 'nationwide' : String(claim.radius || 150)}
+              onChange={(e) => {
+                if (e.target.value === 'nationwide') {
+                  onNationwideChange(true)
+                } else {
+                  onNationwideChange(false)
+                  set('radius', parseInt(e.target.value))
+                }
+              }}
+            >
+              <option value="25">25 miles</option>
+              <option value="50">50 miles</option>
+              <option value="100">100 miles</option>
+              <option value="200">200 miles</option>
+              <option value="300">300 miles</option>
+              <option value="500">500 miles</option>
+              <option value="nationwide">Nationwide</option>
+            </select>
           </div>
           {!nationwide && (
-            <>
-              <div>
-                <label className={labelCls}>ZIP Code</label>
-                <input className={inputCls} placeholder="90210" maxLength={5} value={claim.zip} onChange={(e) => set('zip', e.target.value)} />
-              </div>
-              <div>
-                <label className={labelCls}>Search Radius (miles)</label>
-                <input type="number" className={inputCls} placeholder="150" value={claim.radius || ''} onChange={(e) => set('radius', parseInt(e.target.value) || 150)} />
-              </div>
-            </>
+            <div>
+              <label className={labelCls}>ZIP Code</label>
+              <input className={inputCls} placeholder="90210" maxLength={5} value={claim.zip} onChange={(e) => set('zip', e.target.value)} />
+            </div>
           )}
         </div>
       </div>
