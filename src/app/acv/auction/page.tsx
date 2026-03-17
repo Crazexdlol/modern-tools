@@ -124,9 +124,13 @@ function saveToHistory(
 function ClaimInfoForm({
   claim,
   onChange,
+  nationwide,
+  onNationwideChange,
 }: {
   claim: ClaimInfo
   onChange: (updated: ClaimInfo) => void
+  nationwide: boolean
+  onNationwideChange: (value: boolean) => void
 }) {
   const [decoding, setDecoding] = useState(false)
   const [decodeError, setDecodeError] = useState<string | null>(null)
@@ -295,14 +299,29 @@ function ClaimInfoForm({
             <label className={labelCls}>Mileage</label>
             <input type="number" className={inputCls} placeholder="45000" value={claim.mileage || ''} onChange={(e) => set('mileage', parseInt(e.target.value) || 0)} />
           </div>
-          <div>
-            <label className={labelCls}>ZIP Code</label>
-            <input className={inputCls} placeholder="90210" maxLength={5} value={claim.zip} onChange={(e) => set('zip', e.target.value)} />
+          <div className="md:col-span-2">
+            <label className="inline-flex items-center gap-2 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={nationwide}
+                onChange={(e) => onNationwideChange(e.target.checked)}
+                className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+              />
+              <span className="text-sm font-medium text-gray-700">Search Nationwide</span>
+            </label>
           </div>
-          <div>
-            <label className={labelCls}>Search Radius (miles)</label>
-            <input type="number" className={inputCls} placeholder="150" value={claim.radius || ''} onChange={(e) => set('radius', parseInt(e.target.value) || 150)} />
-          </div>
+          {!nationwide && (
+            <>
+              <div>
+                <label className={labelCls}>ZIP Code</label>
+                <input className={inputCls} placeholder="90210" maxLength={5} value={claim.zip} onChange={(e) => set('zip', e.target.value)} />
+              </div>
+              <div>
+                <label className={labelCls}>Search Radius (miles)</label>
+                <input type="number" className={inputCls} placeholder="150" value={claim.radius || ''} onChange={(e) => set('radius', parseInt(e.target.value) || 150)} />
+              </div>
+            </>
+          )}
         </div>
       </div>
     </div>
@@ -386,6 +405,7 @@ function LossSearchInner() {
   const [searchError, setSearchError] = useState<string | null>(null)
   const [hasSearched, setHasSearched] = useState(false)
   const [saved, setSaved] = useState(false)
+  const [nationwide, setNationwide] = useState(false)
 
   // Load edit data
   useEffect(() => {
@@ -404,7 +424,7 @@ function LossSearchInner() {
     } catch { /* ignore */ }
   }, [isEdit])
 
-  const canSearch = claim.year > 0 && claim.make && claim.model && claim.zip
+  const canSearch = claim.year > 0 && claim.make && claim.model && (nationwide || claim.zip)
 
   const handleSearch = async () => {
     if (!canSearch) return
@@ -416,8 +436,9 @@ function LossSearchInner() {
         year: String(claim.year),
         make: claim.make,
         model: claim.model,
-        zip: claim.zip,
-        radius: String(claim.radius || 150),
+        ...(nationwide
+          ? { nationwide: 'true' }
+          : { zip: claim.zip, radius: String(claim.radius || 150) }),
         ...(claim.trim ? { trim: claim.trim } : {}),
       })
       const res = await fetch(`/api/acv/search-auction?${params}`)
@@ -462,7 +483,7 @@ function LossSearchInner() {
         </div>
         {/* Claim Info */}
         <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-6">
-          <ClaimInfoForm claim={claim} onChange={setClaim} />
+          <ClaimInfoForm claim={claim} onChange={setClaim} nationwide={nationwide} onNationwideChange={setNationwide} />
         </div>
 
         {/* Search Button */}
@@ -492,7 +513,7 @@ function LossSearchInner() {
           )}
 
           {!canSearch && (
-            <p className="text-xs text-gray-400">Fill in Year, Make, Model, and ZIP to search</p>
+            <p className="text-xs text-gray-400">Fill in Year, Make, Model{nationwide ? '' : ', and ZIP'} to search</p>
           )}
         </div>
 

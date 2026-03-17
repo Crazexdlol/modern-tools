@@ -6,10 +6,11 @@ export async function GET(request: NextRequest) {
   const make = p.get('make')
   const model = p.get('model')
   const trim = p.get('trim') || ''
-  const zip = p.get('zip')
+  const zip = p.get('zip') || ''
   const radius = p.get('radius') || '150'
+  const nationwide = p.get('nationwide') === 'true'
 
-  if (!year || !make || !model || !zip) {
+  if (!year || !make || !model || (!zip && !nationwide)) {
     return NextResponse.json({ error: 'Missing params' }, { status: 400 })
   }
 
@@ -20,13 +21,12 @@ export async function GET(request: NextRequest) {
     year,
     make,
     model,
-    zip,
-    radius,
     rows: '50',
     sort_by: 'price',
     sort_order: 'asc',
     carfax_clean_title: 'false',
     seller_type: 'dealer',
+    ...(zip && !nationwide ? { zip, radius } : {}),
     ...(trim ? { trim } : {}),
   })
 
