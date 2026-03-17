@@ -406,10 +406,13 @@ function CompCard({
             <Gauge className="w-3 h-3" />
             {(comp.miles ?? 0).toLocaleString()} mi
           </span>
-          {comp.distanceMi > 0 && (
+          {(comp.distanceMi > 0 || comp.dealerCity) && (
             <span className="flex items-center gap-1">
               <MapPin className="w-3 h-3" />
-              {comp.dealerCity ? `${comp.dealerCity}, ${comp.dealerState}` : `${comp.distanceMi} mi away`}
+              {[
+                comp.dealerCity ? `${comp.dealerCity}, ${comp.dealerState}` : '',
+                comp.distanceMi > 0 ? `${comp.distanceMi} mi` : '',
+              ].filter(Boolean).join(' · ')}
             </span>
           )}
         </div>
@@ -949,6 +952,7 @@ function CompFinderInner() {
   const [editingId, setEditingId] = useState<string | null>(() => draft.current?.editingId ?? null)
   const [mileageRate, setMileageRate] = useState(0)
   const [sortBy, setSortBy] = useState<'default' | 'mileage-closest' | 'mileage-low' | 'mileage-high' | 'price-low' | 'price-high' | 'year-new' | 'year-old' | 'distance'>('default')
+  const [activeFilters, setActiveFilters] = useState<{ trim: string[]; drivetrain: string[]; transmission: string[]; engine: string[] }>({ trim: [], drivetrain: [], transmission: [], engine: [] })
 
   // Handle edit mode (from history)
   useEffect(() => {
@@ -984,22 +988,11 @@ function CompFinderInner() {
   }, [step, claim, listings, selectedIds, compAdjs, adjustments, editingId])
 
   const sortedListings = useMemo(() => {
-    const matches = (compVal: string, claimVal: string) => {
-      const a = compVal.toLowerCase().trim()
-      const b = claimVal.toLowerCase().trim()
-      return a === b || a.includes(b) || b.includes(a)
-    }
-    const genericTrims = ['base', 'standard', 'n/a', 'other', '']
     const filtered = listings.filter((comp) => {
-      if (
-        claim.trim &&
-        comp.trim &&
-        !genericTrims.includes(claim.trim.toLowerCase().trim()) &&
-        !matches(comp.trim, claim.trim)
-      ) return false
-      if (claim.drivetrain && comp.drivetrain && !matches(comp.drivetrain, claim.drivetrain)) return false
-      if (claim.transmission && comp.transmission && !matches(comp.transmission, claim.transmission)) return false
-      if (claim.engine && comp.engine && !matches(comp.engine, claim.engine)) return false
+      if (activeFilters.trim.length > 0 && !activeFilters.trim.includes(comp.trim || '')) return false
+      if (activeFilters.drivetrain.length > 0 && !activeFilters.drivetrain.includes(comp.drivetrain || '')) return false
+      if (activeFilters.transmission.length > 0 && !activeFilters.transmission.includes(comp.transmission || '')) return false
+      if (activeFilters.engine.length > 0 && !activeFilters.engine.includes(comp.engine || '')) return false
       return true
     })
     const sorted = [...filtered]
@@ -1030,7 +1023,7 @@ function CompFinderInner() {
         break
     }
     return sorted
-  }, [listings, sortBy, claim.mileage, claim.trim, claim.drivetrain, claim.transmission, claim.engine])
+  }, [listings, sortBy, claim.mileage, activeFilters])
 
   const selectedComps = selectedIds
     .map((id) => listings.find((l) => l.id === id))
@@ -1074,6 +1067,7 @@ function CompFinderInner() {
       const res = await fetch(`/api/acv/search-comps?${params}`)
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Search failed')
+      setActiveFilters({ trim: [], drivetrain: [], transmission: [], engine: [] })
       setListings(data.listings ?? [])
       if ((data.listings ?? []).length === 0) {
         setCompsError('No listings found. Try expanding the radius or removing the trim filter.')
@@ -1278,6 +1272,51 @@ function CompFinderInner() {
                     </button>
                   ))}
                 </div>
+
+                {/* Attribute filters */}
+                {(['trim', 'drivetrain', 'transmission', 'engine'] as const).map((field) => {
+                  const unique = [...new Set(listings.map((l) => l[field] || '').filter(Boolean))].sort()
+                  if (unique.length < 2) return null
+                  return (
+                    <div key={field} className="flex items-center gap-2 flex-wrap">
+                      <span className="text-[11px] font-semibold text-gray-400 uppercase tracking-wide w-20 shrink-0">
+                        {field === 'drivetrain' ? 'Drive' : field.charAt(0).toUpperCase() + field.slice(1)}
+                      </span>
+                      {unique.map((val) => {
+                        const active = activeFilters[field].includes(val)
+                        return (
+                          <button
+                            key={val}
+                            onClick={() =>
+                              setActiveFilters((prev) => ({
+                                ...prev,
+                                [field]: active
+                                  ? prev[field].filter((v) => v !== val)
+                                  : [...prev[field], val],
+                              }))
+                            }
+                            className={cn(
+                              'px-2.5 py-1 text-xs font-semibold rounded-lg transition-all',
+                              active
+                                ? 'bg-blue-600 text-white'
+                                : 'bg-gray-100 text-gray-500 hover:bg-gray-200 hover:text-gray-700'
+                            )}
+                          >
+                            {val}
+                          </button>
+                        )
+                      })}
+                      {activeFilters[field].length > 0 && (
+                        <button
+                          onClick={() => setActiveFilters((prev) => ({ ...prev, [field]: [] }))}
+                          className="text-[11px] text-gray-400 hover:text-gray-600 ml-1"
+                        >
+                          Clear
+                        </button>
+                      )}
+                    </div>
+                  )
+                })}
               </div>
             )}
 
