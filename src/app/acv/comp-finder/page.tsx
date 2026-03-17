@@ -1066,6 +1066,10 @@ function CompFinderInner() {
         model: claim.model,
         radius: String(claim.radius),
         ...(isNationwide ? { nationwide: 'true' } : { zip: claim.zip }),
+        ...(claim.trim ? { trim: claim.trim } : {}),
+        ...(claim.drivetrain ? { drivetrain: claim.drivetrain } : {}),
+        ...(claim.transmission ? { transmission: claim.transmission } : {}),
+        ...(claim.engine ? { engine: claim.engine } : {}),
       })
       const res = await fetch(`/api/acv/search-comps?${params}`)
       const data = await res.json()

@@ -14,6 +14,14 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'Missing params' }, { status: 400 })
   }
 
+  const trim = p.get('trim') || ''
+  const drivetrain = p.get('drivetrain') || ''
+  const transmission = p.get('transmission') || ''
+  const engine = p.get('engine') || ''
+
+  const genericTrims = ['base', 'standard', 'n/a', 'other', '']
+  const trimParam = genericTrims.includes(trim.toLowerCase().trim()) ? '' : trim
+
   const apiKey = process.env.MARKETCHECK_API_KEY
   const endpoint = includeInactive ? 'inactive' : 'active'
 
@@ -26,6 +34,10 @@ export async function GET(request: NextRequest) {
     sort_by: 'miles',
     sort_order: 'asc',
     ...(zip && !nationwide ? { zip, radius } : {}),
+    ...(trimParam ? { trim: trimParam } : {}),
+    ...(drivetrain ? { drivetrain } : {}),
+    ...(transmission ? { transmission } : {}),
+    ...(engine ? { engine } : {}),
   }
 
   try {
