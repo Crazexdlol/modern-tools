@@ -154,6 +154,8 @@ function grabZip(text: string, ownerSection: string): string {
   return ''
 }
 
+export const runtime = 'nodejs'
+
 export async function POST(request: NextRequest) {
   try {
     const formData = await request.formData()
@@ -163,7 +165,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'No file provided' }, { status: 400 })
     }
 
-    if (file.type !== 'application/pdf') {
+    if (!file.type.includes('pdf') && !file.name.toLowerCase().endsWith('.pdf')) {
       return NextResponse.json({ error: 'File must be a PDF' }, { status: 400 })
     }
 
@@ -180,6 +182,7 @@ export async function POST(request: NextRequest) {
     const parsed = parseClaimText(text)
     return NextResponse.json(parsed)
   } catch (err) {
+    console.error('parse-claim error:', err)
     return NextResponse.json(
       { error: err instanceof Error ? err.message : 'Failed to parse claim PDF' },
       { status: 500 }
