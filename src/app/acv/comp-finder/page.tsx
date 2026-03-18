@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
 import { useSearchParams } from 'next/navigation'
@@ -22,8 +22,9 @@ import {
   Plus,
   Gauge,
   ArrowUpDown,
+  Upload,
+  CheckCircle2,
 } from 'lucide-react'
-import { useRef } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -91,8 +92,55 @@ function ClaimInfoForm({
   claim: ClaimInfo
   onChange: (updated: ClaimInfo) => void
 }) {
+  const [pdfUploading, setPdfUploading] = useState(false)
+  const [pdfError, setPdfError] = useState<string | null>(null)
+  const [pdfSuccess, setPdfSuccess] = useState(false)
+  const pdfInputRef = useRef<HTMLInputElement>(null)
+
   const set = (field: keyof ClaimInfo, value: string | number) =>
     onChange({ ...claim, [field]: value })
+
+  const handlePdfUpload = async (file: File) => {
+    setPdfUploading(true)
+    setPdfError(null)
+    setPdfSuccess(false)
+    try {
+      const formData = new FormData()
+      formData.append('file', file)
+      const res = await fetch('/api/acv/parse-claim', { method: 'POST', body: formData })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Failed to parse PDF')
+      onChange({
+        ...claim,
+        maNumber: data.maNumber || claim.maNumber,
+        claimNumber: data.claimNumber || claim.claimNumber,
+        dateOfLoss: data.dateOfLoss || claim.dateOfLoss,
+        clientType: data.clientType || claim.clientType,
+        clientName: data.clientName || claim.clientName,
+        insuredName: data.insuredName || claim.insuredName,
+        ownerPhone: data.ownerPhone || claim.ownerPhone,
+        ownerEmail: data.ownerEmail || claim.ownerEmail,
+        ownerAddress: data.ownerAddress || claim.ownerAddress,
+        insuranceCompany: data.insuranceCompany || claim.insuranceCompany,
+        adjuster: data.adjuster || claim.adjuster,
+        adjusterPhone: data.adjusterPhone || claim.adjusterPhone,
+        adjusterEmail: data.adjusterEmail || claim.adjusterEmail,
+        vin: data.vin || claim.vin,
+        year: data.year || claim.year,
+        make: data.make || claim.make,
+        model: data.model || claim.model,
+        mileage: data.mileage || claim.mileage,
+        zip: data.zip || claim.zip,
+      })
+      setPdfSuccess(true)
+      setTimeout(() => setPdfSuccess(false), 3000)
+    } catch (err) {
+      setPdfError(err instanceof Error ? err.message : 'PDF parse failed')
+    } finally {
+      setPdfUploading(false)
+      if (pdfInputRef.current) pdfInputRef.current.value = ''
+    }
+  }
 
   const inputCls =
     'w-full bg-white border border-gray-200 rounded-lg px-3 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent'
@@ -100,6 +148,44 @@ function ClaimInfoForm({
 
   return (
     <div className="space-y-8">
+      {/* PDF Upload */}
+      <div className="flex items-center gap-3">
+        <input
+          ref={pdfInputRef}
+          type="file"
+          accept=".pdf"
+          className="hidden"
+          onChange={(e) => {
+            const file = e.target.files?.[0]
+            if (file) handlePdfUpload(file)
+          }}
+        />
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className={`gap-2 border-dashed ${pdfSuccess ? 'border-emerald-500 text-emerald-600' : ''}`}
+          disabled={pdfUploading}
+          onClick={() => pdfInputRef.current?.click()}
+        >
+          {pdfUploading ? (
+            <Loader2 className="w-4 h-4 animate-spin" />
+          ) : pdfSuccess ? (
+            <CheckCircle2 className="w-4 h-4" />
+          ) : (
+            <Upload className="w-4 h-4" />
+          )}
+          {pdfUploading ? 'Parsing...' : pdfSuccess ? 'Filled!' : 'Upload Claim PDF'}
+        </Button>
+        <span className="text-xs text-gray-400">Auto-fill from a claim assignment PDF</span>
+        {pdfError && (
+          <p className="text-xs text-red-500 flex items-center gap-1">
+            <AlertCircle className="w-3 h-3" />
+            {pdfError}
+          </p>
+        )}
+      </div>
+
       {/* Report Info */}
       <div>
         <h3 className="text-sm font-bold text-gray-900 mb-4">Report Info</h3>
