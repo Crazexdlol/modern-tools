@@ -30,6 +30,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
 import type { ClaimInfo, MarketComp, SelectedComp, ACVAdjustments, ACVResult } from '@/lib/acv/types'
+import { parseClaimPDF } from '@/lib/parse-claim-pdf'
 import {
   calculateACV,
   calculateCompValue,
@@ -105,11 +106,7 @@ function ClaimInfoForm({
     setPdfError(null)
     setPdfSuccess(false)
     try {
-      const formData = new FormData()
-      formData.append('file', file)
-      const res = await fetch('/api/acv/parse-claim', { method: 'POST', body: formData })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error || 'Failed to parse PDF')
+      const data = await parseClaimPDF(file)
       onChange({
         ...claim,
         maNumber: data.maNumber || claim.maNumber,
