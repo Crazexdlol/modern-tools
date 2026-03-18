@@ -1,4 +1,4 @@
-// Known labels used as stop-words when extracting values
+// Known labels + section headers used as stop-words when extracting values
 const LABELS = [
   'File #', 'Company', 'Claim Number', 'Policy Number', 'Adjuster',
   'Adjuster Phone', 'Adjuster Email', 'Deductible Amount', 'Date of Loss',
@@ -12,13 +12,26 @@ const LABELS = [
   'Unit Type',
 ]
 
+// Section headers that also act as stop-words (no colon after them)
+const SECTION_HEADERS = [
+  'Insurance Information', 'Owner Information', 'Location Information',
+  'Vehicle Information', 'Appraisal Information', 'Damage', 'Instructions',
+]
+
 const LABEL_STOP = LABELS
   .map((l) => l.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
   .join('|')
 
+const SECTION_STOP = SECTION_HEADERS
+  .map((s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+  .join('|')
+
+// Combined stop pattern: labels with colon OR section headers
+const ALL_STOP = `(?:(?:${LABEL_STOP})\\s*:|(?:${SECTION_STOP}))`
+
 function grab(text: string, label: string): string {
   const re = new RegExp(
-    label + '\\s*:\\s*(.*?)(?=(?:' + LABEL_STOP + ')\\s*:|\\n|$)',
+    label + '\\s*:\\s*(.*?)(?=' + ALL_STOP + '|\\n|$)',
     'i'
   )
   const m = text.match(re)
@@ -32,18 +45,30 @@ async function extractTextFromPDF(file: File): Promise<string> {
 
   const arrayBuffer = await file.arrayBuffer()
   const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise
-  const lines: string[] = []
+  const allLines: string[] = []
 
   for (let i = 1; i <= pdf.numPages; i++) {
     const page = await pdf.getPage(i)
     const content = await page.getTextContent()
-    const pageText = content.items
-      .map((item) => ('str' in item ? item.str : ''))
-      .join(' ')
-    lines.push(pageText)
+
+    // Group text items by Y-coordinate to reconstruct lines
+    const lineMap = new Map<number, string[]>()
+    for (const item of content.items) {
+      if (!('str' in item) || !item.str) continue
+      // Round Y to nearest integer to group items on the same line
+      const y = Math.round('transform' in item ? item.transform[5] : 0)
+      if (!lineMap.has(y)) lineMap.set(y, [])
+      lineMap.get(y)!.push(item.str)
+    }
+
+    // Sort by Y descending (PDF coordinates: higher Y = higher on page)
+    const sortedYs = [...lineMap.keys()].sort((a, b) => b - a)
+    for (const y of sortedYs) {
+      allLines.push(lineMap.get(y)!.join(' '))
+    }
   }
 
-  return lines.join('\n')
+  return allLines.join('\n')
 }
 
 export interface ParsedClaim {
@@ -81,7 +106,7 @@ function parseClaimText(text: string): ParsedClaim {
 
   // Insurance company (no colon in PDF: "Company Allstate Ins. Co. Claim Number:")
   let insuranceCompany = ''
-  const companyMatch = text.match(/Company\s+(.+?)(?=Claim Number|Policy Number|\n)/i)
+  const companyMatch = insuranceSection.match(/Company\s+(.+?)(?=Claim Number|Policy Number|\n)/i)
   if (companyMatch) insuranceCompany = companyMatch[1].trim()
 
   const claimNumber = grab(insuranceSection, 'Claim Number')
@@ -103,10 +128,16 @@ function parseClaimText(text: string): ParsedClaim {
   const clientType: 'Insured' | 'Claimant' =
     claimForRaw.toLowerCase().includes('claimant') ? 'Claimant' : 'Insured'
 
-  const insuredName = grab(text, 'Insured Name')
+  // Insured name — use Insured Name field, clean up any trailing section headers
+  let insuredName = grab(text, 'Insured Name')
+  insuredName = insuredName.replace(/\s*(Owner Information|Location Information|Vehicle Information).*$/i, '').trim()
 
+  // Client / business name — strip ACV, DV, and trailing labels
   let clientName = grab(ownerSection || text, 'Business Name')
-  clientName = clientName.replace(/\s*(First Name|Last Name|Contact).*$/i, '').trim()
+  clientName = clientName
+    .replace(/\s*(First Name|Last Name|Contact).*$/i, '')
+    .replace(/\b(ACV|DV)\b/gi, '')
+    .trim()
 
   const firstName = grab(ownerSection || text, 'First Name')
   const lastName = grab(ownerSection || text, 'Last Name')
@@ -126,26 +157,29 @@ function parseClaimText(text: string): ParsedClaim {
 
   const zip = grabZip(text, ownerSection)
 
+  // Fill empty string fields with N/A
+  const na = (val: string) => val || 'N/A'
+
   return {
-    maNumber,
-    claimNumber,
+    maNumber: na(maNumber),
+    claimNumber: na(claimNumber),
     dateOfLoss,
     clientType,
-    clientName: clientName || '',
-    insuredName: insuredName || `${firstName} ${lastName}`.trim(),
-    ownerPhone,
-    ownerEmail,
-    ownerAddress,
-    insuranceCompany,
-    adjuster,
-    adjusterPhone,
-    adjusterEmail: '',
-    vin,
+    clientName: na(clientName),
+    insuredName: na(insuredName || `${firstName} ${lastName}`.trim()),
+    ownerPhone: na(ownerPhone),
+    ownerEmail: na(ownerEmail),
+    ownerAddress: na(ownerAddress),
+    insuranceCompany: na(insuranceCompany),
+    adjuster: na(adjuster),
+    adjusterPhone: na(adjusterPhone),
+    adjusterEmail: 'N/A',
+    vin: na(vin),
     year,
-    make,
-    model,
+    make: na(make),
+    model: na(model),
     mileage,
-    zip,
+    zip: na(zip),
   }
 }
 
