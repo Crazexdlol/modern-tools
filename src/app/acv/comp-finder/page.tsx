@@ -1080,12 +1080,24 @@ function ReportsStep({
   result: ACVResult
   onBack: () => void
 }) {
+  const REPORTS_STORAGE_KEY = 'modern-tools-reports-draft'
+
+  // Load saved reports state from localStorage
+  const savedReports = useRef<Record<string, unknown> | null>(null)
+  if (savedReports.current === null) {
+    try {
+      const raw = localStorage.getItem(REPORTS_STORAGE_KEY)
+      savedReports.current = raw ? JSON.parse(raw) : {}
+    } catch { savedReports.current = {} }
+  }
+  const saved = savedReports.current as Record<string, unknown>
+
   const [selectedReport, setSelectedReport] = useState<string | null>(null)
   const [downloading, setDownloading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   // Closing Notes form state
-  const [notesType, setNotesType] = useState<NotesType>('acv')
+  const [notesType, setNotesType] = useState<NotesType>((saved.notesType as NotesType) || 'acv')
   const [notesData, setNotesData] = useState(() => ({
     maValueNum: 0,
     appraiserName: '',
@@ -1096,6 +1108,7 @@ function ReportsStep({
     agreementAmountNum: 0,
     umpireName: '',
     umpireAmountNum: 0,
+    ...(saved.notesData as Record<string, unknown> || {}),
   }))
 
   const setNotes = (field: string, value: string | number) =>
@@ -1194,7 +1207,7 @@ function ReportsStep({
     }
   }
 
-  // Award form state — auto-filled from claim
+  // Award form state — auto-filled from claim, restored from localStorage
   const [awardData, setAwardData] = useState(() => ({
     insuranceCompany: claim.insuranceCompany || '',
     vehicleOwner: claim.insuredName || '',
@@ -1207,10 +1220,20 @@ function ReportsStep({
     signatureDate2: '',
     signatureBlock1: 'Henry Aleksanyan\nModern Appraisers',
     signatureBlock2: '',
+    ...(saved.awardData as Record<string, unknown> || {}),
   }))
 
   const setAward = (field: string, value: string) =>
     setAwardData(prev => ({ ...prev, [field]: value }))
+
+  // Persist reports form state to localStorage
+  useEffect(() => {
+    try {
+      localStorage.setItem(REPORTS_STORAGE_KEY, JSON.stringify({
+        awardData, notesType, notesData,
+      }))
+    } catch { /* ignore */ }
+  }, [awardData, notesType, notesData])
 
   const downloadAwardPdf = async () => {
     setDownloading(true)
@@ -1868,6 +1891,7 @@ function CompFinderInner() {
     setCompsError(null)
     setEditingId(null)
     sessionStorage.removeItem(COMP_FINDER_SESSION_KEY)
+    localStorage.removeItem('modern-tools-reports-draft')
   }
 
   return (
