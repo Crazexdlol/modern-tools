@@ -1101,6 +1101,23 @@ function ReportsStep({
   const setNotes = (field: string, value: string | number) =>
     setNotesData(prev => ({ ...prev, [field]: value }))
 
+  // Sync Award Appraiser 2 → Closing Notes opposing appraiser
+  useEffect(() => {
+    const block = awardData.signatureBlock2.trim()
+    if (!block) return
+    const lines = block.split('\n').map(l => l.trim()).filter(Boolean)
+    const name = lines[0] || ''
+    const company = lines[1] || ''
+    const lastNameParts = name.split(/\s+/)
+    const lastName = lastNameParts.length > 1 ? lastNameParts[lastNameParts.length - 1] : name
+    setNotesData(prev => ({
+      ...prev,
+      appraiserName: name,
+      appraiserCompany: company,
+      appraiserLastName: lastName,
+    }))
+  }, [awardData.signatureBlock2])
+
   const maValueForNotes = (notesType === 'acv' || notesType === 'acv-umpire')
     ? (result.acv || notesData.maValueNum)
     : notesData.maValueNum
