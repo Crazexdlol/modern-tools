@@ -190,6 +190,7 @@ function ClaimInfoForm({
       if (!res.ok) throw new Error(data.error || 'Decode failed')
       const updated = {
         ...claim,
+        vin: data.vin ?? claim.vin,
         year: data.year ?? claim.year,
         make: data.make ?? claim.make,
         model: data.model ?? claim.model,
