@@ -11,7 +11,7 @@ export async function POST(request: NextRequest) {
     return new NextResponse(buffer, {
       headers: {
         'Content-Type': 'application/pdf',
-        'Content-Disposition': `attachment; filename="Award-Agreement-${body.claimNumber || 'report'}.pdf"`,
+        'Content-Disposition': `attachment; filename="${body.claimNumber || 'report'}-award.pdf"`,
       },
     })
   } catch (err) {

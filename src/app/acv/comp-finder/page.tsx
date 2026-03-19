@@ -804,7 +804,7 @@ function ReviewStep({
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      a.download = `ACV-${claim.maNumber || 'report'}.pdf`
+      a.download = `${claim.maNumber || 'report'}-acv.pdf`
       a.click()
       URL.revokeObjectURL(url)
       saveToHistory(claim, selectedComps, adjustments, result, 'comp-finder', editId)
@@ -1031,7 +1031,7 @@ function ReportsStep({
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      a.download = `Award-Agreement-${claim.claimNumber || claim.maNumber || 'report'}.pdf`
+      a.download = `${claim.maNumber || 'report'}-award.pdf`
       a.click()
       URL.revokeObjectURL(url)
     } catch (err) {

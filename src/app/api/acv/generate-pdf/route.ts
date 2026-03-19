@@ -19,7 +19,7 @@ export async function POST(request: NextRequest) {
     return new NextResponse(buffer, {
       headers: {
         'Content-Type': 'application/pdf',
-        'Content-Disposition': `attachment; filename="ACV-${claim.maNumber || 'report'}.pdf"`,
+        'Content-Disposition': `attachment; filename="${claim.maNumber || 'report'}-acv.pdf"`,
       },
     })
   } catch (err) {
