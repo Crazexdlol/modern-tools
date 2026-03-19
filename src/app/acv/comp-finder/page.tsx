@@ -1259,6 +1259,18 @@ function ReportsStep({
   const setAward = (field: string, value: string) =>
     setAwardData(prev => ({ ...prev, [field]: value }))
 
+  // Keep award fields in sync with claim data
+  useEffect(() => {
+    setAwardData(prev => ({
+      ...prev,
+      insuranceCompany: claim.insuranceCompany || prev.insuranceCompany,
+      vehicleOwner: claim.insuredName || prev.vehicleOwner,
+      vehicle: [claim.year, claim.make, claim.model].filter(Boolean).join(' ') || prev.vehicle,
+      dateOfLoss: claim.dateOfLoss || prev.dateOfLoss,
+      claimNumber: claim.claimNumber || prev.claimNumber,
+    }))
+  }, [claim.insuranceCompany, claim.insuredName, claim.year, claim.make, claim.model, claim.dateOfLoss, claim.claimNumber])
+
   const downloadAwardPdf = async () => {
     setDownloading(true)
     setError(null)

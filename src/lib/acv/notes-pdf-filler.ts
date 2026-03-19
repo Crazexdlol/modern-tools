@@ -1,4 +1,4 @@
-import { PDFDocument, PDFName, PDFBool, PDFString } from 'pdf-lib'
+import { PDFDocument, PDFName, PDFBool, PDFString, StandardFonts } from 'pdf-lib'
 import fs from 'fs'
 import path from 'path'
 
@@ -56,6 +56,26 @@ export async function fillNotesPdf(data: NotesPdfData): Promise<Uint8Array> {
   const form = doc.getForm()
 
   form.acroForm.dict.set(PDFName.of('NeedAppearances'), PDFBool.True)
+
+  // Embed Times Roman and set as default font for all fields
+  const timesRoman = await doc.embedFont(StandardFonts.TimesRoman)
+  const fontKey = 'F_TimesRoman'
+  const resources = form.acroForm.dict.lookup(PDFName.of('DR')) as any
+  if (resources) {
+    const fontDict = resources.lookup?.(PDFName.of('Font')) as any
+    if (fontDict) {
+      fontDict.set(PDFName.of(fontKey), timesRoman.ref)
+    }
+  }
+
+  // Set DA (Default Appearance) on every field to use Times Roman
+  form.getFields().forEach(f => {
+    const da = `0 0 0 rg /${fontKey} 11 Tf`
+    f.acroField.dict.set(PDFName.of('DA'), PDFString.of(da))
+    f.acroField.getWidgets().forEach(w => {
+      w.dict.set(PDFName.of('DA'), PDFString.of(da))
+    })
+  })
 
   // Header fields
   setField(form, 'Date7_af_date', fmtDate(data.date))
