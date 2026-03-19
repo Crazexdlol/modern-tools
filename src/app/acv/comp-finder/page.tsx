@@ -1031,7 +1031,7 @@ function ReportsStep({
     dateOfLoss: claim.dateOfLoss || '',
     claimDate: new Date().toISOString().split('T')[0],
     claimNumber: claim.claimNumber || '',
-    acvAmount: '',
+    acvAmountNum: 0,
     signatureDate1: new Date().toISOString().split('T')[0],
     signatureDate2: '',
     signatureBlock1: 'Henry Aleksanyan\nModern Appraisers',
@@ -1045,10 +1045,14 @@ function ReportsStep({
     setDownloading(true)
     setError(null)
     try {
+      const payload = {
+        ...awardData,
+        acvAmount: awardData.acvAmountNum ? formatCurrency(awardData.acvAmountNum) : '',
+      }
       const res = await fetch('/api/acv/generate-award-pdf', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(awardData),
+        body: JSON.stringify(payload),
       })
       if (!res.ok) {
         const data = await res.json()
@@ -1180,19 +1184,11 @@ function ReportsStep({
               </div>
               <div className="md:col-span-2">
                 <label className={labelCls}>Actual Cash Value (ACV)</label>
-                <input
+                <CurrencyInput
                   className={inputCls}
                   placeholder="$0.00"
-                  value={awardData.acvAmount}
-                  onChange={(e) => {
-                    const raw = e.target.value.replace(/[^0-9.]/g, '')
-                    const num = parseFloat(raw)
-                    if (!raw || isNaN(num)) {
-                      setAward('acvAmount', '')
-                    } else {
-                      setAward('acvAmount', num.toLocaleString('en-US', { style: 'currency', currency: 'USD' }))
-                    }
-                  }}
+                  value={awardData.acvAmountNum}
+                  onChange={(val) => setAwardData(prev => ({ ...prev, acvAmountNum: val }))}
                 />
               </div>
             </div>
