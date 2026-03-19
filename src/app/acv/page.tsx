@@ -40,7 +40,6 @@ export default function ACVPage() {
     sessionStorage.removeItem('modern-tools-comp-finder-draft')
     sessionStorage.removeItem('modern-tools-auto-acv-draft')
     sessionStorage.removeItem('modern-tools-acv-edit')
-    localStorage.removeItem('modern-tools-reports-draft')
     setShowNewMenu(false)
     router.push(path)
   }

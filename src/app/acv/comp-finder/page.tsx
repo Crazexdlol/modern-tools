@@ -1071,45 +1071,94 @@ function getDropdownValue(type: NotesType): string {
   return 'Diminished Value Assignment – DV'
 }
 
+interface ReportsState {
+  notesType: NotesType
+  notesData: {
+    maValueNum: number
+    appraiserName: string
+    appraiserCompany: string
+    appraiserValueNum: number
+    appraiserTitle: string
+    appraiserLastName: string
+    agreementAmountNum: number
+    umpireName: string
+    umpireAmountNum: number
+  }
+  awardData: {
+    insuranceCompany: string
+    vehicleOwner: string
+    vehicle: string
+    dateOfLoss: string
+    claimDate: string
+    claimNumber: string
+    acvAmountNum: number
+    signatureDate1: string
+    signatureDate2: string
+    signatureBlock1: string
+    signatureBlock2: string
+  }
+}
+
+function defaultReportsState(claim: ClaimInfo): ReportsState {
+  return {
+    notesType: 'acv',
+    notesData: {
+      maValueNum: 0,
+      appraiserName: '',
+      appraiserCompany: '',
+      appraiserValueNum: 0,
+      appraiserTitle: 'Mr.',
+      appraiserLastName: '',
+      agreementAmountNum: 0,
+      umpireName: '',
+      umpireAmountNum: 0,
+    },
+    awardData: {
+      insuranceCompany: claim.insuranceCompany || '',
+      vehicleOwner: claim.insuredName || '',
+      vehicle: [claim.year, claim.make, claim.model].filter(Boolean).join(' '),
+      dateOfLoss: claim.dateOfLoss || '',
+      claimDate: new Date().toISOString().split('T')[0],
+      claimNumber: claim.claimNumber || '',
+      acvAmountNum: 0,
+      signatureDate1: new Date().toISOString().split('T')[0],
+      signatureDate2: '',
+      signatureBlock1: 'Henry Aleksanyan\nModern Appraisers',
+      signatureBlock2: '',
+    },
+  }
+}
+
 function ReportsStep({
   claim,
   result,
   onBack,
+  reportsState,
+  onReportsStateChange,
 }: {
   claim: ClaimInfo
   result: ACVResult
   onBack: () => void
+  reportsState: ReportsState
+  onReportsStateChange: (updated: ReportsState) => void
 }) {
-  const REPORTS_STORAGE_KEY = 'modern-tools-reports-draft'
-
-  // Load saved reports state from localStorage
-  const savedReports = useRef<Record<string, unknown> | null>(null)
-  if (savedReports.current === null) {
-    try {
-      const raw = localStorage.getItem(REPORTS_STORAGE_KEY)
-      savedReports.current = raw ? JSON.parse(raw) : {}
-    } catch { savedReports.current = {} }
-  }
-  const saved = savedReports.current as Record<string, unknown>
-
   const [selectedReport, setSelectedReport] = useState<string | null>(null)
   const [downloading, setDownloading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  // Closing Notes form state
-  const [notesType, setNotesType] = useState<NotesType>((saved.notesType as NotesType) || 'acv')
-  const [notesData, setNotesData] = useState(() => ({
-    maValueNum: 0,
-    appraiserName: '',
-    appraiserCompany: '',
-    appraiserValueNum: 0,
-    appraiserTitle: 'Mr.',
-    appraiserLastName: '',
-    agreementAmountNum: 0,
-    umpireName: '',
-    umpireAmountNum: 0,
-    ...(saved.notesData as Record<string, unknown> || {}),
-  }))
+  // Convenience accessors
+  const notesType = reportsState.notesType
+  const notesData = reportsState.notesData
+  const awardData = reportsState.awardData
+
+  const setNotesType = (t: NotesType) =>
+    onReportsStateChange({ ...reportsState, notesType: t })
+
+  const setNotesData = (fn: (prev: ReportsState['notesData']) => ReportsState['notesData']) =>
+    onReportsStateChange({ ...reportsState, notesData: fn(reportsState.notesData) })
+
+  const setAwardData = (fn: (prev: ReportsState['awardData']) => ReportsState['awardData']) =>
+    onReportsStateChange({ ...reportsState, awardData: fn(reportsState.awardData) })
 
   const setNotes = (field: string, value: string | number) =>
     setNotesData(prev => {
@@ -1207,33 +1256,8 @@ function ReportsStep({
     }
   }
 
-  // Award form state — auto-filled from claim, restored from localStorage
-  const [awardData, setAwardData] = useState(() => ({
-    insuranceCompany: claim.insuranceCompany || '',
-    vehicleOwner: claim.insuredName || '',
-    vehicle: [claim.year, claim.make, claim.model].filter(Boolean).join(' '),
-    dateOfLoss: claim.dateOfLoss || '',
-    claimDate: new Date().toISOString().split('T')[0],
-    claimNumber: claim.claimNumber || '',
-    acvAmountNum: 0,
-    signatureDate1: new Date().toISOString().split('T')[0],
-    signatureDate2: '',
-    signatureBlock1: 'Henry Aleksanyan\nModern Appraisers',
-    signatureBlock2: '',
-    ...(saved.awardData as Record<string, unknown> || {}),
-  }))
-
   const setAward = (field: string, value: string) =>
     setAwardData(prev => ({ ...prev, [field]: value }))
-
-  // Persist reports form state to localStorage
-  useEffect(() => {
-    try {
-      localStorage.setItem(REPORTS_STORAGE_KEY, JSON.stringify({
-        awardData, notesType, notesData,
-      }))
-    } catch { /* ignore */ }
-  }, [awardData, notesType, notesData])
 
   const downloadAwardPdf = async () => {
     setDownloading(true)
@@ -1665,7 +1689,7 @@ function defaultClaim(): ClaimInfo {
 // ── Main page ────────────────────────────────────────────────────────────────
 const COMP_FINDER_SESSION_KEY = 'modern-tools-comp-finder-draft'
 
-function getCompFinderDraft(): { step: number; claim: ClaimInfo; listings: MarketComp[]; selectedIds: string[]; compAdjs: { mileageAdj: number; yearAdj: number }[]; adjustments: ACVAdjustments; editingId: string | null } | null {
+function getCompFinderDraft(): { step: number; claim: ClaimInfo; listings: MarketComp[]; selectedIds: string[]; compAdjs: { mileageAdj: number; yearAdj: number }[]; adjustments: ACVAdjustments; editingId: string | null; reportsState?: ReportsState } | null {
   try {
     const raw = sessionStorage.getItem(COMP_FINDER_SESSION_KEY)
     if (raw) return JSON.parse(raw)
@@ -1693,6 +1717,9 @@ function CompFinderInner() {
     () => draft.current?.adjustments ?? defaultAdjustments()
   )
   const [editingId, setEditingId] = useState<string | null>(() => draft.current?.editingId ?? null)
+  const [reportsState, setReportsState] = useState<ReportsState>(
+    () => draft.current?.reportsState ?? defaultReportsState(draft.current?.claim ?? defaultClaim())
+  )
   const [mileageRate, setMileageRate] = useState(0)
   const [sortBy, setSortBy] = useState<'default' | 'mileage-closest' | 'mileage-low' | 'mileage-high' | 'price-low' | 'price-high' | 'year-new' | 'year-old' | 'distance'>('default')
   const [activeFilters, setActiveFilters] = useState<{ trim: string[]; drivetrain: string[]; transmission: string[]; engine: string[] }>({ trim: [], drivetrain: [], transmission: [], engine: [] })
@@ -1725,10 +1752,10 @@ function CompFinderInner() {
   useEffect(() => {
     try {
       sessionStorage.setItem(COMP_FINDER_SESSION_KEY, JSON.stringify({
-        step, claim, listings, selectedIds, compAdjs, adjustments, editingId,
+        step, claim, listings, selectedIds, compAdjs, adjustments, editingId, reportsState,
       }))
     } catch { /* ignore */ }
-  }, [step, claim, listings, selectedIds, compAdjs, adjustments, editingId])
+  }, [step, claim, listings, selectedIds, compAdjs, adjustments, editingId, reportsState])
 
   const sortedListings = useMemo(() => {
     const filtered = listings.filter((comp) => {
@@ -1890,8 +1917,8 @@ function CompFinderInner() {
     setAdjustments(defaultAdjustments())
     setCompsError(null)
     setEditingId(null)
+    setReportsState(defaultReportsState(defaultClaim()))
     sessionStorage.removeItem(COMP_FINDER_SESSION_KEY)
-    localStorage.removeItem('modern-tools-reports-draft')
   }
 
   return (
@@ -2186,6 +2213,8 @@ function CompFinderInner() {
               claim={claim}
               result={result}
               onBack={() => setStep(4)}
+              reportsState={reportsState}
+              onReportsStateChange={setReportsState}
             />
           </div>
         )}
