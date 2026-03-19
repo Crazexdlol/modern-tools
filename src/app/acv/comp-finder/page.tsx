@@ -1099,7 +1099,15 @@ function ReportsStep({
   }))
 
   const setNotes = (field: string, value: string | number) =>
-    setNotesData(prev => ({ ...prev, [field]: value }))
+    setNotesData(prev => {
+      const next = { ...prev, [field]: value }
+      // Auto-derive last name from full name
+      if (field === 'appraiserName' && typeof value === 'string') {
+        const parts = value.trim().split(/\s+/)
+        next.appraiserLastName = parts.length > 1 ? parts[parts.length - 1] : value.trim()
+      }
+      return next
+    })
 
   // Sync Award Appraiser 2 → Closing Notes opposing appraiser
   useEffect(() => {
@@ -1504,28 +1512,17 @@ function ReportsStep({
                     onChange={(e) => setNotes('appraiserCompany', e.target.value)}
                   />
                 </div>
-                <div className="flex gap-2">
-                  <div className="w-24">
-                    <label className={labelCls}>Title</label>
-                    <select
-                      className={inputCls}
-                      value={notesData.appraiserTitle}
-                      onChange={(e) => setNotes('appraiserTitle', e.target.value)}
-                    >
-                      <option value="Mr.">Mr.</option>
-                      <option value="Ms.">Ms.</option>
-                      <option value="Mrs.">Mrs.</option>
-                    </select>
-                  </div>
-                  <div className="flex-1">
-                    <label className={labelCls}>Last Name</label>
-                    <input
-                      className={inputCls}
-                      placeholder="Smith"
-                      value={notesData.appraiserLastName}
-                      onChange={(e) => setNotes('appraiserLastName', e.target.value)}
-                    />
-                  </div>
+                <div className="w-24">
+                  <label className={labelCls}>Title</label>
+                  <select
+                    className={inputCls}
+                    value={notesData.appraiserTitle}
+                    onChange={(e) => setNotes('appraiserTitle', e.target.value)}
+                  >
+                    <option value="Mr.">Mr.</option>
+                    <option value="Ms.">Ms.</option>
+                    <option value="Mrs.">Mrs.</option>
+                  </select>
                 </div>
                 <div>
                   <label className={labelCls}>Their Appraised Value</label>
