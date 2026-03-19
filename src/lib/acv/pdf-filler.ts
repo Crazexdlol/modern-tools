@@ -138,7 +138,14 @@ export async function fillACVPdf(
   comps.forEach((comp, i) => {
     const f = compFields[i]
     if (!f) return
-    const dealerInfo = [comp.dealerName, comp.dealerPhone]
+    // Dealer info: name + phone, or website domain if no dealer name
+    let dealerLabel = comp.dealerName
+    if (!dealerLabel && comp.vdpUrl) {
+      try {
+        dealerLabel = new URL(comp.vdpUrl).hostname.replace(/^www\./, '')
+      } catch { dealerLabel = '' }
+    }
+    const dealerInfo = [dealerLabel, comp.dealerPhone]
       .filter(Boolean)
       .join('\n')
     setField(form, f.dealer, dealerInfo)
@@ -147,8 +154,8 @@ export async function fillACVPdf(
     setField(
       form,
       f.mileDiffRaw,
-      comp.mileageDiffRaw >= 0
-        ? `+${comp.mileageDiffRaw.toLocaleString()}`
+      comp.mileageDiffRaw < 0
+        ? comp.mileageDiffRaw.toLocaleString()
         : comp.mileageDiffRaw.toLocaleString()
     )
     setField(form, f.mileDiffDollar, fmt(comp.mileageAdjDollar))
@@ -315,8 +322,7 @@ async function addCompPages(
     ]
 
     if (comp.mileageDiffRaw !== undefined) {
-      const sign = comp.mileageDiffRaw >= 0 ? '+' : ''
-      rows.push(['Mileage Difference', `${sign}${comp.mileageDiffRaw.toLocaleString()} miles`])
+      rows.push(['Mileage Difference', `${comp.mileageDiffRaw.toLocaleString()} miles`])
       rows.push(['Mileage Adjustment', fmt(comp.mileageAdjDollar)])
     }
     if (comp.yearDiffRaw !== undefined) {
