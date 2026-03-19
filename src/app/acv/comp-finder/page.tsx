@@ -24,6 +24,7 @@ import {
   ArrowUpDown,
   Upload,
   CheckCircle2,
+  FileText,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -972,6 +973,265 @@ function ReviewStep({
   )
 }
 
+// ── Reports step ────────────────────────────────────────────────────────────
+
+const REPORT_TYPES = [
+  {
+    id: 'award-agreement',
+    name: 'Award Agreement',
+    description: 'Award letter with ACV amount for signatures',
+  },
+]
+
+function ReportsStep({
+  claim,
+  result,
+  onBack,
+}: {
+  claim: ClaimInfo
+  result: ACVResult
+  onBack: () => void
+}) {
+  const [selectedReport, setSelectedReport] = useState<string | null>(null)
+  const [downloading, setDownloading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  // Award form state — auto-filled from claim
+  const [awardData, setAwardData] = useState(() => ({
+    insuranceCompany: claim.insuranceCompany || '',
+    vehicleOwner: claim.insuredName || '',
+    vehicle: [claim.year, claim.make, claim.model].filter(Boolean).join(' '),
+    dateOfLoss: claim.dateOfLoss || '',
+    claimDate: new Date().toISOString().split('T')[0],
+    claimNumber: claim.claimNumber || '',
+    acvAmount: result.acv ? formatCurrency(result.acv) : '',
+    signatureDate1: '',
+    signatureDate2: '',
+    signatureBlock1: '',
+    signatureBlock2: '',
+  }))
+
+  const setAward = (field: string, value: string) =>
+    setAwardData(prev => ({ ...prev, [field]: value }))
+
+  const downloadAwardPdf = async () => {
+    setDownloading(true)
+    setError(null)
+    try {
+      const res = await fetch('/api/acv/generate-award-pdf', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(awardData),
+      })
+      if (!res.ok) {
+        const data = await res.json()
+        throw new Error(data.error || 'PDF generation failed')
+      }
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `Award-Agreement-${claim.claimNumber || claim.maNumber || 'report'}.pdf`
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Download failed')
+    } finally {
+      setDownloading(false)
+    }
+  }
+
+  const inputCls =
+    'w-full bg-white border border-gray-200 rounded-md px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent'
+  const labelCls = 'block text-xs font-medium text-gray-500 mb-1'
+
+  // Report selection view
+  if (!selectedReport) {
+    return (
+      <div className="space-y-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {REPORT_TYPES.map((report) => (
+            <Card
+              key={report.id}
+              className="bg-white border-gray-200 shadow-sm hover:border-blue-300 hover:shadow-md transition-all cursor-pointer"
+              onClick={() => setSelectedReport(report.id)}
+            >
+              <CardContent className="p-5">
+                <div className="flex items-start gap-3">
+                  <div className="p-2 bg-blue-50 rounded-lg">
+                    <FileText className="w-5 h-5 text-blue-600" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-semibold text-gray-900">{report.name}</h3>
+                    <p className="text-xs text-gray-500 mt-0.5">{report.description}</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+        <div className="flex items-center gap-3">
+          <Button onClick={onBack} variant="outline" className="border-gray-200 text-gray-700 hover:bg-gray-100">
+            <ChevronLeft className="w-4 h-4 mr-1" />
+            Back to Review
+          </Button>
+        </div>
+      </div>
+    )
+  }
+
+  // Award Agreement form
+  if (selectedReport === 'award-agreement') {
+    return (
+      <div className="space-y-6">
+        <Card className="bg-white border-gray-200 shadow-sm">
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-gray-900">Award Agreement</CardTitle>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-gray-400 hover:text-gray-600"
+                onClick={() => setSelectedReport(null)}
+              >
+                <X className="w-4 h-4 mr-1" />
+                Back to Reports
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className={labelCls}>Insurance Company</label>
+                <input
+                  className={inputCls}
+                  value={awardData.insuranceCompany}
+                  onChange={(e) => setAward('insuranceCompany', e.target.value)}
+                />
+              </div>
+              <div>
+                <label className={labelCls}>Vehicle Owner</label>
+                <input
+                  className={inputCls}
+                  value={awardData.vehicleOwner}
+                  onChange={(e) => setAward('vehicleOwner', e.target.value)}
+                />
+              </div>
+              <div>
+                <label className={labelCls}>Vehicle</label>
+                <input
+                  className={inputCls}
+                  value={awardData.vehicle}
+                  onChange={(e) => setAward('vehicle', e.target.value)}
+                />
+              </div>
+              <div>
+                <label className={labelCls}>Claim Number</label>
+                <input
+                  className={inputCls}
+                  value={awardData.claimNumber}
+                  onChange={(e) => setAward('claimNumber', e.target.value)}
+                />
+              </div>
+              <div>
+                <label className={labelCls}>Date of Loss</label>
+                <input
+                  type="date"
+                  className={inputCls}
+                  value={awardData.dateOfLoss}
+                  onChange={(e) => setAward('dateOfLoss', e.target.value)}
+                />
+              </div>
+              <div>
+                <label className={labelCls}>Date</label>
+                <input
+                  type="date"
+                  className={inputCls}
+                  value={awardData.claimDate}
+                  onChange={(e) => setAward('claimDate', e.target.value)}
+                />
+              </div>
+              <div className="md:col-span-2">
+                <label className={labelCls}>Actual Cash Value (ACV)</label>
+                <input
+                  className={inputCls}
+                  placeholder="$0.00"
+                  value={awardData.acvAmount}
+                  onChange={(e) => setAward('acvAmount', e.target.value)}
+                />
+              </div>
+            </div>
+
+            <div className="border-t border-gray-100 pt-4">
+              <h4 className="text-xs font-medium text-gray-500 mb-3 uppercase tracking-wider">Signatures (Optional)</h4>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className={labelCls}>Signature Block 1</label>
+                  <textarea
+                    className={inputCls}
+                    rows={2}
+                    placeholder="Name / Title"
+                    value={awardData.signatureBlock1}
+                    onChange={(e) => setAward('signatureBlock1', e.target.value)}
+                  />
+                </div>
+                <div>
+                  <label className={labelCls}>Signature Block 2</label>
+                  <textarea
+                    className={inputCls}
+                    rows={2}
+                    placeholder="Name / Title"
+                    value={awardData.signatureBlock2}
+                    onChange={(e) => setAward('signatureBlock2', e.target.value)}
+                  />
+                </div>
+                <div>
+                  <label className={labelCls}>Signature Date 1</label>
+                  <input
+                    type="date"
+                    className={inputCls}
+                    value={awardData.signatureDate1}
+                    onChange={(e) => setAward('signatureDate1', e.target.value)}
+                  />
+                </div>
+                <div>
+                  <label className={labelCls}>Signature Date 2</label>
+                  <input
+                    type="date"
+                    className={inputCls}
+                    value={awardData.signatureDate2}
+                    onChange={(e) => setAward('signatureDate2', e.target.value)}
+                  />
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {error && (
+          <div className="flex items-start gap-2 p-3 rounded-lg bg-red-50 border border-red-200 text-red-600 text-sm">
+            <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
+            {error}
+          </div>
+        )}
+
+        <div className="flex items-center gap-3">
+          <Button onClick={() => setSelectedReport(null)} variant="outline" className="border-gray-200 text-gray-700 hover:bg-gray-100">
+            <ChevronLeft className="w-4 h-4 mr-1" />
+            Back
+          </Button>
+          <Button onClick={downloadAwardPdf} disabled={downloading} className="bg-blue-600 hover:bg-blue-500 text-white">
+            {downloading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Download className="w-4 h-4 mr-2" />}
+            Download Award PDF
+          </Button>
+        </div>
+      </div>
+    )
+  }
+
+  return null
+}
+
 // ── Default empty claim ─────────────────────────────────────────────────────
 function defaultClaim(): ClaimInfo {
   return {
@@ -1193,7 +1453,7 @@ function CompFinderInner() {
 
   const canProceedStep1 = claim.maNumber.length > 0 || claim.insuredName.length > 0
 
-  const steps = ['Claim Info', 'Select Comps', 'Adjustments', 'Review & Generate']
+  const steps = ['Claim Info', 'Select Comps', 'Adjustments', 'Review & Generate', 'Reports']
 
   const handleSaveClaim = () => {
     if (builtComps.length < 3) return
@@ -1500,6 +1760,27 @@ function CompFinderInner() {
               onStartOver={startOver}
               onSave={handleSaveClaim}
               editId={editingId}
+            />
+            <div className="flex justify-end mt-4">
+              <Button
+                onClick={() => setStep(5)}
+                className="bg-blue-600 hover:bg-blue-500 text-white"
+              >
+                Next: Reports
+                <ArrowRight className="w-4 h-4 ml-2" />
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {/* Step 5: Reports */}
+        {step === 5 && (
+          <div>
+            <h2 className="text-lg font-semibold text-gray-900 mb-4">Reports</h2>
+            <ReportsStep
+              claim={claim}
+              result={result}
+              onBack={() => setStep(4)}
             />
           </div>
         )}
