@@ -1022,7 +1022,54 @@ const REPORT_TYPES = [
     name: 'Award Agreement',
     description: 'Award letter with ACV amount for signatures',
   },
+  {
+    id: 'closing-notes',
+    name: 'Closing Notes',
+    description: 'Appraisers notes with closing verbiage',
+  },
 ]
+
+type NotesType = 'acv' | 'dv' | 'acv-umpire' | 'dv-umpire'
+
+function buildNotesComments(
+  type: NotesType,
+  maValue: string,
+  appraiserName: string,
+  appraiserCompany: string,
+  appraiserValue: string,
+  appraiserTitle: string,
+  appraiserLastName: string,
+  agreementAmount: string,
+  umpireName: string,
+  umpireAmount: string,
+): string {
+  let text = ''
+
+  if (type === 'acv' || type === 'acv-umpire') {
+    text += `We established a market value on insureds vehicle using three comparable vehicles, with adjustments made for mileage, condition, and options. Our appraised value was ${maValue} not including sales tax or any other costs.\n\n`
+  } else {
+    text += `We established a diminished value on insureds vehicle using our designated DV formula. Our appraised DV was ${maValue} not including sales tax or any other costs.\n\n`
+  }
+
+  text += `The insured's hired appraiser, ${appraiserName} with ${appraiserCompany}, prepared an evaluation in the amount of ${appraiserValue}.\n\n`
+
+  if (type === 'acv' || type === 'dv') {
+    text += `Our negotiations with ${appraiserTitle} ${appraiserLastName} led to an award amount of ${agreementAmount} not including sales tax or any other costs.\n\n`
+    text += 'Mutually signed award letter attached.\n\n'
+  } else {
+    text += `${appraiserTitle} ${appraiserLastName} and I couldn't agree on a value in our negotiations. ${umpireName} was selected as the Umpire and ruled in the amount of ${umpireAmount}.\n\n`
+    text += 'Signed award letter attached.\n\n'
+  }
+
+  text += 'If you have any questions pertaining to this assignment, please feel free to contact me directly.'
+
+  return text
+}
+
+function getDropdownValue(type: NotesType): string {
+  if (type === 'acv' || type === 'acv-umpire') return 'Appraisal Clause Assignment – ACV '
+  return 'Diminished Value Assignment – DV'
+}
 
 function ReportsStep({
   claim,
@@ -1036,6 +1083,91 @@ function ReportsStep({
   const [selectedReport, setSelectedReport] = useState<string | null>(null)
   const [downloading, setDownloading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  // Closing Notes form state
+  const [notesType, setNotesType] = useState<NotesType>('acv')
+  const [notesData, setNotesData] = useState(() => ({
+    maValueNum: 0,
+    appraiserName: '',
+    appraiserCompany: '',
+    appraiserValueNum: 0,
+    appraiserTitle: 'Mr.',
+    appraiserLastName: '',
+    agreementAmountNum: 0,
+    umpireName: '',
+    umpireAmountNum: 0,
+  }))
+
+  const setNotes = (field: string, value: string | number) =>
+    setNotesData(prev => ({ ...prev, [field]: value }))
+
+  const maValueForNotes = (notesType === 'acv' || notesType === 'acv-umpire')
+    ? (result.acv || notesData.maValueNum)
+    : notesData.maValueNum
+
+  const notesPreview = buildNotesComments(
+    notesType,
+    maValueForNotes ? formatCurrency(maValueForNotes) : '$0.00',
+    notesData.appraiserName || '[Appraiser Name]',
+    notesData.appraiserCompany || '[Company]',
+    notesData.appraiserValueNum ? formatCurrency(notesData.appraiserValueNum) : '$0.00',
+    notesData.appraiserTitle || 'Mr.',
+    notesData.appraiserLastName || '[Last Name]',
+    notesData.agreementAmountNum ? formatCurrency(notesData.agreementAmountNum) : '$0.00',
+    notesData.umpireName || '[Umpire Name]',
+    notesData.umpireAmountNum ? formatCurrency(notesData.umpireAmountNum) : '$0.00',
+  )
+
+  const downloadNotesPdf = async () => {
+    setDownloading(true)
+    setError(null)
+    try {
+      const maValue = maValueForNotes ? formatCurrency(maValueForNotes) : '$0.00'
+      const comments = buildNotesComments(
+        notesType,
+        maValue,
+        notesData.appraiserName,
+        notesData.appraiserCompany,
+        notesData.appraiserValueNum ? formatCurrency(notesData.appraiserValueNum) : '$0.00',
+        notesData.appraiserTitle,
+        notesData.appraiserLastName,
+        notesData.agreementAmountNum ? formatCurrency(notesData.agreementAmountNum) : '$0.00',
+        notesData.umpireName,
+        notesData.umpireAmountNum ? formatCurrency(notesData.umpireAmountNum) : '$0.00',
+      )
+      const today = new Date().toISOString().split('T')[0]
+      const res = await fetch('/api/acv/generate-notes-pdf', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          date: today,
+          fileNumber: claim.maNumber,
+          claimNumber: claim.claimNumber,
+          insuranceCompany: claim.insuranceCompany,
+          vehicleOwner: claim.insuredName,
+          vehicle: [claim.year, claim.make, claim.model].filter(Boolean).join(' '),
+          dateOfLoss: claim.dateOfLoss,
+          comments,
+          dropdownValue: getDropdownValue(notesType),
+        }),
+      })
+      if (!res.ok) {
+        const data = await res.json()
+        throw new Error(data.error || 'PDF generation failed')
+      }
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `${claim.maNumber || 'report'}-notes.pdf`
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Download failed')
+    } finally {
+      setDownloading(false)
+    }
+  }
 
   // Award form state — auto-filled from claim
   const [awardData, setAwardData] = useState(() => ({
@@ -1259,6 +1391,201 @@ function ReportsStep({
           <Button onClick={downloadAwardPdf} disabled={downloading} className="bg-blue-600 hover:bg-blue-500 text-white">
             {downloading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Download className="w-4 h-4 mr-2" />}
             Download Award PDF
+          </Button>
+        </div>
+      </div>
+    )
+  }
+
+  // Closing Notes form
+  if (selectedReport === 'closing-notes') {
+    const isUmpire = notesType === 'acv-umpire' || notesType === 'dv-umpire'
+
+    return (
+      <div className="space-y-6">
+        <Card className="bg-white border-gray-200 shadow-sm">
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-gray-900">Closing Notes</CardTitle>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-gray-400 hover:text-gray-600"
+                onClick={() => setSelectedReport(null)}
+              >
+                <X className="w-4 h-4 mr-1" />
+                Back to Reports
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {/* Type selector */}
+            <div>
+              <label className={labelCls}>Assignment Type</label>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                {([
+                  ['acv', 'ACV'],
+                  ['dv', 'DV'],
+                  ['acv-umpire', 'ACV → Umpire'],
+                  ['dv-umpire', 'DV → Umpire'],
+                ] as const).map(([value, label]) => (
+                  <button
+                    key={value}
+                    onClick={() => setNotesType(value)}
+                    className={cn(
+                      'px-3 py-2 text-sm font-semibold rounded-lg border transition-all',
+                      notesType === value
+                        ? 'bg-blue-600 text-white border-blue-600'
+                        : 'bg-white text-gray-700 border-gray-200 hover:border-blue-300'
+                    )}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Our Value */}
+            <div className="border-t border-gray-100 pt-4">
+              <div className="w-64">
+                <label className={labelCls}>
+                  {notesType === 'acv' || notesType === 'acv-umpire' ? 'Our Appraised Value (ACV)' : 'Our Appraised DV'}
+                </label>
+                {(notesType === 'acv' || notesType === 'acv-umpire') && result.acv > 0 ? (
+                  <div className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-md text-sm text-gray-900 font-medium">
+                    {formatCurrency(result.acv)}
+                    <span className="text-xs text-gray-400 ml-2">(from report)</span>
+                  </div>
+                ) : (
+                  <CurrencyInput
+                    className={inputCls}
+                    value={notesData.maValueNum}
+                    onChange={(val) => setNotes('maValueNum', val)}
+                  />
+                )}
+              </div>
+            </div>
+
+            <div className="border-t border-gray-100 pt-4">
+              <h4 className="text-xs font-medium text-gray-500 mb-3 uppercase tracking-wider">Opposing Appraiser</h4>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className={labelCls}>Full Name</label>
+                  <input
+                    className={inputCls}
+                    placeholder="John Smith"
+                    value={notesData.appraiserName}
+                    onChange={(e) => setNotes('appraiserName', e.target.value)}
+                  />
+                </div>
+                <div>
+                  <label className={labelCls}>Company</label>
+                  <input
+                    className={inputCls}
+                    placeholder="National Appraisers"
+                    value={notesData.appraiserCompany}
+                    onChange={(e) => setNotes('appraiserCompany', e.target.value)}
+                  />
+                </div>
+                <div className="flex gap-2">
+                  <div className="w-24">
+                    <label className={labelCls}>Title</label>
+                    <select
+                      className={inputCls}
+                      value={notesData.appraiserTitle}
+                      onChange={(e) => setNotes('appraiserTitle', e.target.value)}
+                    >
+                      <option value="Mr.">Mr.</option>
+                      <option value="Ms.">Ms.</option>
+                      <option value="Mrs.">Mrs.</option>
+                    </select>
+                  </div>
+                  <div className="flex-1">
+                    <label className={labelCls}>Last Name</label>
+                    <input
+                      className={inputCls}
+                      placeholder="Smith"
+                      value={notesData.appraiserLastName}
+                      onChange={(e) => setNotes('appraiserLastName', e.target.value)}
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className={labelCls}>Their Appraised Value</label>
+                  <CurrencyInput
+                    className={inputCls}
+                    value={notesData.appraiserValueNum}
+                    onChange={(val) => setNotes('appraiserValueNum', val)}
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Agreement or Umpire fields */}
+            <div className="border-t border-gray-100 pt-4">
+              {!isUmpire ? (
+                <div>
+                  <h4 className="text-xs font-medium text-gray-500 mb-3 uppercase tracking-wider">Agreement</h4>
+                  <div className="w-64">
+                    <label className={labelCls}>Award Amount</label>
+                    <CurrencyInput
+                      className={inputCls}
+                      value={notesData.agreementAmountNum}
+                      onChange={(val) => setNotes('agreementAmountNum', val)}
+                    />
+                  </div>
+                </div>
+              ) : (
+                <div>
+                  <h4 className="text-xs font-medium text-gray-500 mb-3 uppercase tracking-wider">Umpire</h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className={labelCls}>Umpire Name</label>
+                      <input
+                        className={inputCls}
+                        placeholder="Darren DiMaria"
+                        value={notesData.umpireName}
+                        onChange={(e) => setNotes('umpireName', e.target.value)}
+                      />
+                    </div>
+                    <div>
+                      <label className={labelCls}>Umpire Ruling Amount</label>
+                      <CurrencyInput
+                        className={inputCls}
+                        value={notesData.umpireAmountNum}
+                        onChange={(val) => setNotes('umpireAmountNum', val)}
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Preview */}
+            <div className="border-t border-gray-100 pt-4">
+              <h4 className="text-xs font-medium text-gray-500 mb-2 uppercase tracking-wider">Preview</h4>
+              <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">
+                {notesPreview}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {error && (
+          <div className="flex items-start gap-2 p-3 rounded-lg bg-red-50 border border-red-200 text-red-600 text-sm">
+            <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
+            {error}
+          </div>
+        )}
+
+        <div className="flex items-center gap-3">
+          <Button onClick={() => setSelectedReport(null)} variant="outline" className="border-gray-200 text-gray-700 hover:bg-gray-100">
+            <ChevronLeft className="w-4 h-4 mr-1" />
+            Back
+          </Button>
+          <Button onClick={downloadNotesPdf} disabled={downloading} className="bg-blue-600 hover:bg-blue-500 text-white">
+            {downloading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Download className="w-4 h-4 mr-2" />}
+            Download Closing Notes
           </Button>
         </div>
       </div>
