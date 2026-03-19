@@ -303,11 +303,13 @@ function SearchParametersPanel({
   claim,
   onChange,
   onSearch,
+  onVinDecoded,
   loading,
 }: {
   claim: ClaimInfo
   onChange: (updated: ClaimInfo) => void
   onSearch: () => void
+  onVinDecoded?: (updatedClaim: ClaimInfo) => void
   loading: boolean
 }) {
   const [decoding, setDecoding] = useState(false)
@@ -327,7 +329,7 @@ function SearchParametersPanel({
       const res = await fetch(`/api/acv/decode-vin?vin=${claim.vin}`)
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Decode failed')
-      onChange({
+      const updated = {
         ...claim,
         year: data.year ?? claim.year,
         make: data.make ?? claim.make,
@@ -336,7 +338,9 @@ function SearchParametersPanel({
         engine: data.engine ?? claim.engine,
         drivetrain: data.drivetrain ?? claim.drivetrain,
         transmission: data.transmission ?? claim.transmission,
-      })
+      }
+      onChange(updated)
+      onVinDecoded?.(updated)
     } catch (err) {
       setDecodeError(err instanceof Error ? err.message : 'VIN decode failed')
     } finally {
@@ -800,6 +804,7 @@ function ReviewStep({
   onBack,
   onStartOver,
   onSave,
+  onNext,
   editId,
 }: {
   claim: ClaimInfo
@@ -809,6 +814,7 @@ function ReviewStep({
   onBack: () => void
   onStartOver: () => void
   onSave: () => void
+  onNext?: () => void
   editId?: string | null
 }) {
   const [downloading, setDownloading] = useState(false)
@@ -984,17 +990,25 @@ function ReviewStep({
           <ChevronLeft className="w-4 h-4 mr-1" />
           Back
         </Button>
-        <Button onClick={onSave} variant="outline" className="border-blue-200 text-blue-600 hover:bg-blue-50">
-          Save Claim
-        </Button>
-        <Button onClick={downloadPdf} disabled={downloading} className="bg-blue-600 hover:bg-blue-500 text-white">
-          {downloading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Download className="w-4 h-4 mr-2" />}
-          Download PDF
-        </Button>
-        <Button onClick={onStartOver} variant="outline" className="border-gray-200 text-gray-700 hover:bg-gray-100 ml-auto">
+        <Button onClick={onStartOver} variant="outline" className="border-gray-200 text-gray-700 hover:bg-gray-100">
           <RotateCcw className="w-4 h-4 mr-1" />
           Start Over
         </Button>
+        <Button onClick={onSave} variant="outline" className="border-blue-200 text-blue-600 hover:bg-blue-50">
+          Save Claim
+        </Button>
+        <div className="flex items-center gap-3 ml-auto">
+          <Button onClick={downloadPdf} disabled={downloading} className="bg-blue-600 hover:bg-blue-500 text-white">
+            {downloading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Download className="w-4 h-4 mr-2" />}
+            Download PDF
+          </Button>
+          {onNext && (
+            <Button onClick={onNext} className="bg-blue-600 hover:bg-blue-500 text-white">
+              Next: Reports
+              <ArrowRight className="w-4 h-4 ml-2" />
+            </Button>
+          )}
+        </div>
       </div>
     </div>
   )
@@ -1488,6 +1502,17 @@ function CompFinderInner() {
     }
   }
 
+  const handleVinDecoded = (updatedClaim: ClaimInfo) => {
+    const emptyResult: ACVResult = { comp1Value: 0, comp2Value: 0, comp3Value: 0, averageValue: 0, totalAdjustments: 0, taxAmount: 0, acv: 0 }
+    saveToHistory(updatedClaim, [], adjustments, emptyResult, 'comp-finder', editingId)
+    if (!editingId) {
+      try {
+        const h: ACVHistoryEntry[] = JSON.parse(localStorage.getItem(HISTORY_KEY) ?? '[]')
+        if (h.length > 0) setEditingId(h[0].id)
+      } catch { /* ignore */ }
+    }
+  }
+
   const startOver = () => {
     setStep(1)
     setClaim(defaultClaim())
@@ -1585,6 +1610,7 @@ function CompFinderInner() {
               claim={claim}
               onChange={setClaim}
               onSearch={searchComps}
+              onVinDecoded={handleVinDecoded}
               loading={loadingComps}
             />
 
@@ -1781,17 +1807,9 @@ function CompFinderInner() {
               onBack={() => setStep(3)}
               onStartOver={startOver}
               onSave={handleSaveClaim}
+              onNext={() => setStep(5)}
               editId={editingId}
             />
-            <div className="flex justify-end mt-4">
-              <Button
-                onClick={() => setStep(5)}
-                className="bg-blue-600 hover:bg-blue-500 text-white"
-              >
-                Next: Reports
-                <ArrowRight className="w-4 h-4 ml-2" />
-              </Button>
-            </div>
           </div>
         )}
 

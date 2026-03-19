@@ -124,9 +124,11 @@ function defaultClaim(): ClaimInfo {
 function ClaimInfoForm({
   claim,
   onChange,
+  onVinDecoded,
 }: {
   claim: ClaimInfo
   onChange: (updated: ClaimInfo) => void
+  onVinDecoded?: (updatedClaim: ClaimInfo) => void
 }) {
   const [decoding, setDecoding] = useState(false)
   const [decodeError, setDecodeError] = useState<string | null>(null)
@@ -187,7 +189,7 @@ function ClaimInfoForm({
       const res = await fetch(`/api/acv/decode-vin?vin=${claim.vin}`)
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Decode failed')
-      onChange({
+      const updated = {
         ...claim,
         year: data.year ?? claim.year,
         make: data.make ?? claim.make,
@@ -196,7 +198,9 @@ function ClaimInfoForm({
         engine: data.engine ?? claim.engine,
         drivetrain: data.drivetrain ?? claim.drivetrain,
         transmission: data.transmission ?? claim.transmission,
-      })
+      }
+      onChange(updated)
+      onVinDecoded?.(updated)
     } catch (err) {
       setDecodeError(err instanceof Error ? err.message : 'VIN decode failed')
     } finally {
@@ -1495,6 +1499,17 @@ function AutoACVInner() {
     }
   }
 
+  const handleVinDecoded = (updatedClaim: ClaimInfo) => {
+    const emptyResult: ACVResult = { comp1Value: 0, comp2Value: 0, comp3Value: 0, averageValue: 0, totalAdjustments: 0, taxAmount: 0, acv: 0 }
+    saveToHistory(updatedClaim, [], adjustments, emptyResult, 'auto-acv', editingId)
+    if (!editingId) {
+      try {
+        const h: ACVHistoryEntry[] = JSON.parse(localStorage.getItem(HISTORY_KEY) ?? '[]')
+        if (h.length > 0) setEditingId(h[0].id)
+      } catch { /* ignore */ }
+    }
+  }
+
   const startOver = () => {
     setStep(1)
     setClaim(defaultClaim())
@@ -1575,7 +1590,7 @@ function AutoACVInner() {
                     <CardTitle className="text-gray-900">Claim Information</CardTitle>
                   </CardHeader>
                   <CardContent>
-                    <ClaimInfoForm claim={claim} onChange={setClaim} />
+                    <ClaimInfoForm claim={claim} onChange={setClaim} onVinDecoded={handleVinDecoded} />
                   </CardContent>
                 </Card>
                 <div className="flex justify-end mt-6">
