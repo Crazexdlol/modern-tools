@@ -12,15 +12,20 @@ function setField(
   form: ReturnType<PDFDocument['getForm']>,
   name: string,
   value: string,
+  font?: Awaited<ReturnType<PDFDocument['embedFont']>>,
 ) {
   try {
     const field = form.getTextField(name)
     field.setText(value)
-    // Remove pdf-lib's auto-generated appearance so the PDF reader
-    // uses the template's original font/size via NeedAppearances
-    field.acroField.getWidgets().forEach(w => {
-      w.dict.delete(PDFName.of('AP'))
-    })
+    if (font) {
+      field.defaultUpdateAppearances(font)
+    } else {
+      // Remove pdf-lib's auto-generated appearance so the PDF reader
+      // uses the template's original font/size via NeedAppearances
+      field.acroField.getWidgets().forEach(w => {
+        w.dict.delete(PDFName.of('AP'))
+      })
+    }
   } catch { /* field may not exist */ }
 }
 
@@ -44,6 +49,7 @@ export async function fillACVPdf(
   const templateBytes = fs.readFileSync(templatePath)
   const doc = await PDFDocument.load(templateBytes)
   const form = doc.getForm()
+  const timesRoman = await doc.embedFont(StandardFonts.TimesRoman)
 
   // Tell PDF readers to regenerate field appearances using the template's
   // own fonts/sizes instead of pdf-lib's defaults
@@ -193,28 +199,36 @@ export async function fillACVPdf(
   // Remove the calculation order array from the AcroForm
   form.acroForm.dict.delete(PDFName.of('CO'))
 
-  // Set text color per page: white on cover (page 0), black on page 1
+  // Update all text fields to use Times Roman font and set text color per page
+  const timesRomanFontName = timesRoman.name // e.g. "/TimesRoman" ref name in the PDF
   const coverPageRef = doc.getPages()[0].ref
   form.getFields().forEach(f => {
+    // Update appearances with Times Roman for text fields
+    try {
+      const tf = form.getTextField(f.getName())
+      tf.defaultUpdateAppearances(timesRoman)
+    } catch { /* not a text field */ }
+
     f.acroField.getWidgets().forEach(w => {
       const onCover = w.P() === coverPageRef
-      // Replace color in DA string: "r g b rg" for text color
       const da = w.dict.get(PDFName.of('DA'))
       if (da) {
-        const daStr = (da as PDFString).decodeText?.() ?? da.toString()
-        // Replace any existing color command (e.g. "0 0 0 rg" or "0.5 0.5 0.5 rg")
+        let daStr = (da as PDFString).decodeText?.() ?? da.toString()
+        // Replace font reference with Times Roman
+        daStr = daStr.replace(/\/\w+\s+([\d.]+)\s+Tf/, `/${timesRomanFontName} $1 Tf`)
+        // Replace color
         const newColor = onCover ? '1 1 1 rg' : '0 0 0 rg'
         const newDa = daStr.replace(/[\d.]+\s+[\d.]+\s+[\d.]+\s+rg/, newColor)
         w.dict.set(PDFName.of('DA'), PDFString.of(newDa !== daStr ? newDa : `${newColor} ${daStr}`))
       } else {
         const newColor = onCover ? '1 1 1 rg' : '0 0 0 rg'
-        w.dict.set(PDFName.of('DA'), PDFString.of(`${newColor} /Helv 10 Tf`))
+        w.dict.set(PDFName.of('DA'), PDFString.of(`${newColor} /${timesRomanFontName} 10 Tf`))
       }
     })
-    // Also update the field-level DA
     const fieldDa = f.acroField.dict.get(PDFName.of('DA'))
     if (fieldDa) {
-      const daStr = (fieldDa as PDFString).decodeText?.() ?? fieldDa.toString()
+      let daStr = (fieldDa as PDFString).decodeText?.() ?? fieldDa.toString()
+      daStr = daStr.replace(/\/\w+\s+([\d.]+)\s+Tf/, `/${timesRomanFontName} $1 Tf`)
       const newDa = daStr.replace(/[\d.]+\s+[\d.]+\s+[\d.]+\s+rg/, '0 0 0 rg')
       f.acroField.dict.set(PDFName.of('DA'), PDFString.of(newDa))
     }
@@ -231,8 +245,8 @@ async function addCompPages(
   claim: ClaimInfo,
   comps: SelectedComp[],
 ) {
-  const font = await doc.embedFont(StandardFonts.Helvetica)
-  const fontBold = await doc.embedFont(StandardFonts.HelveticaBold)
+  const font = await doc.embedFont(StandardFonts.TimesRoman)
+  const fontBold = await doc.embedFont(StandardFonts.TimesRomanBold)
   const PAGE_W = 612
   const PAGE_H = 792
   const MARGIN = 50
