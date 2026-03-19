@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo } from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
 import { useRouter } from 'next/navigation'
-import { Search, Trash2 } from 'lucide-react'
+import { Search, Trash2, Plus, X, FileText, Zap, AlertTriangle } from 'lucide-react'
 import type { ClaimInfo, SelectedComp, ACVAdjustments, ACVResult } from '@/lib/acv/types'
 
 const HISTORY_KEY = 'modern-tools-acv-history'
@@ -33,6 +33,16 @@ export default function ACVPage() {
   const router = useRouter()
   const [entries, setEntries] = useState<ACVHistoryEntry[]>([])
   const [searchQuery, setSearchQuery] = useState('')
+  const [showNewMenu, setShowNewMenu] = useState(false)
+
+  const startNew = (path: string) => {
+    // Clear any stale drafts so the target page starts fresh
+    sessionStorage.removeItem('modern-tools-comp-finder-draft')
+    sessionStorage.removeItem('modern-tools-auto-acv-draft')
+    sessionStorage.removeItem('modern-tools-acv-edit')
+    setShowNewMenu(false)
+    router.push(path)
+  }
 
   useEffect(() => {
     try {
@@ -87,40 +97,66 @@ export default function ACVPage() {
       </header>
 
       <main className="max-w-7xl mx-auto px-6 py-8">
-        {/* Tool cards */}
-        <div className="grid grid-cols-3 gap-4 mb-8">
-          <Link href="/acv/comp-finder" className="group">
-            <div className="bg-white border border-gray-200 rounded-xl px-6 py-6 text-center transition-all duration-200 group-hover:shadow-md group-hover:border-blue-400 group-hover:-translate-y-0.5">
-              <h3 className="text-lg font-bold text-gray-900">Comp Finder</h3>
-              <p className="text-xs text-gray-400 mt-1">Manual comp search & selection</p>
-            </div>
-          </Link>
-          <Link href="/acv/auto-acv" className="group">
-            <div className="bg-white border border-gray-200 rounded-xl px-6 py-6 text-center transition-all duration-200 group-hover:shadow-md group-hover:border-blue-400 group-hover:-translate-y-0.5">
-              <h3 className="text-lg font-bold text-gray-900">Auto ACV</h3>
-              <p className="text-xs text-gray-400 mt-1">Automated value calculation</p>
-            </div>
-          </Link>
-          <Link href="/acv/auction" className="group">
-            <div className="bg-white border border-gray-200 rounded-xl px-6 py-6 text-center transition-all duration-200 group-hover:shadow-md group-hover:border-blue-400 group-hover:-translate-y-0.5">
-              <h3 className="text-lg font-bold text-gray-900">Loss Search</h3>
-              <p className="text-xs text-gray-400 mt-1">Search auction & loss records</p>
-            </div>
-          </Link>
-        </div>
-
-        {/* Claims header + search */}
+        {/* Claims header + search + new button */}
         <div className="flex items-center justify-between mb-6">
           <h2 className="text-xl font-bold text-gray-900">ACV Claims</h2>
-          <div className="relative w-72">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-            <input
-              type="text"
-              placeholder="Search claims..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full bg-white border border-gray-200 rounded-lg pl-10 pr-4 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent shadow-sm"
-            />
+          <div className="flex items-center gap-3">
+            <div className="relative w-72">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+              <input
+                type="text"
+                placeholder="Search claims..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full bg-white border border-gray-200 rounded-lg pl-10 pr-4 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent shadow-sm"
+              />
+            </div>
+            <div className="relative">
+              <button
+                onClick={() => setShowNewMenu(!showNewMenu)}
+                className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white text-sm font-bold px-5 py-2.5 rounded-lg transition-colors shadow-sm"
+              >
+                <Plus className="w-4 h-4" />
+                New ACV Report
+              </button>
+              {showNewMenu && (
+                <>
+                  <div className="fixed inset-0 z-20" onClick={() => setShowNewMenu(false)} />
+                  <div className="absolute right-0 top-full mt-2 w-64 bg-white border border-gray-200 rounded-xl shadow-lg z-30 overflow-hidden">
+                    <button
+                      onClick={() => startNew('/acv/comp-finder')}
+                      className="flex items-start gap-3 px-4 py-3 hover:bg-gray-50 transition-colors w-full text-left"
+                    >
+                      <FileText className="w-4 h-4 text-blue-600 mt-0.5 shrink-0" />
+                      <div>
+                        <p className="text-sm font-semibold text-gray-900">Manual Report</p>
+                        <p className="text-xs text-gray-400">Search & select comps manually</p>
+                      </div>
+                    </button>
+                    <button
+                      onClick={() => startNew('/acv/auto-acv')}
+                      className="flex items-start gap-3 px-4 py-3 hover:bg-gray-50 transition-colors border-t border-gray-100 w-full text-left"
+                    >
+                      <Zap className="w-4 h-4 text-blue-600 mt-0.5 shrink-0" />
+                      <div>
+                        <p className="text-sm font-semibold text-gray-900">Auto ACV</p>
+                        <p className="text-xs text-gray-400">Automated value calculation</p>
+                      </div>
+                    </button>
+                    <button
+                      onClick={() => startNew('/acv/auction')}
+                      className="flex items-start gap-3 px-4 py-3 hover:bg-gray-50 transition-colors border-t border-gray-100 w-full text-left"
+                    >
+                      <AlertTriangle className="w-4 h-4 text-blue-600 mt-0.5 shrink-0" />
+                      <div>
+                        <p className="text-sm font-semibold text-gray-900">Loss Search</p>
+                        <p className="text-xs text-gray-400">Search auction & loss records</p>
+                      </div>
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
           </div>
         </div>
 
