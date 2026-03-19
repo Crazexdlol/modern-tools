@@ -45,30 +45,23 @@ async function extractTextFromPDF(file: File): Promise<string> {
 
   const arrayBuffer = await file.arrayBuffer()
   const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise
-  const allLines: string[] = []
+  const parts: string[] = []
 
   for (let i = 1; i <= pdf.numPages; i++) {
     const page = await pdf.getPage(i)
     const content = await page.getTextContent()
 
-    // Group text items by Y-coordinate to reconstruct lines
-    const lineMap = new Map<number, string[]>()
     for (const item of content.items) {
-      if (!('str' in item) || !item.str) continue
-      // Round Y to nearest integer to group items on the same line
-      const y = Math.round('transform' in item ? item.transform[5] : 0)
-      if (!lineMap.has(y)) lineMap.set(y, [])
-      lineMap.get(y)!.push(item.str)
-    }
-
-    // Sort by Y descending (PDF coordinates: higher Y = higher on page)
-    const sortedYs = [...lineMap.keys()].sort((a, b) => b - a)
-    for (const y of sortedYs) {
-      allLines.push(lineMap.get(y)!.join(' '))
+      if (!('str' in item)) continue
+      parts.push(item.str)
+      // hasEOL indicates end of line in the PDF layout
+      if ('hasEOL' in item && item.hasEOL) {
+        parts.push('\n')
+      }
     }
   }
 
-  return allLines.join('\n')
+  return parts.join('')
 }
 
 export interface ParsedClaim {
