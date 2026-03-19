@@ -1004,10 +1004,10 @@ function ReportsStep({
     dateOfLoss: claim.dateOfLoss || '',
     claimDate: new Date().toISOString().split('T')[0],
     claimNumber: claim.claimNumber || '',
-    acvAmount: result.acv ? formatCurrency(result.acv) : '',
-    signatureDate1: '',
+    acvAmount: '',
+    signatureDate1: new Date().toISOString().split('T')[0],
     signatureDate2: '',
-    signatureBlock1: '',
+    signatureBlock1: 'Henry Aleksanyan\nModern Appraisers',
     signatureBlock2: '',
   }))
 
@@ -1163,44 +1163,35 @@ function ReportsStep({
             </div>
 
             <div className="border-t border-gray-100 pt-4">
-              <h4 className="text-xs font-medium text-gray-500 mb-3 uppercase tracking-wider">Signatures (Optional)</h4>
+              <h4 className="text-xs font-medium text-gray-500 mb-3 uppercase tracking-wider">Appraisers</h4>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className={labelCls}>Signature Block 1</label>
+                  <label className={labelCls}>Appraiser 1</label>
                   <textarea
                     className={inputCls}
                     rows={2}
-                    placeholder="Name / Title"
+                    placeholder="Name / Company"
                     value={awardData.signatureBlock1}
                     onChange={(e) => setAward('signatureBlock1', e.target.value)}
                   />
                 </div>
                 <div>
-                  <label className={labelCls}>Signature Block 2</label>
+                  <label className={labelCls}>Appraiser 2</label>
                   <textarea
                     className={inputCls}
                     rows={2}
-                    placeholder="Name / Title"
+                    placeholder="Name / Company"
                     value={awardData.signatureBlock2}
                     onChange={(e) => setAward('signatureBlock2', e.target.value)}
                   />
                 </div>
                 <div>
-                  <label className={labelCls}>Signature Date 1</label>
+                  <label className={labelCls}>Date</label>
                   <input
                     type="date"
                     className={inputCls}
                     value={awardData.signatureDate1}
                     onChange={(e) => setAward('signatureDate1', e.target.value)}
-                  />
-                </div>
-                <div>
-                  <label className={labelCls}>Signature Date 2</label>
-                  <input
-                    type="date"
-                    className={inputCls}
-                    value={awardData.signatureDate2}
-                    onChange={(e) => setAward('signatureDate2', e.target.value)}
                   />
                 </div>
               </div>
