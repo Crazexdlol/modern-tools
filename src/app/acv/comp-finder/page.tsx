@@ -86,6 +86,41 @@ function saveToHistory(
   } catch { /* localStorage unavailable */ }
 }
 
+// ── Currency input: raw number while typing, formatted on blur ───────────────
+function CurrencyInput({
+  value,
+  onChange,
+  placeholder = '0',
+  className,
+}: {
+  value: number
+  onChange: (val: number) => void
+  placeholder?: string
+  className?: string
+}) {
+  const [focused, setFocused] = useState(false)
+  const [raw, setRaw] = useState('')
+
+  return (
+    <input
+      type="text"
+      inputMode="decimal"
+      className={className}
+      placeholder={placeholder}
+      value={focused ? raw : (value ? formatCurrency(value) : '')}
+      onFocus={() => {
+        setFocused(true)
+        setRaw(value ? String(value) : '')
+      }}
+      onBlur={() => {
+        setFocused(false)
+        onChange(parseFloat(raw) || 0)
+      }}
+      onChange={(e) => setRaw(e.target.value)}
+    />
+  )
+}
+
 // ── Claim form (NO vehicle fields — those are on step 2) ─────────────────────
 function ClaimInfoForm({
   claim,
@@ -586,15 +621,12 @@ function AdjustmentsForm({
         </CardHeader>
         <CardContent>
           <div className="flex items-center gap-3">
-            <div className="relative w-40">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-gray-400">$</span>
-              <input
-                type="number"
-                step="0.01"
-                className={`${inputCls} pl-7 text-right`}
+            <div className="w-40">
+              <CurrencyInput
+                className={`${inputCls} text-right`}
                 placeholder="0.05"
-                value={mileageRate || ''}
-                onChange={(e) => onMileageRateChange(parseFloat(e.target.value) || 0)}
+                value={mileageRate}
+                onChange={(val) => onMileageRateChange(val)}
               />
             </div>
             <span className="text-xs text-gray-500">per mile</span>
@@ -635,7 +667,7 @@ function AdjustmentsForm({
                 </div>
                 <div>
                   <label className={labelCls}>Mileage Adj ($)</label>
-                  <input type="number" className={inputCls} placeholder="0" value={adj.mileageAdj || ''} onChange={(e) => onCompAdjChange(i, 'mileageAdj', parseFloat(e.target.value) || 0)} />
+                  <CurrencyInput className={inputCls} value={adj.mileageAdj} onChange={(val) => onCompAdjChange(i, 'mileageAdj', val)} />
                 </div>
                 <div>
                   <label className={labelCls}>Year Diff</label>
@@ -645,7 +677,7 @@ function AdjustmentsForm({
                 </div>
                 <div>
                   <label className={labelCls}>Year Adj ($)</label>
-                  <input type="number" className={inputCls} placeholder="0" value={adj.yearAdj || ''} onChange={(e) => onCompAdjChange(i, 'yearAdj', parseFloat(e.target.value) || 0)} />
+                  <CurrencyInput className={inputCls} value={adj.yearAdj} onChange={(val) => onCompAdjChange(i, 'yearAdj', val)} />
                 </div>
                 <div className="pt-2 border-t border-gray-200 flex items-center justify-between">
                   <span className="text-xs text-gray-400">Value</span>
@@ -678,16 +710,11 @@ function AdjustmentsForm({
                   value={adjustments[row.noteKey]}
                   onChange={(e) => onAdjChange({ ...adjustments, [row.noteKey]: e.target.value })}
                 />
-                <div className="relative w-28 shrink-0">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-gray-400">$</span>
-                  <input
-                    type="number"
-                    className={`${inputCls} pl-7 text-right`}
-                    placeholder="0"
-                    value={adjustments[row.valKey] || ''}
-                    onChange={(e) =>
-                      onAdjChange({ ...adjustments, [row.valKey]: parseFloat(e.target.value) || 0 })
-                    }
+                <div className="w-36 shrink-0">
+                  <CurrencyInput
+                    className={`${inputCls} text-right`}
+                    value={adjustments[row.valKey]}
+                    onChange={(val) => onAdjChange({ ...adjustments, [row.valKey]: val })}
                   />
                 </div>
               </div>

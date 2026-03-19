@@ -535,6 +535,41 @@ function ClaimInfoForm({
   )
 }
 
+// ── Currency input: raw number while typing, formatted on blur ───────────────
+function CurrencyInput({
+  value,
+  onChange,
+  placeholder = '0',
+  className,
+}: {
+  value: number
+  onChange: (val: number) => void
+  placeholder?: string
+  className?: string
+}) {
+  const [focused, setFocused] = useState(false)
+  const [raw, setRaw] = useState('')
+
+  return (
+    <input
+      type="text"
+      inputMode="decimal"
+      className={className}
+      placeholder={placeholder}
+      value={focused ? raw : (value ? formatCurrency(value) : '')}
+      onFocus={() => {
+        setFocused(true)
+        setRaw(value ? String(value) : '')
+      }}
+      onBlur={() => {
+        setFocused(false)
+        onChange(parseFloat(raw) || 0)
+      }}
+      onChange={(e) => setRaw(e.target.value)}
+    />
+  )
+}
+
 // ── Adjustments (report-level only) ─────────────────────────────────────────
 function ReportAdjustmentsForm({
   adjustments,
@@ -565,16 +600,11 @@ function ReportAdjustmentsForm({
             value={adjustments[row.noteKey]}
             onChange={(e) => onChange({ ...adjustments, [row.noteKey]: e.target.value })}
           />
-          <div className="relative w-28 shrink-0">
-            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-gray-400">$</span>
-            <input
-              type="number"
-              className={`${inputCls} pl-7 text-right`}
-              placeholder="0"
-              value={adjustments[row.valKey] || ''}
-              onChange={(e) =>
-                onChange({ ...adjustments, [row.valKey]: parseFloat(e.target.value) || 0 })
-              }
+          <div className="w-36 shrink-0">
+            <CurrencyInput
+              className={`${inputCls} text-right`}
+              value={adjustments[row.valKey]}
+              onChange={(val) => onChange({ ...adjustments, [row.valKey]: val })}
             />
           </div>
         </div>
