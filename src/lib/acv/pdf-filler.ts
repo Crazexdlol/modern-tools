@@ -56,14 +56,9 @@ export async function fillACVPdf(
   form.acroForm.dict.set(PDFName.of('NeedAppearances'), PDFBool.True)
 
   const today = new Date().toLocaleDateString('en-US')
-  const vehicleParts = [
-    `${claim.year} ${claim.make} ${claim.model}`,
-    claim.trim,
-    claim.engine,
-    claim.drivetrain,
-    claim.transmission,
-  ].filter(Boolean)
-  const vehicleStr = vehicleParts.join(' | ')
+  const vehicleStr = [claim.year, claim.make, claim.model, claim.trim]
+    .filter(Boolean)
+    .join(' ')
 
   // Header
   setField(form, 'Modern file #', claim.maNumber)
@@ -162,7 +157,7 @@ export async function fillACVPdf(
     setField(
       form,
       f.yearDiffRaw,
-      comp.yearDiffRaw >= 0 ? `+${comp.yearDiffRaw}` : String(comp.yearDiffRaw)
+      String(comp.yearDiffRaw)
     )
     setField(form, f.yearDiffDollar, fmt(comp.yearAdjDollar))
     setField(form, f.value, fmt(comp.compValue))
@@ -326,8 +321,7 @@ async function addCompPages(
       rows.push(['Mileage Adjustment', fmt(comp.mileageAdjDollar)])
     }
     if (comp.yearDiffRaw !== undefined) {
-      const sign = comp.yearDiffRaw >= 0 ? '+' : ''
-      rows.push(['Year Difference', `${sign}${comp.yearDiffRaw} year${Math.abs(comp.yearDiffRaw) !== 1 ? 's' : ''}`])
+      rows.push(['Year Difference', `${comp.yearDiffRaw} year${Math.abs(comp.yearDiffRaw) !== 1 ? 's' : ''}`])
       rows.push(['Year Adjustment', fmt(comp.yearAdjDollar)])
     }
     rows.push(['Adjusted Comp Value', fmt(comp.compValue)])
