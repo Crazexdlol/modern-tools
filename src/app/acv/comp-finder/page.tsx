@@ -1157,7 +1157,15 @@ function ReportsStep({
                   className={inputCls}
                   placeholder="$0.00"
                   value={awardData.acvAmount}
-                  onChange={(e) => setAward('acvAmount', e.target.value)}
+                  onChange={(e) => {
+                    const raw = e.target.value.replace(/[^0-9.]/g, '')
+                    const num = parseFloat(raw)
+                    if (!raw || isNaN(num)) {
+                      setAward('acvAmount', '')
+                    } else {
+                      setAward('acvAmount', num.toLocaleString('en-US', { style: 'currency', currency: 'USD' }))
+                    }
+                  }}
                 />
               </div>
             </div>
