@@ -8,6 +8,14 @@ function fmt(val: number): string {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(val)
 }
 
+function fmtDate(dateStr: string): string {
+  if (!dateStr) return ''
+  // Convert YYYY-MM-DD to MM/DD/YYYY
+  const parts = dateStr.split('-')
+  if (parts.length === 3) return `${parts[1]}/${parts[2]}/${parts[0]}`
+  return dateStr
+}
+
 function setField(
   form: ReturnType<PDFDocument['getForm']>,
   name: string,
@@ -55,7 +63,7 @@ export async function fillACVPdf(
   // own fonts/sizes instead of pdf-lib's defaults
   form.acroForm.dict.set(PDFName.of('NeedAppearances'), PDFBool.True)
 
-  const today = new Date().toLocaleDateString('en-US')
+  const today = new Date().toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' })
   const vehicleStr = [claim.year, claim.make, claim.model, claim.trim]
     .filter(Boolean)
     .join(' ')
@@ -63,7 +71,7 @@ export async function fillACVPdf(
   // Header
   setField(form, 'Modern file #', claim.maNumber)
   setField(form, 'Ins Claim #', claim.claimNumber)
-  setField(form, 'Date of Loss', claim.dateOfLoss)
+  setField(form, 'Date of Loss', fmtDate(claim.dateOfLoss))
   setField(form, 'Date2_af_date', today)
 
   // Owner
