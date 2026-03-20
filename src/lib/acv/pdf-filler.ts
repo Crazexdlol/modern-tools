@@ -141,13 +141,13 @@ export async function fillACVPdf(
   compFields.forEach((f, i) => {
     const comp = comps[i]
     if (!comp) {
-      // No comp selected for this slot — fill with N/A and $0.00
+      // No comp selected for this slot
       setField(form, f.dealer, 'N/A')
       setField(form, f.asking, '$0.00')
-      setField(form, f.mileage, 'N/A')
-      setField(form, f.mileDiffRaw, 'N/A')
+      setField(form, f.mileage, '0')
+      setField(form, f.mileDiffRaw, '0')
       setField(form, f.mileDiffDollar, '$0.00')
-      setField(form, f.yearDiffRaw, 'N/A')
+      setField(form, f.yearDiffRaw, '0')
       setField(form, f.yearDiffDollar, '$0.00')
       setField(form, f.value, '$0.00')
       return

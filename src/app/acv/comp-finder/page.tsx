@@ -1997,7 +1997,17 @@ function CompFinderInner() {
           </button>
           <h1 className="text-2xl font-bold text-gray-900">Comp Finder</h1>
           {hasUnsavedChanges && (
-            <span className="text-xs text-amber-600 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full font-medium">Unsaved changes</span>
+            <div className="flex items-center gap-2 ml-auto">
+              <span className="text-xs text-amber-600 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full font-medium">Unsaved changes</span>
+              <Button
+                onClick={handleSaveClaim}
+                size="sm"
+                className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold"
+              >
+                <Check className="w-3.5 h-3.5 mr-1" />
+                Save Changes
+              </Button>
+            </div>
           )}
         </div>
 
@@ -2040,16 +2050,6 @@ function CompFinderInner() {
         )}
         {/* Step indicators */}
         <div className="flex items-center gap-2 mb-8 overflow-x-auto pb-2">
-          {hasUnsavedChanges && (
-            <Button
-              onClick={handleSaveClaim}
-              size="sm"
-              className="bg-emerald-600 hover:bg-emerald-500 text-white shrink-0 font-bold"
-            >
-              <Check className="w-3.5 h-3.5 mr-1" />
-              Save Changes
-            </Button>
-          )}
           {steps.map((label, i) => {
             const n = i + 1
             const active = step === n
