@@ -1429,7 +1429,11 @@ function ReportsStep({
                   className={inputCls}
                   placeholder="$0.00"
                   value={awardData.acvAmountNum}
-                  onChange={(val) => setAwardData(prev => ({ ...prev, acvAmountNum: val }))}
+                  onChange={(val) => onReportsStateChange({
+                    ...reportsState,
+                    awardData: { ...reportsState.awardData, acvAmountNum: val },
+                    notesData: { ...reportsState.notesData, agreementAmountNum: val },
+                  })}
                 />
               </div>
             </div>
