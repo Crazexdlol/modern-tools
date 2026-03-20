@@ -1907,6 +1907,47 @@ function CompFinderInner() {
     })
   }
 
+  const [showManualComp, setShowManualComp] = useState(false)
+  const [manualComp, setManualComp] = useState({
+    price: '', mileage: '', year: '', make: '', model: '', trim: '', vin: '', dealerName: '', link: '',
+  })
+
+  const addManualComp = () => {
+    const price = parseFloat(manualComp.price) || 0
+    const miles = parseInt(manualComp.mileage) || 0
+    const year = parseInt(manualComp.year) || claim.year
+    if (price <= 0) return
+    const id = `manual-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`
+    const comp: MarketComp = {
+      id,
+      vin: manualComp.vin,
+      price,
+      miles,
+      year,
+      make: manualComp.make || claim.make,
+      model: manualComp.model || claim.model,
+      trim: manualComp.trim,
+      engine: '',
+      drivetrain: '',
+      transmission: '',
+      dealerName: manualComp.dealerName,
+      dealerPhone: '',
+      dealerCity: '',
+      dealerState: '',
+      photoUrl: '',
+      heading: '',
+      distanceMi: 0,
+      vdpUrl: manualComp.link,
+    }
+    setListings((prev) => [comp, ...prev])
+    setSelectedIds((prev) => {
+      if (prev.length >= 3) return prev
+      return [...prev, id]
+    })
+    setManualComp({ price: '', mileage: '', year: '', make: '', model: '', trim: '', vin: '', dealerName: '', link: '' })
+    setShowManualComp(false)
+  }
+
   const updateCompAdj = (index: number, field: 'mileageAdj' | 'yearAdj', value: number) => {
     setCompAdjs((prev) => {
       const next = [...prev]
@@ -2113,6 +2154,133 @@ function CompFinderInner() {
               onVinDecoded={handleVinDecoded}
               loading={loadingComps}
             />
+
+            {/* Manual comp entry */}
+            {!showManualComp && selectedIds.length < 3 && (
+              <button
+                onClick={() => setShowManualComp(true)}
+                className="flex items-center gap-2 px-4 py-2.5 rounded-lg border-2 border-dashed border-gray-300 hover:border-blue-400 hover:bg-blue-50 text-sm font-medium text-gray-500 hover:text-blue-600 transition-colors w-full justify-center"
+              >
+                <Plus className="w-4 h-4" />
+                Add Manual Comp
+              </button>
+            )}
+            {showManualComp && (
+              <Card className="bg-white border-blue-200 shadow-sm">
+                <CardHeader className="pb-3">
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="text-gray-900 text-sm">Add Manual Comp</CardTitle>
+                    <button onClick={() => setShowManualComp(false)} className="text-gray-400 hover:text-gray-600">
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Price *</label>
+                      <input
+                        type="number"
+                        placeholder="25000"
+                        value={manualComp.price}
+                        onChange={(e) => setManualComp(p => ({ ...p, price: e.target.value }))}
+                        className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Mileage</label>
+                      <input
+                        type="number"
+                        placeholder="50000"
+                        value={manualComp.mileage}
+                        onChange={(e) => setManualComp(p => ({ ...p, mileage: e.target.value }))}
+                        className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Year</label>
+                      <input
+                        type="number"
+                        placeholder={String(claim.year || new Date().getFullYear())}
+                        value={manualComp.year}
+                        onChange={(e) => setManualComp(p => ({ ...p, year: e.target.value }))}
+                        className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">VIN</label>
+                      <input
+                        type="text"
+                        placeholder="Optional"
+                        value={manualComp.vin}
+                        onChange={(e) => setManualComp(p => ({ ...p, vin: e.target.value }))}
+                        className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Make</label>
+                      <input
+                        type="text"
+                        placeholder={claim.make || 'Make'}
+                        value={manualComp.make}
+                        onChange={(e) => setManualComp(p => ({ ...p, make: e.target.value }))}
+                        className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Model</label>
+                      <input
+                        type="text"
+                        placeholder={claim.model || 'Model'}
+                        value={manualComp.model}
+                        onChange={(e) => setManualComp(p => ({ ...p, model: e.target.value }))}
+                        className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Trim</label>
+                      <input
+                        type="text"
+                        placeholder="Optional"
+                        value={manualComp.trim}
+                        onChange={(e) => setManualComp(p => ({ ...p, trim: e.target.value }))}
+                        className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Dealer Name</label>
+                      <input
+                        type="text"
+                        placeholder="Optional"
+                        value={manualComp.dealerName}
+                        onChange={(e) => setManualComp(p => ({ ...p, dealerName: e.target.value }))}
+                        className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+                    <div className="col-span-2 sm:col-span-3">
+                      <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Listing URL</label>
+                      <input
+                        type="text"
+                        placeholder="https://..."
+                        value={manualComp.link}
+                        onChange={(e) => setManualComp(p => ({ ...p, link: e.target.value }))}
+                        className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+                    <div className="flex items-end">
+                      <Button
+                        onClick={addManualComp}
+                        disabled={!manualComp.price || parseFloat(manualComp.price) <= 0}
+                        className="bg-blue-600 hover:bg-blue-500 text-white w-full font-bold"
+                      >
+                        <Plus className="w-4 h-4 mr-1" />
+                        Add Comp
+                      </Button>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
 
             {/* Results header */}
             {listings.length > 0 && (
