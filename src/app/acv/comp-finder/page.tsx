@@ -465,12 +465,14 @@ function CompCard({
   selectionIndex,
   onToggle,
   disabled,
+  onEdit,
 }: {
   comp: MarketComp
   selected: boolean
   selectionIndex: number
   onToggle: () => void
   disabled: boolean
+  onEdit?: () => void
 }) {
   const vehicle = `${comp.year || ''} ${comp.make} ${comp.model} ${comp.trim || ''}`.trim()
   const specs = [comp.engine, comp.transmission, comp.drivetrain].filter(Boolean).join(' \u00B7 ')
@@ -577,6 +579,14 @@ function CompCard({
             </>
           )}
         </button>
+        {onEdit && (
+          <button
+            onClick={onEdit}
+            className="px-3 py-2.5 text-xs font-bold text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition-all"
+          >
+            Edit
+          </button>
+        )}
         <a
           href={comp.vdpUrl || `https://www.google.com/search?q=${encodeURIComponent(comp.vin as string)}`}
           target="_blank"
@@ -645,10 +655,10 @@ function AdjustmentsForm({
       {/* Per-comp adjustments */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {selectedComps.map((comp, i) => {
-          const mileageDiff = comp.miles - claim.mileage
-          const yearDiff = comp.year - claim.year
+          const mileageDiff = Number(comp.miles) - claim.mileage
+          const yearDiff = Number(comp.year) - claim.year
           const adj = compAdjustments[i] ?? { mileageAdj: 0, yearAdj: 0 }
-          const compVal = comp.price + adj.mileageAdj + adj.yearAdj
+          const compVal = Number(comp.price) + adj.mileageAdj + adj.yearAdj
 
           return (
             <Card key={comp.id} className="bg-white border-gray-200 shadow-sm">
@@ -1850,14 +1860,20 @@ function CompFinderInner() {
 
   const builtComps: SelectedComp[] = selectedComps.map((comp, i) => {
     const adj = compAdjs[i] ?? { mileageAdj: 0, yearAdj: 0 }
+    const price = Number(comp.price)
+    const miles = Number(comp.miles)
+    const year = Number(comp.year)
     return {
       ...comp,
-      mileageDiffRaw: comp.miles - claim.mileage,
+      price,
+      miles,
+      year,
+      mileageDiffRaw: miles - claim.mileage,
       mileageAdjDollar: adj.mileageAdj,
-      yearDiffRaw: comp.year - claim.year,
+      yearDiffRaw: year - claim.year,
       yearAdjDollar: adj.yearAdj,
       compValue: calculateCompValue({
-        price: comp.price,
+        price,
         mileageAdjDollar: adj.mileageAdj,
         yearAdjDollar: adj.yearAdj,
       }),
@@ -1908,16 +1924,16 @@ function CompFinderInner() {
   }
 
   const [showManualComp, setShowManualComp] = useState(false)
-  const [manualComp, setManualComp] = useState({
-    price: '', mileage: '', year: '', make: '', model: '', trim: '', vin: '', dealerName: '', link: '',
-  })
+  const [editingManualId, setEditingManualId] = useState<string | null>(null)
+  const emptyManualComp = { price: '', mileage: '', year: '', make: '', model: '', trim: '', vin: '', dealerName: '', dealerPhone: '', link: '' }
+  const [manualComp, setManualComp] = useState(emptyManualComp)
 
   const addManualComp = () => {
     const price = parseFloat(manualComp.price) || 0
     const miles = parseInt(manualComp.mileage) || 0
     const year = parseInt(manualComp.year) || claim.year
     if (price <= 0) return
-    const id = `manual-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`
+    const id = editingManualId || `manual-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`
     const comp: MarketComp = {
       id,
       vin: manualComp.vin,
@@ -1931,7 +1947,7 @@ function CompFinderInner() {
       drivetrain: '',
       transmission: '',
       dealerName: manualComp.dealerName,
-      dealerPhone: '',
+      dealerPhone: manualComp.dealerPhone,
       dealerCity: '',
       dealerState: '',
       photoUrl: '',
@@ -1939,13 +1955,35 @@ function CompFinderInner() {
       distanceMi: 0,
       vdpUrl: manualComp.link,
     }
-    setListings((prev) => [comp, ...prev])
-    setSelectedIds((prev) => {
-      if (prev.length >= 3) return prev
-      return [...prev, id]
-    })
-    setManualComp({ price: '', mileage: '', year: '', make: '', model: '', trim: '', vin: '', dealerName: '', link: '' })
+    if (editingManualId) {
+      setListings((prev) => prev.map((l) => l.id === editingManualId ? comp : l))
+    } else {
+      setListings((prev) => [comp, ...prev])
+      setSelectedIds((prev) => {
+        if (prev.length >= 3) return prev
+        return [...prev, id]
+      })
+    }
+    setManualComp(emptyManualComp)
+    setEditingManualId(null)
     setShowManualComp(false)
+  }
+
+  const editManualComp = (comp: MarketComp) => {
+    setEditingManualId(comp.id)
+    setManualComp({
+      price: String(comp.price),
+      mileage: String(comp.miles),
+      year: String(comp.year),
+      make: comp.make,
+      model: comp.model,
+      trim: comp.trim,
+      vin: comp.vin,
+      dealerName: comp.dealerName,
+      dealerPhone: comp.dealerPhone,
+      link: comp.vdpUrl,
+    })
+    setShowManualComp(true)
   }
 
   const updateCompAdj = (index: number, field: 'mileageAdj' | 'yearAdj', value: number) => {
@@ -1961,7 +1999,7 @@ function CompFinderInner() {
     if (rate === 0) return
     setCompAdjs((prev) => {
       return selectedComps.map((comp, i) => {
-        const mileageDiff = comp.miles - claim.mileage
+        const mileageDiff = Number(comp.miles) - claim.mileage
         // Positive diff (comp has more miles) = positive adjustment, negative diff = negative adjustment
         const mileageAdj = Math.round(mileageDiff * rate * 100) / 100
         return { ...prev[i], mileageAdj }
@@ -2158,7 +2196,7 @@ function CompFinderInner() {
             {/* Manual comp entry */}
             {!showManualComp && selectedIds.length < 3 && (
               <button
-                onClick={() => setShowManualComp(true)}
+                onClick={() => { setEditingManualId(null); setManualComp(emptyManualComp); setShowManualComp(true) }}
                 className="flex items-center gap-2 px-4 py-2.5 rounded-lg border-2 border-dashed border-gray-300 hover:border-blue-400 hover:bg-blue-50 text-sm font-medium text-gray-500 hover:text-blue-600 transition-colors w-full justify-center"
               >
                 <Plus className="w-4 h-4" />
@@ -2169,8 +2207,8 @@ function CompFinderInner() {
               <Card className="bg-white border-blue-200 shadow-sm">
                 <CardHeader className="pb-3">
                   <div className="flex items-center justify-between">
-                    <CardTitle className="text-gray-900 text-sm">Add Manual Comp</CardTitle>
-                    <button onClick={() => setShowManualComp(false)} className="text-gray-400 hover:text-gray-600">
+                    <CardTitle className="text-gray-900 text-sm">{editingManualId ? 'Edit Manual Comp' : 'Add Manual Comp'}</CardTitle>
+                    <button onClick={() => { setShowManualComp(false); setEditingManualId(null); setManualComp(emptyManualComp) }} className="text-gray-400 hover:text-gray-600">
                       <X className="w-4 h-4" />
                     </button>
                   </div>
@@ -2257,6 +2295,16 @@ function CompFinderInner() {
                         className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
                       />
                     </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Dealer Phone</label>
+                      <input
+                        type="text"
+                        placeholder="Optional"
+                        value={manualComp.dealerPhone}
+                        onChange={(e) => setManualComp(p => ({ ...p, dealerPhone: e.target.value }))}
+                        className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
                     <div className="col-span-2 sm:col-span-3">
                       <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Listing URL</label>
                       <input
@@ -2273,8 +2321,8 @@ function CompFinderInner() {
                         disabled={!manualComp.price || parseFloat(manualComp.price) <= 0}
                         className="bg-blue-600 hover:bg-blue-500 text-white w-full font-bold"
                       >
-                        <Plus className="w-4 h-4 mr-1" />
-                        Add Comp
+                        {editingManualId ? <Check className="w-4 h-4 mr-1" /> : <Plus className="w-4 h-4 mr-1" />}
+                        {editingManualId ? 'Update Comp' : 'Add Comp'}
                       </Button>
                     </div>
                   </div>
@@ -2410,6 +2458,7 @@ function CompFinderInner() {
                           selectionIndex={selIdx + 1}
                           onToggle={() => toggleComp(comp.id)}
                           disabled={selectedIds.length >= 3}
+                          onEdit={comp.id.startsWith('manual-') ? () => editManualComp(comp) : undefined}
                         />
                       )
                     })}
