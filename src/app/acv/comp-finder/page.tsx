@@ -2214,111 +2214,121 @@ function CompFinderInner() {
                   </div>
                 </CardHeader>
                 <CardContent>
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                    <div>
-                      <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Price *</label>
-                      <CurrencyInput
-                        placeholder="25000"
-                        value={manualComp.price}
-                        onChange={(val) => setManualComp(p => ({ ...p, price: val }))}
-                        className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      />
+                  <div className="space-y-3">
+                    {/* Row 1: Price, Mileage, VIN */}
+                    <div className="grid grid-cols-3 gap-3">
+                      <div>
+                        <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Price *</label>
+                        <CurrencyInput
+                          placeholder="25000"
+                          value={manualComp.price}
+                          onChange={(val) => setManualComp(p => ({ ...p, price: val }))}
+                          className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Mileage</label>
+                        <input
+                          type="number"
+                          placeholder="50000"
+                          value={manualComp.mileage}
+                          onChange={(e) => setManualComp(p => ({ ...p, mileage: e.target.value }))}
+                          className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">VIN</label>
+                        <input
+                          type="text"
+                          placeholder="Optional"
+                          value={manualComp.vin}
+                          onChange={(e) => setManualComp(p => ({ ...p, vin: e.target.value }))}
+                          className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                      </div>
                     </div>
-                    <div>
-                      <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Mileage</label>
-                      <input
-                        type="number"
-                        placeholder="50000"
-                        value={manualComp.mileage}
-                        onChange={(e) => setManualComp(p => ({ ...p, mileage: e.target.value }))}
-                        className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      />
+                    {/* Row 2: Year, Make, Model, Trim */}
+                    <div className="grid grid-cols-4 gap-3">
+                      <div>
+                        <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Year</label>
+                        <input
+                          type="number"
+                          placeholder={String(claim.year || new Date().getFullYear())}
+                          value={manualComp.year}
+                          onChange={(e) => setManualComp(p => ({ ...p, year: e.target.value }))}
+                          className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Make</label>
+                        <input
+                          type="text"
+                          placeholder={claim.make || 'Make'}
+                          value={manualComp.make}
+                          onChange={(e) => setManualComp(p => ({ ...p, make: e.target.value }))}
+                          className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Model</label>
+                        <input
+                          type="text"
+                          placeholder={claim.model || 'Model'}
+                          value={manualComp.model}
+                          onChange={(e) => setManualComp(p => ({ ...p, model: e.target.value }))}
+                          className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Trim</label>
+                        <input
+                          type="text"
+                          placeholder="Optional"
+                          value={manualComp.trim}
+                          onChange={(e) => setManualComp(p => ({ ...p, trim: e.target.value }))}
+                          className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                      </div>
                     </div>
-                    <div>
-                      <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Year</label>
-                      <input
-                        type="number"
-                        placeholder={String(claim.year || new Date().getFullYear())}
-                        value={manualComp.year}
-                        onChange={(e) => setManualComp(p => ({ ...p, year: e.target.value }))}
-                        className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      />
+                    {/* Row 3: Dealer Name, Dealer Phone, Listing URL */}
+                    <div className="grid grid-cols-3 gap-3">
+                      <div>
+                        <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Dealer Name</label>
+                        <input
+                          type="text"
+                          placeholder="Optional"
+                          value={manualComp.dealerName}
+                          onChange={(e) => setManualComp(p => ({ ...p, dealerName: e.target.value }))}
+                          className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Dealer Phone</label>
+                        <input
+                          type="text"
+                          placeholder="Optional"
+                          value={manualComp.dealerPhone}
+                          onChange={(e) => setManualComp(p => ({ ...p, dealerPhone: e.target.value }))}
+                          className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Listing URL</label>
+                        <input
+                          type="text"
+                          placeholder="https://..."
+                          value={manualComp.link}
+                          onChange={(e) => setManualComp(p => ({ ...p, link: e.target.value }))}
+                          className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                      </div>
                     </div>
-                    <div>
-                      <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">VIN</label>
-                      <input
-                        type="text"
-                        placeholder="Optional"
-                        value={manualComp.vin}
-                        onChange={(e) => setManualComp(p => ({ ...p, vin: e.target.value }))}
-                        className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Make</label>
-                      <input
-                        type="text"
-                        placeholder={claim.make || 'Make'}
-                        value={manualComp.make}
-                        onChange={(e) => setManualComp(p => ({ ...p, make: e.target.value }))}
-                        className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Model</label>
-                      <input
-                        type="text"
-                        placeholder={claim.model || 'Model'}
-                        value={manualComp.model}
-                        onChange={(e) => setManualComp(p => ({ ...p, model: e.target.value }))}
-                        className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Trim</label>
-                      <input
-                        type="text"
-                        placeholder="Optional"
-                        value={manualComp.trim}
-                        onChange={(e) => setManualComp(p => ({ ...p, trim: e.target.value }))}
-                        className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Dealer Name</label>
-                      <input
-                        type="text"
-                        placeholder="Optional"
-                        value={manualComp.dealerName}
-                        onChange={(e) => setManualComp(p => ({ ...p, dealerName: e.target.value }))}
-                        className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Dealer Phone</label>
-                      <input
-                        type="text"
-                        placeholder="Optional"
-                        value={manualComp.dealerPhone}
-                        onChange={(e) => setManualComp(p => ({ ...p, dealerPhone: e.target.value }))}
-                        className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      />
-                    </div>
-                    <div className="col-span-2 sm:col-span-3">
-                      <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Listing URL</label>
-                      <input
-                        type="text"
-                        placeholder="https://..."
-                        value={manualComp.link}
-                        onChange={(e) => setManualComp(p => ({ ...p, link: e.target.value }))}
-                        className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      />
-                    </div>
-                    <div className="flex items-end">
+                    {/* Add/Update button */}
+                    <div className="flex justify-end">
                       <Button
                         onClick={addManualComp}
                         disabled={!manualComp.price || manualComp.price <= 0}
-                        className="bg-blue-600 hover:bg-blue-500 text-white w-full font-bold"
+                        className="bg-blue-600 hover:bg-blue-500 text-white font-bold px-6"
                       >
                         {editingManualId ? <Check className="w-4 h-4 mr-1" /> : <Plus className="w-4 h-4 mr-1" />}
                         {editingManualId ? 'Update Comp' : 'Add Comp'}
