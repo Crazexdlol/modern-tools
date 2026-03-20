@@ -1925,11 +1925,11 @@ function CompFinderInner() {
 
   const [showManualComp, setShowManualComp] = useState(false)
   const [editingManualId, setEditingManualId] = useState<string | null>(null)
-  const emptyManualComp = { price: '', mileage: '', year: '', make: '', model: '', trim: '', vin: '', dealerName: '', dealerPhone: '', link: '' }
+  const emptyManualComp = { price: 0, mileage: '', year: '', make: '', model: '', trim: '', vin: '', dealerName: '', dealerPhone: '', link: '' }
   const [manualComp, setManualComp] = useState(emptyManualComp)
 
   const addManualComp = () => {
-    const price = parseFloat(manualComp.price) || 0
+    const price = manualComp.price
     const miles = parseInt(manualComp.mileage) || 0
     const year = parseInt(manualComp.year) || claim.year
     if (price <= 0) return
@@ -1972,7 +1972,7 @@ function CompFinderInner() {
   const editManualComp = (comp: MarketComp) => {
     setEditingManualId(comp.id)
     setManualComp({
-      price: String(comp.price),
+      price: Number(comp.price),
       mileage: String(comp.miles),
       year: String(comp.year),
       make: comp.make,
@@ -2217,11 +2217,10 @@ function CompFinderInner() {
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                     <div>
                       <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Price *</label>
-                      <input
-                        type="number"
+                      <CurrencyInput
                         placeholder="25000"
                         value={manualComp.price}
-                        onChange={(e) => setManualComp(p => ({ ...p, price: e.target.value }))}
+                        onChange={(val) => setManualComp(p => ({ ...p, price: val }))}
                         className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
                       />
                     </div>
@@ -2318,7 +2317,7 @@ function CompFinderInner() {
                     <div className="flex items-end">
                       <Button
                         onClick={addManualComp}
-                        disabled={!manualComp.price || parseFloat(manualComp.price) <= 0}
+                        disabled={!manualComp.price || manualComp.price <= 0}
                         className="bg-blue-600 hover:bg-blue-500 text-white w-full font-bold"
                       >
                         {editingManualId ? <Check className="w-4 h-4 mr-1" /> : <Plus className="w-4 h-4 mr-1" />}
