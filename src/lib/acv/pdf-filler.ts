@@ -138,9 +138,20 @@ export async function fillACVPdf(
     },
   ]
 
-  comps.forEach((comp, i) => {
-    const f = compFields[i]
-    if (!f) return
+  compFields.forEach((f, i) => {
+    const comp = comps[i]
+    if (!comp) {
+      // No comp selected for this slot — fill with N/A and $0.00
+      setField(form, f.dealer, 'N/A')
+      setField(form, f.asking, '$0.00')
+      setField(form, f.mileage, 'N/A')
+      setField(form, f.mileDiffRaw, 'N/A')
+      setField(form, f.mileDiffDollar, '$0.00')
+      setField(form, f.yearDiffRaw, 'N/A')
+      setField(form, f.yearDiffDollar, '$0.00')
+      setField(form, f.value, '$0.00')
+      return
+    }
     // Dealer info: name + phone, or website domain if no dealer name
     let dealerLabel = comp.dealerName
     if (!dealerLabel && comp.vdpUrl) {

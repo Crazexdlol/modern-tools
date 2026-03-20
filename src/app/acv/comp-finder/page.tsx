@@ -934,7 +934,7 @@ function ReviewStep({
         <CardContent>
           <div className="space-y-2 text-sm max-w-sm">
             <div className="flex justify-between text-gray-700">
-              <span>Average of 3 Comps</span>
+              <span>Average of {selectedComps.length} Comp{selectedComps.length !== 1 ? 's' : ''}</span>
               <span className="tabular-nums">{formatCurrency(result.averageValue)}</span>
             </div>
             {adjustments.vehicleHistory !== 0 && (
@@ -1736,6 +1736,11 @@ function CompFinderInner() {
   const [mileageRate, setMileageRate] = useState(0)
   const [sortBy, setSortBy] = useState<'default' | 'mileage-closest' | 'mileage-low' | 'mileage-high' | 'price-low' | 'price-high' | 'year-new' | 'year-old' | 'distance'>('default')
   const [activeFilters, setActiveFilters] = useState<{ trim: string[]; drivetrain: string[]; transmission: string[]; engine: string[] }>({ trim: [], drivetrain: [], transmission: [], engine: [] })
+  const [compsPage, setCompsPage] = useState(1)
+  const COMPS_PER_PAGE = 30
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
+  const [showUnsavedDialog, setShowUnsavedDialog] = useState(false)
+  const pendingNavRef = useRef<string | null>(null)
 
   // Handle edit mode (from history)
   useEffect(() => {
@@ -1769,6 +1774,37 @@ function CompFinderInner() {
       }))
     } catch { /* ignore */ }
   }, [step, claim, listings, selectedIds, compAdjs, adjustments, editingId, reportsState])
+
+  // Track unsaved changes after initial load
+  const initialLoadDone = useRef(false)
+  useEffect(() => {
+    if (!initialLoadDone.current) {
+      initialLoadDone.current = true
+      return
+    }
+    setHasUnsavedChanges(true)
+  }, [claim, selectedIds, compAdjs, adjustments])
+
+  // Warn on browser close/refresh with unsaved changes
+  useEffect(() => {
+    const handler = (e: BeforeUnloadEvent) => {
+      if (hasUnsavedChanges) {
+        e.preventDefault()
+      }
+    }
+    window.addEventListener('beforeunload', handler)
+    return () => window.removeEventListener('beforeunload', handler)
+  }, [hasUnsavedChanges])
+
+  // Navigate with unsaved changes check
+  const navigateWithCheck = (href: string) => {
+    if (hasUnsavedChanges) {
+      pendingNavRef.current = href
+      setShowUnsavedDialog(true)
+    } else {
+      window.location.href = href
+    }
+  }
 
   const sortedListings = useMemo(() => {
     const filtered = listings.filter((comp) => {
@@ -1834,6 +1870,7 @@ function CompFinderInner() {
     if (!claim.year || !claim.make || !claim.model || (claim.radius !== 0 && !claim.zip)) return
     setLoadingComps(true)
     setCompsError(null)
+    setCompsPage(1)
     try {
       const isNationwide = claim.radius === 0
       const params = new URLSearchParams({
@@ -1865,7 +1902,7 @@ function CompFinderInner() {
   const toggleComp = (id: string) => {
     setSelectedIds((prev) => {
       if (prev.includes(id)) return prev.filter((x) => x !== id)
-      if (prev.length >= 3) return prev
+      if (prev.length >= 3) return prev // max 3 comps
       return [...prev, id]
     })
   }
@@ -1896,7 +1933,7 @@ function CompFinderInner() {
   const steps = ['Claim Info', 'Select Comps', 'Adjustments', 'Review & Generate', 'Reports']
 
   const handleSaveClaim = () => {
-    if (builtComps.length < 3) return
+    if (builtComps.length < 1) return
     saveToHistory(claim, builtComps, adjustments, result, 'comp-finder', editingId)
     if (!editingId) {
       try {
@@ -1904,6 +1941,7 @@ function CompFinderInner() {
         if (h.length > 0) setEditingId(h[0].id)
       } catch { /* ignore */ }
     }
+    setHasUnsavedChanges(false)
   }
 
   const handleVinDecoded = (updatedClaim: ClaimInfo) => {
@@ -1949,12 +1987,69 @@ function CompFinderInner() {
       </header>
 
       <main className="max-w-6xl mx-auto px-6 py-8">
-        <div className="flex items-center gap-3 mb-6">
-          <Link href="/acv" className="text-gray-400 hover:text-gray-900 transition-colors"><ArrowLeft className="w-5 h-5" /></Link>
+        <div className="flex items-center gap-4 mb-6">
+          <button
+            onClick={() => navigateWithCheck('/acv')}
+            className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-600 hover:text-gray-900 text-sm font-medium transition-colors"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            ACV Claims
+          </button>
           <h1 className="text-2xl font-bold text-gray-900">Comp Finder</h1>
+          {hasUnsavedChanges && (
+            <span className="text-xs text-amber-600 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full font-medium">Unsaved changes</span>
+          )}
         </div>
+
+        {/* Unsaved changes dialog */}
+        {showUnsavedDialog && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+            <div className="bg-white rounded-xl shadow-xl border border-gray-200 p-6 max-w-sm w-full mx-4">
+              <h3 className="text-lg font-bold text-gray-900 mb-2">Unsaved Changes</h3>
+              <p className="text-sm text-gray-600 mb-5">You have unsaved changes. Would you like to save before leaving?</p>
+              <div className="flex items-center gap-3 justify-end">
+                <button
+                  onClick={() => setShowUnsavedDialog(false)}
+                  className="px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => {
+                    setShowUnsavedDialog(false)
+                    setHasUnsavedChanges(false)
+                    if (pendingNavRef.current) window.location.href = pendingNavRef.current
+                  }}
+                  className="px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                >
+                  Discard
+                </button>
+                <button
+                  onClick={() => {
+                    handleSaveClaim()
+                    setShowUnsavedDialog(false)
+                    if (pendingNavRef.current) window.location.href = pendingNavRef.current
+                  }}
+                  className="px-4 py-2 text-sm font-bold text-white bg-blue-600 hover:bg-blue-500 rounded-lg transition-colors"
+                >
+                  Save & Leave
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
         {/* Step indicators */}
         <div className="flex items-center gap-2 mb-8 overflow-x-auto pb-2">
+          {hasUnsavedChanges && (
+            <Button
+              onClick={handleSaveClaim}
+              size="sm"
+              className="bg-emerald-600 hover:bg-emerald-500 text-white shrink-0 font-bold"
+            >
+              <Check className="w-3.5 h-3.5 mr-1" />
+              Save Changes
+            </Button>
+          )}
           {steps.map((label, i) => {
             const n = i + 1
             const active = step === n
@@ -2024,7 +2119,7 @@ function CompFinderInner() {
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
                   <p className="text-sm text-gray-500">
-                    Showing <span className="font-bold text-gray-900">{sortedListings.length}</span> listings
+                    Showing <span className="font-bold text-gray-900">{Math.min(COMPS_PER_PAGE, sortedListings.length - (compsPage - 1) * COMPS_PER_PAGE)}</span> of {sortedListings.length} listings
                   </p>
                   <div className="flex items-center gap-2">
                     {[1, 2, 3].map((n) => (
@@ -2056,7 +2151,7 @@ function CompFinderInner() {
                   ] as const).map(([value, label]) => (
                     <button
                       key={value}
-                      onClick={() => setSortBy(value)}
+                      onClick={() => { setSortBy(value); setCompsPage(1) }}
                       className={cn(
                         'px-2.5 py-1 text-xs font-semibold rounded-lg transition-all',
                         sortBy === value
@@ -2083,14 +2178,15 @@ function CompFinderInner() {
                         return (
                           <button
                             key={val}
-                            onClick={() =>
+                            onClick={() => {
                               setActiveFilters((prev) => ({
                                 ...prev,
                                 [field]: active
                                   ? prev[field].filter((v) => v !== val)
                                   : [...prev[field], val],
                               }))
-                            }
+                              setCompsPage(1)
+                            }}
                             className={cn(
                               'px-2.5 py-1 text-xs font-semibold rounded-lg transition-all',
                               active
@@ -2104,7 +2200,7 @@ function CompFinderInner() {
                       })}
                       {activeFilters[field].length > 0 && (
                         <button
-                          onClick={() => setActiveFilters((prev) => ({ ...prev, [field]: [] }))}
+                          onClick={() => { setActiveFilters((prev) => ({ ...prev, [field]: [] })); setCompsPage(1) }}
                           className="text-[11px] text-gray-400 hover:text-gray-600 ml-1"
                         >
                           Clear
@@ -2130,23 +2226,56 @@ function CompFinderInner() {
               </div>
             )}
 
-            {!loadingComps && sortedListings.length > 0 && (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                {sortedListings.map((comp) => {
-                  const selIdx = selectedIds.indexOf(comp.id)
-                  return (
-                    <CompCard
-                      key={comp.id}
-                      comp={comp}
-                      selected={selIdx !== -1}
-                      selectionIndex={selIdx + 1}
-                      onToggle={() => toggleComp(comp.id)}
-                      disabled={selectedIds.length >= 3}
-                    />
-                  )
-                })}
-              </div>
-            )}
+            {!loadingComps && sortedListings.length > 0 && (() => {
+              const totalPages = Math.ceil(sortedListings.length / COMPS_PER_PAGE)
+              const pageComps = sortedListings.slice((compsPage - 1) * COMPS_PER_PAGE, compsPage * COMPS_PER_PAGE)
+              return (
+                <>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                    {pageComps.map((comp) => {
+                      const selIdx = selectedIds.indexOf(comp.id)
+                      return (
+                        <CompCard
+                          key={comp.id}
+                          comp={comp}
+                          selected={selIdx !== -1}
+                          selectionIndex={selIdx + 1}
+                          onToggle={() => toggleComp(comp.id)}
+                          disabled={selectedIds.length >= 3}
+                        />
+                      )
+                    })}
+                  </div>
+                  {totalPages > 1 && (
+                    <div className="flex items-center justify-center gap-3 pt-4">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={compsPage <= 1}
+                        onClick={() => { setCompsPage(p => p - 1); window.scrollTo({ top: 0, behavior: 'smooth' }) }}
+                        className="border-gray-200 text-gray-600"
+                      >
+                        <ChevronLeft className="w-4 h-4 mr-1" />
+                        Previous
+                      </Button>
+                      <span className="text-sm text-gray-500">
+                        Page <span className="font-bold text-gray-900">{compsPage}</span> of {totalPages}
+                      </span>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={compsPage >= totalPages}
+                        onClick={() => { setCompsPage(p => p + 1); window.scrollTo({ top: 0, behavior: 'smooth' }) }}
+                        className="border-gray-200 text-gray-600"
+                      >
+                        Next
+                        <ChevronRight className="w-4 h-4 ml-1" />
+                      </Button>
+                    </div>
+                  )}
+                </>
+              )
+            })()}
 
             <div className="flex items-center gap-3 pt-2">
               <Button
@@ -2159,7 +2288,7 @@ function CompFinderInner() {
               </Button>
               <Button
                 onClick={() => setStep(3)}
-                disabled={selectedIds.length < 3}
+                disabled={selectedIds.length < 1}
                 className="bg-blue-600 hover:bg-blue-500 text-white ml-auto rounded-lg font-bold"
               >
                 Next: Adjustments

@@ -1210,9 +1210,9 @@ function AutoProcessStep({
         // Step 5: Calculate final ACV
         // Build final notes
         const radiusDesc = radiusUsed === 0 ? 'nationwide' : `within a ${radiusUsed}-mile radius`
-        const top3Avg = (top3[0].compValue + top3[1].compValue + top3[2].compValue) / 3
+        const top3Avg = top3.reduce((sum, c) => sum + c.compValue, 0) / top3.length
         const finalAcvPreview = calculateACV(top3, adjustments)
-        const autoNotes = `Based on the information provided, I have attached the recommended ACV on this vehicle. This report was generated using 3 comparable vehicles selected from ${listings.length} available listings ${radiusDesc}. The average adjusted value of the selected comparables is ${formatCurrency(top3Avg)}, and the subject vehicle's ACV has been established at ${formatCurrency(finalAcvPreview.acv)}.`
+        const autoNotes = `Based on the information provided, I have attached the recommended ACV on this vehicle. This report was generated using ${top3.length} comparable vehicle${top3.length !== 1 ? 's' : ''} selected from ${listings.length} available listings ${radiusDesc}. The average adjusted value of the selected comparables is ${formatCurrency(top3Avg)}, and the subject vehicle's ACV has been established at ${formatCurrency(finalAcvPreview.acv)}.`
 
         const finalAdj: ACVAdjustments = { ...adjustments, notes: autoNotes }
         const finalResult = calculateACV(top3, finalAdj)
@@ -1291,7 +1291,7 @@ function AutoProcessStep({
       </Card>
 
       {/* Show comp cards when done */}
-      {isDone && state.selectedComps.length === 3 && (
+      {isDone && state.selectedComps.length > 0 && (
         <div>
           <h3 className="text-sm font-semibold text-gray-700 mb-3">Auto-Selected Comps</h3>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -1543,7 +1543,7 @@ function AutoACVInner() {
 
       <main className="max-w-5xl mx-auto px-6 py-8">
         <div className="flex items-center gap-3 mb-6">
-          <Link href="/acv" className="text-gray-400 hover:text-gray-900 transition-colors"><ArrowLeft className="w-5 h-5" /></Link>
+          <Link href="/acv" className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-600 hover:text-gray-900 text-sm font-medium transition-colors"><ArrowLeft className="w-4 h-4" />ACV Claims</Link>
           <h1 className="text-2xl font-bold text-gray-900">Auto ACV</h1>
         </div>
           {/* Step indicators */}

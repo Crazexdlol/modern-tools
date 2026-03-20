@@ -95,7 +95,8 @@ export function calculateACV(comps: SelectedComp[], adjustments: ACVAdjustments)
   const comp1Value = comps[0]?.compValue ?? 0
   const comp2Value = comps[1]?.compValue ?? 0
   const comp3Value = comps[2]?.compValue ?? 0
-  const averageValue = (comp1Value + comp2Value + comp3Value) / 3
+  const compCount = Math.min(comps.length, 3) || 1
+  const averageValue = (comp1Value + comp2Value + comp3Value) / compCount
   const totalAdjustments =
     adjustments.vehicleHistory +
     adjustments.priorDamages +
@@ -121,6 +122,6 @@ export function defaultAdjustments(): ACVAdjustments {
     deductions: -500,
     deductionsNote: 'Dealer Vs. Private ($500.00)',
     taxRate: 0,
-    notes: 'Based on the information provided, I have attached the recommended ACV on this vehicle. Information was calculated using the information supplied and established with 3 available comps.',
+    notes: 'Based on the information provided, I have attached the recommended ACV on this vehicle. Information was calculated using the information supplied and established with available comps.',
   }
 }
