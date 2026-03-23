@@ -121,6 +121,38 @@ function CurrencyInput({
   )
 }
 
+function MileageRateInput({
+  value,
+  onChange,
+  className,
+}: {
+  value: number
+  onChange: (val: number) => void
+  className?: string
+}) {
+  const [focused, setFocused] = useState(false)
+  const [raw, setRaw] = useState('')
+
+  return (
+    <input
+      type="text"
+      inputMode="decimal"
+      className={className}
+      placeholder="0.05"
+      value={focused ? raw : (value ? value.toFixed(2) : '')}
+      onFocus={() => {
+        setFocused(true)
+        setRaw(value ? String(value) : '')
+      }}
+      onBlur={() => {
+        setFocused(false)
+        onChange(parseFloat(raw) || 0)
+      }}
+      onChange={(e) => setRaw(e.target.value)}
+    />
+  )
+}
+
 // ── Claim form (NO vehicle fields — those are on step 2) ─────────────────────
 function ClaimInfoForm({
   claim,
@@ -639,16 +671,11 @@ function AdjustmentsForm({
         </CardHeader>
         <CardContent>
           <div className="flex items-center gap-3">
-            <div className="w-40">
-              <input
-                type="number"
-                step="0.01"
-                className={`${inputCls} text-right`}
-                placeholder="0.05"
-                value={mileageRate || ''}
-                onChange={(e) => onMileageRateChange(parseFloat(e.target.value) || 0)}
-              />
-            </div>
+            <MileageRateInput
+              className={`${inputCls} text-right w-40`}
+              value={mileageRate}
+              onChange={(val) => onMileageRateChange(val)}
+            />
             <span className="text-xs text-gray-500">cents per mile</span>
             <p className="text-xs text-gray-400 ml-auto">
               Automatically calculates mileage adjustments for each comp
@@ -2081,7 +2108,7 @@ function CompFinderInner() {
       if (mileageRegex.test(notes)) {
         notes = rate > 0 ? notes.replace(mileageRegex, mileageLine) : notes.replace(mileageRegex, '').trim()
       } else if (rate > 0) {
-        notes = notes ? `${notes}\n${mileageLine}` : mileageLine
+        notes = notes ? `${notes.trimEnd()} ${mileageLine}` : mileageLine
       }
       return { ...prev, notes }
     })
