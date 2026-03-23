@@ -1053,6 +1053,7 @@ function buildNotesComments(
   agreementAmount: string,
   umpireName: string,
   umpireAmount: string,
+  signatureBlock1: string,
 ): string {
   let text = ''
 
@@ -1073,6 +1074,9 @@ function buildNotesComments(
   }
 
   text += 'If you have any questions pertaining to this assignment, please feel free to contact me directly.'
+
+  const sigName = signatureBlock1.split('\n').map(l => l.trim()).filter(Boolean)[0] || ''
+  text += `\n\nSincerely,\n${sigName}\nModern Appraisers\n702-321-5930`
 
   return text
 }
@@ -1214,6 +1218,7 @@ function ReportsStep({
     notesData.agreementAmountNum ? formatCurrency(notesData.agreementAmountNum) : '$0.00',
     notesData.umpireName || '[Umpire Name]',
     notesData.umpireAmountNum ? formatCurrency(notesData.umpireAmountNum) : '$0.00',
+    awardData.signatureBlock1,
   )
 
   const downloadNotesPdf = async () => {
@@ -1232,6 +1237,7 @@ function ReportsStep({
         notesData.agreementAmountNum ? formatCurrency(notesData.agreementAmountNum) : '$0.00',
         notesData.umpireName,
         notesData.umpireAmountNum ? formatCurrency(notesData.umpireAmountNum) : '$0.00',
+        awardData.signatureBlock1,
       )
       const today = new Date().toISOString().split('T')[0]
       const res = await fetch('/api/acv/generate-notes-pdf', {
