@@ -627,6 +627,9 @@ function AdjustmentsForm({
     'w-full bg-white border border-gray-200 rounded-lg px-3 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent'
   const labelCls = 'block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5'
 
+  const [pctMode, setPctMode] = useState<Record<string, boolean>>({})
+  const [pctInputs, setPctInputs] = useState<Record<string, { base: number; pct: number }>>({})
+
   return (
     <div className="space-y-6">
       {/* Mileage rate input */}
@@ -717,20 +720,72 @@ function AdjustmentsForm({
               { label: 'Additions', noteKey: 'additionsNote' as const, valKey: 'additions' as const, placeholder: 'e.g. Aftermarket rims' },
               { label: 'Deductions', noteKey: 'deductionsNote' as const, valKey: 'deductions' as const, placeholder: 'Dealer Vs. Private ($500.00)' },
             ].map((row) => (
-              <div key={row.label} className="flex items-center gap-3">
-                <span className="w-28 shrink-0 text-xs font-medium text-gray-500">{row.label}</span>
-                <input
-                  className={`${inputCls} flex-1`}
-                  placeholder={row.placeholder}
-                  value={adjustments[row.noteKey]}
-                  onChange={(e) => onAdjChange({ ...adjustments, [row.noteKey]: e.target.value })}
-                />
-                <div className="w-36 shrink-0">
-                  <CurrencyInput
-                    className={`${inputCls} text-right`}
-                    value={adjustments[row.valKey]}
-                    onChange={(val) => onAdjChange({ ...adjustments, [row.valKey]: val })}
+              <div key={row.label} className="space-y-2">
+                <div className="flex items-center gap-3">
+                  <span className="w-28 shrink-0 text-xs font-medium text-gray-500">{row.label}</span>
+                  <input
+                    className={`${inputCls} flex-1`}
+                    placeholder={row.placeholder}
+                    value={adjustments[row.noteKey]}
+                    onChange={(e) => onAdjChange({ ...adjustments, [row.noteKey]: e.target.value })}
                   />
+                  {pctMode[row.valKey] ? (
+                    <div className="flex items-center gap-2 shrink-0">
+                      <div className="w-28">
+                        <CurrencyInput
+                          className={`${inputCls} text-right`}
+                          value={pctInputs[row.valKey]?.base || 0}
+                          onChange={(val) => {
+                            const pct = pctInputs[row.valKey]?.pct || 0
+                            const result = Math.round(val * pct) / 100
+                            setPctInputs(prev => ({ ...prev, [row.valKey]: { base: val, pct } }))
+                            onAdjChange({ ...adjustments, [row.valKey]: result })
+                          }}
+                        />
+                      </div>
+                      <span className="text-gray-400 text-sm">×</span>
+                      <div className="relative w-20">
+                        <input
+                          type="number"
+                          step="1"
+                          className={`${inputCls} text-right pr-7`}
+                          placeholder="0"
+                          value={pctInputs[row.valKey]?.pct || ''}
+                          onChange={(e) => {
+                            const pct = parseFloat(e.target.value) || 0
+                            const base = pctInputs[row.valKey]?.base || 0
+                            const result = Math.round(base * pct) / 100
+                            setPctInputs(prev => ({ ...prev, [row.valKey]: { base, pct } }))
+                            onAdjChange({ ...adjustments, [row.valKey]: result })
+                          }}
+                        />
+                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-gray-400">%</span>
+                      </div>
+                      <span className="text-gray-400 text-sm">=</span>
+                      <span className="w-24 text-right text-sm font-medium text-gray-700">{formatCurrency(adjustments[row.valKey])}</span>
+                    </div>
+                  ) : (
+                    <div className="w-36 shrink-0">
+                      <CurrencyInput
+                        className={`${inputCls} text-right`}
+                        value={adjustments[row.valKey]}
+                        onChange={(val) => onAdjChange({ ...adjustments, [row.valKey]: val })}
+                      />
+                    </div>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setPctMode(prev => ({ ...prev, [row.valKey]: !prev[row.valKey] }))}
+                    className={cn(
+                      'shrink-0 px-2 py-1.5 text-xs font-medium rounded-md border transition-all',
+                      pctMode[row.valKey]
+                        ? 'bg-blue-600 text-white border-blue-600'
+                        : 'bg-white text-gray-500 border-gray-200 hover:border-blue-300'
+                    )}
+                    title="Toggle percentage mode"
+                  >
+                    %
+                  </button>
                 </div>
               </div>
             ))}
