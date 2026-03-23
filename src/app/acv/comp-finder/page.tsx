@@ -53,6 +53,7 @@ interface ACVHistoryEntry {
   comps: SelectedComp[]
   adjustments: ACVAdjustments
   result: ACVResult
+  mileageRate?: number
 }
 
 function saveToHistory(
@@ -62,6 +63,7 @@ function saveToHistory(
   result: ACVResult,
   mode: 'comp-finder' | 'auto-acv',
   editId?: string | null,
+  mileageRate?: number,
 ) {
   try {
     const entry = {
@@ -76,6 +78,7 @@ function saveToHistory(
       comps,
       adjustments,
       result,
+      mileageRate: mileageRate ?? 0,
     }
     let existing = JSON.parse(localStorage.getItem(HISTORY_KEY) ?? '[]')
     if (editId) {
@@ -901,6 +904,7 @@ function ReviewStep({
   onSave,
   onNext,
   editId,
+  mileageRate,
 }: {
   claim: ClaimInfo
   selectedComps: SelectedComp[]
@@ -911,6 +915,7 @@ function ReviewStep({
   onSave: () => void
   onNext?: () => void
   editId?: string | null
+  mileageRate: number
 }) {
   const [downloading, setDownloading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -935,7 +940,7 @@ function ReviewStep({
       a.download = `${claim.maNumber || 'report'}-acv.pdf`
       a.click()
       URL.revokeObjectURL(url)
-      saveToHistory(claim, selectedComps, adjustments, result, 'comp-finder', editId)
+      saveToHistory(claim, selectedComps, adjustments, result, 'comp-finder', editId, mileageRate)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Download failed')
     } finally {
@@ -1857,7 +1862,7 @@ function CompFinderInner() {
         sessionStorage.removeItem(COMP_FINDER_SESSION_KEY)
         setClaim(entry.claim)
         setReportsState(defaultReportsState(entry.claim))
-        setMileageRate(0)
+        setMileageRate(entry.mileageRate ?? 0)
         setAdjustments(entry.adjustments)
         setEditingId(entry.id)
         if (entry.comps && entry.comps.length > 0) {
@@ -2131,7 +2136,7 @@ function CompFinderInner() {
 
   const handleSaveClaim = () => {
     if (builtComps.length < 1) return
-    saveToHistory(claim, builtComps, adjustments, result, 'comp-finder', editingId)
+    saveToHistory(claim, builtComps, adjustments, result, 'comp-finder', editingId, mileageRate)
     if (!editingId) {
       try {
         const h: ACVHistoryEntry[] = JSON.parse(localStorage.getItem(HISTORY_KEY) ?? '[]')
@@ -2143,7 +2148,7 @@ function CompFinderInner() {
 
   const handleVinDecoded = (updatedClaim: ClaimInfo) => {
     const emptyResult: ACVResult = { comp1Value: 0, comp2Value: 0, comp3Value: 0, averageValue: 0, totalAdjustments: 0, taxAmount: 0, acv: 0 }
-    saveToHistory(updatedClaim, [], adjustments, emptyResult, 'comp-finder', editingId)
+    saveToHistory(updatedClaim, [], adjustments, emptyResult, 'comp-finder', editingId, mileageRate)
     if (!editingId) {
       try {
         const h: ACVHistoryEntry[] = JSON.parse(localStorage.getItem(HISTORY_KEY) ?? '[]')
@@ -2688,6 +2693,7 @@ function CompFinderInner() {
               onSave={handleSaveClaim}
               onNext={() => setStep(5)}
               editId={editingId}
+              mileageRate={mileageRate}
             />
           </div>
         )}
