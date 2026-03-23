@@ -1772,6 +1772,7 @@ function CompFinderInner() {
         sessionStorage.removeItem('modern-tools-acv-edit')
         sessionStorage.removeItem(COMP_FINDER_SESSION_KEY)
         setClaim(entry.claim)
+        setReportsState(defaultReportsState(entry.claim))
         setAdjustments(entry.adjustments)
         setEditingId(entry.id)
         if (entry.comps && entry.comps.length > 0) {
@@ -1794,6 +1795,15 @@ function CompFinderInner() {
       }))
     } catch { /* ignore */ }
   }, [step, claim, listings, selectedIds, compAdjs, adjustments, editingId, reportsState])
+
+  // Reset reports state when switching to a different claim
+  const prevClaimId = useRef(claim.maNumber)
+  useEffect(() => {
+    if (claim.maNumber !== prevClaimId.current) {
+      prevClaimId.current = claim.maNumber
+      setReportsState(defaultReportsState(claim))
+    }
+  }, [claim.maNumber])
 
   // Track unsaved changes after initial load
   const initialLoadDone = useRef(false)
