@@ -1857,6 +1857,7 @@ function CompFinderInner() {
         sessionStorage.removeItem(COMP_FINDER_SESSION_KEY)
         setClaim(entry.claim)
         setReportsState(defaultReportsState(entry.claim))
+        setMileageRate(0)
         setAdjustments(entry.adjustments)
         setEditingId(entry.id)
         if (entry.comps && entry.comps.length > 0) {
@@ -1886,6 +1887,7 @@ function CompFinderInner() {
     if (claim.maNumber !== prevClaimId.current) {
       prevClaimId.current = claim.maNumber
       setReportsState(defaultReportsState(claim))
+      setMileageRate(0)
     }
   }, [claim.maNumber])
 
@@ -2164,6 +2166,7 @@ function CompFinderInner() {
     setCompsError(null)
     setEditingId(null)
     setReportsState(defaultReportsState(defaultClaim()))
+    setMileageRate(0)
     sessionStorage.removeItem(COMP_FINDER_SESSION_KEY)
   }
 
