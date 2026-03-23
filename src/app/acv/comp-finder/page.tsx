@@ -640,14 +640,16 @@ function AdjustmentsForm({
         <CardContent>
           <div className="flex items-center gap-3">
             <div className="w-40">
-              <CurrencyInput
+              <input
+                type="number"
+                step="0.01"
                 className={`${inputCls} text-right`}
                 placeholder="0.05"
-                value={mileageRate}
-                onChange={(val) => onMileageRateChange(val)}
+                value={mileageRate || ''}
+                onChange={(e) => onMileageRateChange(parseFloat(e.target.value) || 0)}
               />
             </div>
-            <span className="text-xs text-gray-500">per mile</span>
+            <span className="text-xs text-gray-500">cents per mile</span>
             <p className="text-xs text-gray-400 ml-auto">
               Automatically calculates mileage adjustments for each comp
             </p>
@@ -1777,7 +1779,7 @@ function defaultClaim(): ClaimInfo {
 // ── Main page ────────────────────────────────────────────────────────────────
 const COMP_FINDER_SESSION_KEY = 'modern-tools-comp-finder-draft'
 
-function getCompFinderDraft(): { step: number; claim: ClaimInfo; listings: MarketComp[]; selectedIds: string[]; compAdjs: { mileageAdj: number; yearAdj: number }[]; adjustments: ACVAdjustments; editingId: string | null; reportsState?: ReportsState } | null {
+function getCompFinderDraft(): { step: number; claim: ClaimInfo; listings: MarketComp[]; selectedIds: string[]; compAdjs: { mileageAdj: number; yearAdj: number }[]; adjustments: ACVAdjustments; editingId: string | null; reportsState?: ReportsState; mileageRate?: number } | null {
   try {
     const raw = sessionStorage.getItem(COMP_FINDER_SESSION_KEY)
     if (raw) return JSON.parse(raw)
@@ -1808,7 +1810,7 @@ function CompFinderInner() {
   const [reportsState, setReportsState] = useState<ReportsState>(
     () => draft.current?.reportsState ?? defaultReportsState(draft.current?.claim ?? defaultClaim())
   )
-  const [mileageRate, setMileageRate] = useState(0)
+  const [mileageRate, setMileageRate] = useState(() => draft.current?.mileageRate ?? 0)
   const [sortBy, setSortBy] = useState<'default' | 'mileage-closest' | 'mileage-low' | 'mileage-high' | 'price-low' | 'price-high' | 'year-new' | 'year-old' | 'distance'>('default')
   const [activeFilters, setActiveFilters] = useState<{ trim: string[]; drivetrain: string[]; transmission: string[]; engine: string[] }>({ trim: [], drivetrain: [], transmission: [], engine: [] })
   const [compsPage, setCompsPage] = useState(1)
@@ -1846,10 +1848,10 @@ function CompFinderInner() {
   useEffect(() => {
     try {
       sessionStorage.setItem(COMP_FINDER_SESSION_KEY, JSON.stringify({
-        step, claim, listings, selectedIds, compAdjs, adjustments, editingId, reportsState,
+        step, claim, listings, selectedIds, compAdjs, adjustments, editingId, reportsState, mileageRate,
       }))
     } catch { /* ignore */ }
-  }, [step, claim, listings, selectedIds, compAdjs, adjustments, editingId, reportsState])
+  }, [step, claim, listings, selectedIds, compAdjs, adjustments, editingId, reportsState, mileageRate])
 
   // Reset reports state when switching to a different claim
   const prevClaimId = useRef(claim.maNumber)
@@ -2071,6 +2073,18 @@ function CompFinderInner() {
 
   const handleMileageRateChange = (rate: number) => {
     setMileageRate(rate)
+    // Update notes with mileage rate line
+    setAdjustments(prev => {
+      const mileageLine = `Mileage adjustment based on ${rate.toFixed(2)} cents per mile.`
+      const mileageRegex = /Mileage adjustment based on [\d.]+ cents per mile\./
+      let notes = prev.notes
+      if (mileageRegex.test(notes)) {
+        notes = rate > 0 ? notes.replace(mileageRegex, mileageLine) : notes.replace(mileageRegex, '').trim()
+      } else if (rate > 0) {
+        notes = notes ? `${notes}\n${mileageLine}` : mileageLine
+      }
+      return { ...prev, notes }
+    })
     if (rate === 0) return
     setCompAdjs((prev) => {
       return selectedComps.map((comp, i) => {
