@@ -2103,8 +2103,8 @@ function CompFinderInner() {
     setCompAdjs((prev) => {
       return selectedComps.map((comp, i) => {
         const mileageDiff = Number(comp.miles) - claim.mileage
-        // Positive diff (comp has more miles) = positive adjustment, negative diff = negative adjustment
-        const mileageAdj = Math.round(mileageDiff * rate * 100) / 100
+        // Comp has more miles → worth less → negative adjustment (matches auto-acv logic)
+        const mileageAdj = Math.round(-(mileageDiff * rate) * 100) / 100
         return { ...prev[i], mileageAdj }
       })
     })
@@ -2211,8 +2211,8 @@ function CompFinderInner() {
                   Discard
                 </button>
                 <button
-                  onClick={() => {
-                    handleSaveClaim()
+                  onClick={async () => {
+                    await handleSaveClaim()
                     setShowUnsavedDialog(false)
                     if (pendingNavRef.current) window.location.href = pendingNavRef.current
                   }}
