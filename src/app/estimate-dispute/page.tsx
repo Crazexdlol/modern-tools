@@ -9,6 +9,7 @@ import { ArrowLeft, Upload, FileText, X, Loader2, AlertCircle, Printer, Trash2, 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
+import { LogoutButton } from "@/components/logout-button";
 
 // ─── Vehicle area sort order (front to back) ───────────────────────────────
 const VEHICLE_AREA_ORDER: string[] = [
@@ -111,38 +112,33 @@ export interface HistoryEntry {
   claim?: EstimateClaimInfo;
 }
 
-const HISTORY_KEY = "modern-tools-estimate-history";
+import { fetchEstimateHistory, saveEstimateHistory, deleteEstimateHistory, type EstimateHistoryEntry } from '@/lib/supabase/history'
 
-function saveToHistory(result: ComparisonResult, claim: EstimateClaimInfo) {
-  try {
-    const { summary } = result.comparison;
-    // Merge AI-detected vehicle info with claim form (claim form takes priority if filled)
-    const aiVehicle = summary.vehicle ?? {};
-    const mergedVehicle: Record<string, string> = {
-      year: claim.year || aiVehicle.year || "",
-      make: claim.make || aiVehicle.make || "",
-      model: claim.model || aiVehicle.model || "",
-      vin: claim.vin || aiVehicle.vin || "",
-      color: aiVehicle.color || "",
-    };
-    const entry: HistoryEntry = {
-      id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-      date: new Date().toISOString(),
-      vehicle: mergedVehicle,
-      softwareA: (summary.estimateA?.software as string) ?? "",
-      softwareB: (summary.estimateB?.software as string) ?? "",
-      fileNameA: (summary.estimateA?.fileName as string) ?? "Estimate A",
-      fileNameB: (summary.estimateB?.fileName as string) ?? "Estimate B",
-      grandTotalA: (summary.estimateA?.grandTotal as number) ?? 0,
-      grandTotalB: (summary.estimateB?.grandTotal as number) ?? 0,
-      totalDifference: summary.totalDifference ?? 0,
-      result,
-      claim,
-    };
-    const existing: HistoryEntry[] = JSON.parse(localStorage.getItem(HISTORY_KEY) ?? "[]");
-    existing.unshift(entry);
-    localStorage.setItem(HISTORY_KEY, JSON.stringify(existing.slice(0, 50)));
-  } catch { /* localStorage unavailable */ }
+async function saveToHistory(result: ComparisonResult, claim: EstimateClaimInfo) {
+  const { summary } = result.comparison;
+  const aiVehicle = summary.vehicle ?? {};
+  const mergedVehicle: Record<string, string> = {
+    year: claim.year || aiVehicle.year || "",
+    make: claim.make || aiVehicle.make || "",
+    model: claim.model || aiVehicle.model || "",
+    vin: claim.vin || aiVehicle.vin || "",
+    color: aiVehicle.color || "",
+  };
+  const entry: EstimateHistoryEntry = {
+    id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    date: new Date().toISOString(),
+    vehicle: mergedVehicle,
+    softwareA: (summary.estimateA?.software as string) ?? "",
+    softwareB: (summary.estimateB?.software as string) ?? "",
+    fileNameA: (summary.estimateA?.fileName as string) ?? "Estimate A",
+    fileNameB: (summary.estimateB?.fileName as string) ?? "Estimate B",
+    grandTotalA: (summary.estimateA?.grandTotal as number) ?? 0,
+    grandTotalB: (summary.estimateB?.grandTotal as number) ?? 0,
+    totalDifference: summary.totalDifference ?? 0,
+    result,
+    claim,
+  };
+  await saveEstimateHistory(entry);
 }
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
@@ -708,8 +704,8 @@ function ClaimInfoFormEstimate({ claim, onChange, decoding, onDecodeVin }: {
 
 // ─── Dashboard View ─────────────────────────────────────────────────────────
 function DashboardView({ entries, onView, onDelete, onNewComparison }: {
-  entries: HistoryEntry[];
-  onView: (entry: HistoryEntry) => void;
+  entries: EstimateHistoryEntry[];
+  onView: (entry: EstimateHistoryEntry) => void;
   onDelete: (id: string) => void;
   onNewComparison: () => void;
 }) {
@@ -832,15 +828,12 @@ function EstimateDisputePageInner() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<ComparisonResult | null>(null);
-  const [entries, setEntries] = useState<HistoryEntry[]>([]);
+  const [entries, setEntries] = useState<EstimateHistoryEntry[]>([]);
   const [mode, setMode] = useState<"dashboard" | "compare">("dashboard");
   const searchParams = useSearchParams();
 
   useEffect(() => {
-    try {
-      const h: HistoryEntry[] = JSON.parse(localStorage.getItem(HISTORY_KEY) ?? "[]");
-      setEntries(h);
-    } catch { /* ignore */ }
+    fetchEstimateHistory().then(setEntries);
 
     if (searchParams.get("from") === "history") {
       try {
@@ -867,11 +860,9 @@ function EstimateDisputePageInner() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Comparison failed");
       setResult(data);
-      saveToHistory(data, claim);
-      try {
-        const h: HistoryEntry[] = JSON.parse(localStorage.getItem(HISTORY_KEY) ?? "[]");
-        setEntries(h);
-      } catch { /* ignore */ }
+      await saveToHistory(data, claim);
+      const updated = await fetchEstimateHistory();
+      setEntries(updated);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unknown error occurred");
     } finally {
@@ -885,16 +876,16 @@ function EstimateDisputePageInner() {
     if (entries.length > 0) setMode("dashboard");
   };
 
-  const handleView = (entry: HistoryEntry) => {
+  const handleView = (entry: EstimateHistoryEntry) => {
     if (entry.claim) setClaim(entry.claim);
     setResult(entry.result);
     setMode("compare");
   };
 
-  const handleDelete = (id: string) => {
+  const handleDelete = async (id: string) => {
     const updated = entries.filter(e => e.id !== id);
     setEntries(updated);
-    localStorage.setItem(HISTORY_KEY, JSON.stringify(updated));
+    await deleteEstimateHistory(id);
     if (updated.length === 0) setMode("compare");
   };
 
@@ -929,6 +920,9 @@ function EstimateDisputePageInner() {
             <Link href="/rules-laws" className="text-sm font-medium text-gray-400 hover:text-white transition-colors">Rules / Laws</Link>
             <Link href="/negotiations" className="text-sm font-medium text-gray-400 hover:text-white transition-colors">Negotiations</Link>
           </nav>
+          <div className="ml-auto">
+            <LogoutButton />
+          </div>
         </div>
       </header>
 

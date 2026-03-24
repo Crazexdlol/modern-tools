@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
+import { LogoutButton } from '@/components/logout-button'
 import { Search, ExternalLink, ChevronDown, ChevronUp, Clock, Gavel, Users, FileText, MapPin, ListChecks, AlertTriangle, Scale, DollarSign, ArrowLeft } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { appraisalClauseData, allStates, type AppraisalClauseEntry } from '@/lib/rules-laws/appraisal-clause-data'
@@ -275,6 +276,9 @@ export default function AppraisalClausePage() {
             <Link href="/rules-laws" className="text-sm font-medium text-white">Rules / Laws</Link>
             <Link href="/negotiations" className="text-sm font-medium text-gray-400 hover:text-white transition-colors">Negotiations</Link>
           </nav>
+          <div className="ml-auto">
+            <LogoutButton />
+          </div>
         </div>
       </header>
 

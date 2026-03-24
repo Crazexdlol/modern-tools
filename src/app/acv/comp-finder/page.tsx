@@ -38,25 +38,10 @@ import {
   defaultAdjustments,
   formatCurrency,
 } from '@/lib/acv/calculations'
+import { saveACVHistory, type ACVHistoryEntry } from '@/lib/supabase/history'
+import { LogoutButton } from '@/components/logout-button'
 
-const HISTORY_KEY = 'modern-tools-acv-history'
-
-interface ACVHistoryEntry {
-  id: string
-  date: string
-  mode: string
-  vehicle: string
-  vin: string
-  maNumber: string
-  acv: number
-  claim: ClaimInfo
-  comps: SelectedComp[]
-  adjustments: ACVAdjustments
-  result: ACVResult
-  mileageRate?: number
-}
-
-function saveToHistory(
+async function saveToHistory(
   claim: ClaimInfo,
   comps: SelectedComp[],
   adjustments: ACVAdjustments,
@@ -65,28 +50,23 @@ function saveToHistory(
   editId?: string | null,
   mileageRate?: number,
 ) {
-  try {
-    const entry = {
-      id: editId || `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-      date: new Date().toISOString(),
-      mode,
-      vehicle: `${claim.year} ${claim.make} ${claim.model}`,
-      vin: claim.vin,
-      maNumber: claim.maNumber,
-      acv: result.acv,
-      claim,
-      comps,
-      adjustments,
-      result,
-      mileageRate: mileageRate ?? 0,
-    }
-    let existing = JSON.parse(localStorage.getItem(HISTORY_KEY) ?? '[]')
-    if (editId) {
-      existing = existing.filter((e: ACVHistoryEntry) => e.id !== editId)
-    }
-    existing.unshift(entry)
-    localStorage.setItem(HISTORY_KEY, JSON.stringify(existing.slice(0, 50)))
-  } catch { /* localStorage unavailable */ }
+  const id = editId || `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
+  const entry = {
+    id,
+    date: new Date().toISOString(),
+    mode,
+    vehicle: `${claim.year} ${claim.make} ${claim.model}`,
+    vin: claim.vin,
+    maNumber: claim.maNumber,
+    acv: result.acv,
+    claim,
+    comps,
+    adjustments,
+    result,
+    mileageRate: mileageRate ?? 0,
+  }
+  await saveACVHistory(entry, editId)
+  return id
 }
 
 // ── Currency input: raw number while typing, formatted on blur ───────────────
@@ -940,7 +920,7 @@ function ReviewStep({
       a.download = `${claim.maNumber || 'report'}-acv.pdf`
       a.click()
       URL.revokeObjectURL(url)
-      saveToHistory(claim, selectedComps, adjustments, result, 'comp-finder', editId, mileageRate)
+      await saveToHistory(claim, selectedComps, adjustments, result, 'comp-finder', editId, mileageRate)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Download failed')
     } finally {
@@ -2134,27 +2114,17 @@ function CompFinderInner() {
 
   const steps = ['Claim Info', 'Select Comps', 'Adjustments', 'Review & Generate', 'Reports']
 
-  const handleSaveClaim = () => {
+  const handleSaveClaim = async () => {
     if (builtComps.length < 1) return
-    saveToHistory(claim, builtComps, adjustments, result, 'comp-finder', editingId, mileageRate)
-    if (!editingId) {
-      try {
-        const h: ACVHistoryEntry[] = JSON.parse(localStorage.getItem(HISTORY_KEY) ?? '[]')
-        if (h.length > 0) setEditingId(h[0].id)
-      } catch { /* ignore */ }
-    }
+    const savedId = await saveToHistory(claim, builtComps, adjustments, result, 'comp-finder', editingId, mileageRate)
+    if (!editingId) setEditingId(savedId)
     setHasUnsavedChanges(false)
   }
 
-  const handleVinDecoded = (updatedClaim: ClaimInfo) => {
+  const handleVinDecoded = async (updatedClaim: ClaimInfo) => {
     const emptyResult: ACVResult = { comp1Value: 0, comp2Value: 0, comp3Value: 0, averageValue: 0, totalAdjustments: 0, taxAmount: 0, acv: 0 }
-    saveToHistory(updatedClaim, [], adjustments, emptyResult, 'comp-finder', editingId, mileageRate)
-    if (!editingId) {
-      try {
-        const h: ACVHistoryEntry[] = JSON.parse(localStorage.getItem(HISTORY_KEY) ?? '[]')
-        if (h.length > 0) setEditingId(h[0].id)
-      } catch { /* ignore */ }
-    }
+    const savedId = await saveToHistory(updatedClaim, [], adjustments, emptyResult, 'comp-finder', editingId, mileageRate)
+    if (!editingId) setEditingId(savedId)
   }
 
   const startOver = () => {
@@ -2186,6 +2156,9 @@ function CompFinderInner() {
             <Link href="/rules-laws" className="text-sm font-medium text-gray-400 hover:text-white transition-colors">Rules / Laws</Link>
             <Link href="/negotiations" className="text-sm font-medium text-gray-400 hover:text-white transition-colors">Negotiations</Link>
           </nav>
+          <div className="ml-auto">
+            <LogoutButton />
+          </div>
         </div>
       </header>
 

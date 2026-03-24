@@ -4,24 +4,9 @@ import { useState, useEffect, useMemo } from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
 import { useRouter } from 'next/navigation'
-import { Search, Trash2, Plus, X, FileText, Zap, AlertTriangle } from 'lucide-react'
-import type { ClaimInfo, SelectedComp, ACVAdjustments, ACVResult } from '@/lib/acv/types'
-
-const HISTORY_KEY = 'modern-tools-acv-history'
-
-interface ACVHistoryEntry {
-  id: string
-  date: string
-  mode: string
-  vehicle: string
-  vin: string
-  maNumber: string
-  acv: number
-  claim: ClaimInfo
-  comps: SelectedComp[]
-  adjustments: ACVAdjustments
-  result: ACVResult
-}
+import { Search, Trash2, Plus, FileText, Zap, AlertTriangle } from 'lucide-react'
+import { fetchACVHistory, deleteACVHistory, type ACVHistoryEntry } from '@/lib/supabase/history'
+import { LogoutButton } from '@/components/logout-button'
 
 function fmtDate(iso: string): string {
   return new Date(iso).toLocaleDateString("en-US", {
@@ -36,7 +21,6 @@ export default function ACVPage() {
   const [showNewMenu, setShowNewMenu] = useState(false)
 
   const startNew = (path: string) => {
-    // Clear any stale drafts so the target page starts fresh
     sessionStorage.removeItem('modern-tools-comp-finder-draft')
     sessionStorage.removeItem('modern-tools-auto-acv-draft')
     sessionStorage.removeItem('modern-tools-acv-edit')
@@ -45,10 +29,7 @@ export default function ACVPage() {
   }
 
   useEffect(() => {
-    try {
-      const h: ACVHistoryEntry[] = JSON.parse(localStorage.getItem(HISTORY_KEY) ?? '[]')
-      setEntries(h)
-    } catch { /* ignore */ }
+    fetchACVHistory().then(setEntries)
   }, [])
 
   const filtered = useMemo(() => {
@@ -64,11 +45,11 @@ export default function ACVPage() {
     )
   }, [entries, searchQuery])
 
-  const handleDelete = (e: React.MouseEvent, id: string) => {
+  const handleDelete = async (e: React.MouseEvent, id: string) => {
     e.stopPropagation()
     const updated = entries.filter(entry => entry.id !== id)
     setEntries(updated)
-    localStorage.setItem(HISTORY_KEY, JSON.stringify(updated))
+    await deleteACVHistory(id)
   }
 
   const handleOpen = (entry: ACVHistoryEntry) => {
@@ -93,11 +74,13 @@ export default function ACVPage() {
             <Link href="/rules-laws" className="text-sm font-medium text-gray-400 hover:text-white transition-colors">Rules / Laws</Link>
             <Link href="/negotiations" className="text-sm font-medium text-gray-400 hover:text-white transition-colors">Negotiations</Link>
           </nav>
+          <div className="ml-auto">
+            <LogoutButton />
+          </div>
         </div>
       </header>
 
       <main className="max-w-7xl mx-auto px-6 py-8">
-        {/* Claims header + search + new button */}
         <div className="flex items-center justify-between mb-6">
           <h2 className="text-xl font-bold text-gray-900">ACV Claims</h2>
           <div className="flex items-center gap-3">
@@ -160,7 +143,6 @@ export default function ACVPage() {
           </div>
         </div>
 
-        {/* Table */}
         <div className="bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden">
           <table className="w-full text-sm">
             <thead>

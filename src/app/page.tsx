@@ -1,5 +1,7 @@
 import Link from "next/link";
 import Image from "next/image";
+import { MigrateData } from "@/components/migrate-data";
+import { LogoutButton } from "@/components/logout-button";
 
 const apps = [
   {
@@ -47,6 +49,7 @@ const apps = [
 export default function Dashboard() {
   return (
     <div className="min-h-screen bg-gray-50 text-gray-900">
+      <MigrateData />
       <header className="border-b border-gray-800 bg-gray-950 shadow-sm">
         <div className="max-w-7xl mx-auto px-6 py-4 flex items-center gap-8">
           <Link href="/"><Image src="/logo.png" alt="Modern Appraisers" width={160} height={48} className="h-9 w-auto" priority /></Link>
@@ -56,6 +59,9 @@ export default function Dashboard() {
             <Link href="/rules-laws" className="text-sm font-medium text-gray-400 hover:text-white transition-colors">Rules / Laws</Link>
             <Link href="/negotiations" className="text-sm font-medium text-gray-400 hover:text-white transition-colors">Negotiations</Link>
           </nav>
+          <div className="ml-auto">
+            <LogoutButton />
+          </div>
         </div>
       </header>
 

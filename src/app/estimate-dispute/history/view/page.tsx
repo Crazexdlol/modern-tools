@@ -2,7 +2,7 @@
 
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
-import type { HistoryEntry } from "../../page";
+import type { EstimateHistoryEntry } from "@/lib/supabase/history";
 
 export default function HistoryViewPage() {
   const router = useRouter();
@@ -11,7 +11,7 @@ export default function HistoryViewPage() {
     try {
       const raw = sessionStorage.getItem("modern-tools-history-view");
       if (!raw) { router.replace("/estimate-dispute"); return; }
-      const entry: HistoryEntry = JSON.parse(raw);
+      const entry: EstimateHistoryEntry = JSON.parse(raw);
       sessionStorage.setItem("modern-tools-prefill-result", JSON.stringify(entry.result));
       router.replace("/estimate-dispute?from=history");
     } catch {

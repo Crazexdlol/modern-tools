@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import Image from 'next/image'
+import { LogoutButton } from '@/components/logout-button'
 
 export default function RulesLawsPage() {
   return (
@@ -13,6 +14,9 @@ export default function RulesLawsPage() {
             <Link href="/rules-laws" className="text-sm font-medium text-white">Rules / Laws</Link>
             <Link href="/negotiations" className="text-sm font-medium text-gray-400 hover:text-white transition-colors">Negotiations</Link>
           </nav>
+          <div className="ml-auto">
+            <LogoutButton />
+          </div>
         </div>
       </header>
 

@@ -16,10 +16,10 @@ import {
   CheckCircle2,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import type { ClaimInfo } from '@/lib/acv/types'
+import type { ClaimInfo, ACVAdjustments, ACVResult } from '@/lib/acv/types'
 import { parseClaimPDF } from '@/lib/parse-claim-pdf'
-
-const HISTORY_KEY = 'modern-tools-acv-history'
+import { saveACVHistory } from '@/lib/supabase/history'
+import { LogoutButton } from '@/components/logout-button'
 
 interface LossListing {
   id: string
@@ -94,33 +94,28 @@ function formatCurrency(n: number) {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n)
 }
 
-function saveToHistory(
+async function saveToHistory(
   claim: ClaimInfo,
   listings: LossListing[],
   editId?: string | null,
 ) {
-  try {
-    const entry: LossHistoryEntry = {
-      id: editId || `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-      date: new Date().toISOString(),
-      mode: 'auction',
-      vehicle: `${claim.year} ${claim.make} ${claim.model}`,
-      vin: claim.vin,
-      maNumber: claim.maNumber,
-      acv: 0,
-      claim,
-      comps: [],
-      adjustments: {},
-      result: {},
-      auctionListings: listings,
-    }
-    let existing = JSON.parse(localStorage.getItem(HISTORY_KEY) ?? '[]')
-    if (editId) {
-      existing = existing.filter((e: LossHistoryEntry) => e.id !== editId)
-    }
-    existing.unshift(entry)
-    localStorage.setItem(HISTORY_KEY, JSON.stringify(existing.slice(0, 50)))
-  } catch { /* localStorage unavailable */ }
+  const id = editId || `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
+  const entry = {
+    id,
+    date: new Date().toISOString(),
+    mode: 'auction',
+    vehicle: `${claim.year} ${claim.make} ${claim.model}`,
+    vin: claim.vin,
+    maNumber: claim.maNumber,
+    acv: 0,
+    claim,
+    comps: [],
+    adjustments: {} as ACVAdjustments,
+    result: {} as ACVResult,
+    auctionListings: listings,
+  }
+  await saveACVHistory(entry, editId)
+  return id
 }
 
 // ── Claim Info Form ───────────────────────────────────────────────────────────
@@ -542,11 +537,9 @@ function LossSearchInner() {
     }
   }
 
-  const handleSave = () => {
-    saveToHistory(claim, listings, editingId)
-    if (!editingId) {
-      setEditingId(`${Date.now()}-${Math.random().toString(36).slice(2, 7)}`)
-    }
+  const handleSave = async () => {
+    const savedId = await saveToHistory(claim, listings, editingId)
+    if (!editingId) setEditingId(savedId)
     setSaved(true)
     setTimeout(() => setSaved(false), 2000)
   }
@@ -562,6 +555,9 @@ function LossSearchInner() {
             <Link href="/rules-laws" className="text-sm font-medium text-gray-400 hover:text-white transition-colors">Rules / Laws</Link>
             <Link href="/negotiations" className="text-sm font-medium text-gray-400 hover:text-white transition-colors">Negotiations</Link>
           </nav>
+          <div className="ml-auto">
+            <LogoutButton />
+          </div>
         </div>
       </header>
 
