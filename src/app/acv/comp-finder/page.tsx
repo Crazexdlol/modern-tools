@@ -1976,7 +1976,10 @@ function CompFinderInner() {
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Search failed')
       setActiveFilters({ trim: [], drivetrain: [], transmission: [], engine: [] })
-      setListings(data.listings ?? [])
+      const newListings: MarketComp[] = data.listings ?? []
+      // Keep currently selected comps so they aren't lost when results replace listings
+      const keptComps = listings.filter(l => selectedIds.includes(l.id) && !newListings.find(nl => nl.id === l.id))
+      setListings([...keptComps, ...newListings])
       if ((data.listings ?? []).length === 0) {
         setCompsError('No listings found. Try expanding the radius or removing the trim filter.')
       }
