@@ -1805,6 +1805,8 @@ function CompFinderInner() {
   const [step, setStep] = useState(() => draft.current?.step ?? 1)
   const [claim, setClaim] = useState<ClaimInfo>(() => draft.current?.claim ?? defaultClaim())
   const [listings, setListings] = useState<MarketComp[]>(() => draft.current?.listings ?? [])
+  // Stable lookup of every comp we've ever seen, so selected comps survive search replacements
+  const compMapRef = useRef<Map<string, MarketComp>>(new Map())
   const [loadingComps, setLoadingComps] = useState(false)
   const [compsError, setCompsError] = useState<string | null>(null)
   const [selectedIds, setSelectedIds] = useState<string[]>(() => draft.current?.selectedIds ?? [])
@@ -1828,6 +1830,11 @@ function CompFinderInner() {
   const [compsPage, setCompsPage] = useState(1)
   const COMPS_PER_PAGE = 30
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
+
+  // Keep comp map in sync with listings
+  useEffect(() => {
+    listings.forEach(comp => compMapRef.current.set(comp.id, comp))
+  }, [listings])
 
   // Handle edit mode (from history)
   useEffect(() => {
@@ -1927,7 +1934,7 @@ function CompFinderInner() {
   }, [listings, sortBy, claim.mileage, activeFilters])
 
   const selectedComps = selectedIds
-    .map((id) => listings.find((l) => l.id === id))
+    .map((id) => listings.find((l) => l.id === id) ?? compMapRef.current.get(id))
     .filter((c): c is MarketComp => !!c)
 
   const builtComps: SelectedComp[] = selectedComps.map((comp, i) => {
@@ -1976,10 +1983,7 @@ function CompFinderInner() {
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Search failed')
       setActiveFilters({ trim: [], drivetrain: [], transmission: [], engine: [] })
-      const newListings: MarketComp[] = data.listings ?? []
-      // Keep currently selected comps so they aren't lost when results replace listings
-      const keptComps = listings.filter(l => selectedIds.includes(l.id) && !newListings.find(nl => nl.id === l.id))
-      setListings([...keptComps, ...newListings])
+      setListings(data.listings ?? [])
       if ((data.listings ?? []).length === 0) {
         setCompsError('No listings found. Try expanding the radius or removing the trim filter.')
       }
@@ -2126,6 +2130,7 @@ function CompFinderInner() {
     setEditingId(null)
     setReportsState(defaultReportsState(defaultClaim()))
     setMileageRate(0)
+    compMapRef.current.clear()
     sessionStorage.removeItem(COMP_FINDER_SESSION_KEY)
   }
 
