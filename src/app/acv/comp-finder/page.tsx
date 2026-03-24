@@ -1828,8 +1828,6 @@ function CompFinderInner() {
   const [compsPage, setCompsPage] = useState(1)
   const COMPS_PER_PAGE = 30
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
-  const [showUnsavedDialog, setShowUnsavedDialog] = useState(false)
-  const pendingNavRef = useRef<string | null>(null)
 
   // Handle edit mode (from history)
   useEffect(() => {
@@ -1886,25 +1884,8 @@ function CompFinderInner() {
     setHasUnsavedChanges(true)
   }, [claim, selectedIds, compAdjs, adjustments])
 
-  // Warn on browser close/refresh with unsaved changes
-  useEffect(() => {
-    const handler = (e: BeforeUnloadEvent) => {
-      if (hasUnsavedChanges) {
-        e.preventDefault()
-      }
-    }
-    window.addEventListener('beforeunload', handler)
-    return () => window.removeEventListener('beforeunload', handler)
-  }, [hasUnsavedChanges])
-
-  // Navigate with unsaved changes check
   const navigateWithCheck = (href: string) => {
-    if (hasUnsavedChanges) {
-      pendingNavRef.current = href
-      setShowUnsavedDialog(true)
-    } else {
-      window.location.href = href
-    }
+    window.location.href = href
   }
 
   const sortedListings = useMemo(() => {
@@ -2187,43 +2168,6 @@ function CompFinderInner() {
           )}
         </div>
 
-        {/* Unsaved changes dialog */}
-        {showUnsavedDialog && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-            <div className="bg-white rounded-xl shadow-xl border border-gray-200 p-6 max-w-sm w-full mx-4">
-              <h3 className="text-lg font-bold text-gray-900 mb-2">Unsaved Changes</h3>
-              <p className="text-sm text-gray-600 mb-5">You have unsaved changes. Would you like to save before leaving?</p>
-              <div className="flex items-center gap-3 justify-end">
-                <button
-                  onClick={() => setShowUnsavedDialog(false)}
-                  className="px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={() => {
-                    setShowUnsavedDialog(false)
-                    setHasUnsavedChanges(false)
-                    if (pendingNavRef.current) window.location.href = pendingNavRef.current
-                  }}
-                  className="px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                >
-                  Discard
-                </button>
-                <button
-                  onClick={async () => {
-                    await handleSaveClaim()
-                    setShowUnsavedDialog(false)
-                    if (pendingNavRef.current) window.location.href = pendingNavRef.current
-                  }}
-                  className="px-4 py-2 text-sm font-bold text-white bg-blue-600 hover:bg-blue-500 rounded-lg transition-colors"
-                >
-                  Save & Leave
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
         {/* Step indicators */}
         <div className="flex items-center gap-2 mb-8 overflow-x-auto pb-2">
           {steps.map((label, i) => {
