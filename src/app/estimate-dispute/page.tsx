@@ -521,27 +521,27 @@ function Results({ result, onReset }: { result: ComparisonResult; onReset: () =>
                           {formatCell(bOp, bHrs, bPartPrice, bTotal)}
                         </td>
                         <td className="px-4 py-2.5 align-top tabular-nums">
-                          <div className="space-y-0.5">
+                          <div className="space-y-1">
                             {aOp !== bOp && aOp !== "Not Included" && bOp !== "Not Included" && (
-                              <div className="text-xs font-medium text-orange-600">{aOp} vs {bOp}</div>
+                              <div className="text-sm font-bold text-orange-600">{aOp} vs {bOp}</div>
                             )}
                             {(item.status === "only_in_a" || item.status === "only_in_b") && (
-                              <div className="text-xs font-medium text-orange-600">
+                              <div className="text-sm font-bold text-orange-600">
                                 {item.status === "only_in_a" ? "Only in A" : "Only in B"}
                               </div>
                             )}
                             {hrsDiff !== 0 && (
-                              <div className={`text-xs font-medium ${diffColor(hrsDiff)}`}>
+                              <div className={`text-sm font-bold ${diffColor(hrsDiff)}`}>
                                 {hrsDiff > 0 ? "+" : ""}{hrsDiff.toFixed(1)} hrs
                               </div>
                             )}
                             {partDiff !== 0 && (
-                              <div className={`text-xs font-medium ${diffColor(partDiff)}`}>
+                              <div className={`text-sm font-bold ${diffColor(partDiff)}`}>
                                 {partDiff > 0 ? "+" : ""}{fmt(partDiff)}
                               </div>
                             )}
                             {diffVal !== 0 && partDiff === 0 && hrsDiff === 0 && (
-                              <div className={`text-xs font-medium ${diffColor(diffVal)}`}>
+                              <div className={`text-sm font-bold ${diffColor(diffVal)}`}>
                                 {diffVal > 0 ? "+" : ""}{fmt(diffVal)}
                               </div>
                             )}
