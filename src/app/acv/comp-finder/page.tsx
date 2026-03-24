@@ -2103,8 +2103,8 @@ function CompFinderInner() {
     setCompAdjs((prev) => {
       return selectedComps.map((comp, i) => {
         const mileageDiff = Number(comp.miles) - claim.mileage
-        // Comp has more miles → worth less → negative adjustment (matches auto-acv logic)
-        const mileageAdj = Math.round(-(mileageDiff * rate) * 100) / 100
+        // Comp has more miles → worth less → add to make comparable; less miles → subtract
+        const mileageAdj = Math.round(mileageDiff * rate * 100) / 100
         return { ...prev[i], mileageAdj }
       })
     })

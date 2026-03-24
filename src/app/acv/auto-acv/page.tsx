@@ -1154,7 +1154,7 @@ function AutoProcessStep({
         updateStatus('selecting', 'running', `Mileage rate: $${mileageRate.toFixed(3)}/mile — selecting best 3...`)
         const compsWithValues = listings.map((comp) => {
           const mileageDiffRaw = comp.miles - claim.mileage
-          const mileageAdjDollar = -(mileageDiffRaw * mileageRate)
+          const mileageAdjDollar = mileageDiffRaw * mileageRate
           const yearDiffRaw = comp.year - claim.year
           const yearAdjDollar = yearDiffRaw * depreciationPerYear
           const compValue = calculateCompValue({
