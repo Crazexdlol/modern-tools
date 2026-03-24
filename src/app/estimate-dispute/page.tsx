@@ -235,15 +235,18 @@ function sortedDiffs(diffs: LineItemDiff[]): LineItemDiff[] {
   });
 }
 
-function groupByCategory(diffs: LineItemDiff[]): Map<string, LineItemDiff[]> {
-  const sorted = sortedDiffs(diffs);
+function groupByPanel(diffs: LineItemDiff[]): Map<string, LineItemDiff[]> {
   const map = new Map<string, LineItemDiff[]>();
-  for (const item of sorted) {
-    const cat = item.category || "Other";
-    if (!map.has(cat)) map.set(cat, []);
-    map.get(cat)!.push(item);
+  for (const item of diffs) {
+    const panel = item.panelOrArea || item.normalizedOperation || "Other";
+    if (!map.has(panel)) map.set(panel, []);
+    map.get(panel)!.push(item);
   }
-  return map;
+  // Sort panels by vehicle area order
+  const sorted = new Map(
+    [...map.entries()].sort((a, b) => vehicleAreaRank(a[0]) - vehicleAreaRank(b[0]))
+  );
+  return sorted;
 }
 
 function formatDate(iso: string): string {
@@ -292,7 +295,7 @@ function FileUploadZone({ label, file, onDrop, onRemove }: {
 // ─── Results ───────────────────────────────────────────────────────────────
 function Results({ result, onReset }: { result: ComparisonResult; onReset: () => void }) {
   const { summary, laborRateDifferences, lineItemDifferences, matchingItems, keyFindings } = result.comparison;
-  const grouped = groupByCategory(lineItemDifferences ?? []);
+  const grouped = groupByPanel(lineItemDifferences ?? []);
   const totalDiff = summary.totalDifference ?? 0;
 
   const estAName = (summary.estimateA?.fileName as string) || "Estimate A";
@@ -463,82 +466,71 @@ function Results({ result, onReset }: { result: ComparisonResult; onReset: () =>
           </div>
         )}
 
-        {/* ── Line Item Differences by Category ── */}
-        {Array.from(grouped.entries()).map(([category, items]) => {
-          const isLabor = category === "Labor";
+        {/* ── Line Item Differences by Panel/Part ── */}
+        {Array.from(grouped.entries()).map(([panel, items]) => {
+          const panelDollarTotal = items.reduce((sum, item) => sum + (item.dollarImpact ?? 0), 0);
           return (
-            <div key={category} className="result-section rounded-lg border border-gray-200 bg-white shadow-sm mb-5 overflow-hidden">
+            <div key={panel} className="result-section rounded-lg border border-gray-200 bg-white shadow-sm mb-4 overflow-hidden">
               <div className="section-header px-4 py-2.5 border-b border-gray-200 bg-gray-50 flex items-center justify-between">
-                <h3 className="text-sm font-semibold text-gray-900 uppercase tracking-wider">{category}</h3>
-                <span className="text-xs text-gray-500">{items.length} difference{items.length !== 1 ? "s" : ""}</span>
+                <h3 className="text-sm font-semibold text-gray-900">{panel}</h3>
+                {panelDollarTotal !== 0 && (
+                  <span className={`text-sm font-bold tabular-nums ${diffColor(panelDollarTotal)}`}>
+                    {panelDollarTotal > 0 ? "+" : ""}{fmt(panelDollarTotal)}
+                  </span>
+                )}
               </div>
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-gray-100 text-xs text-gray-500 font-medium uppercase tracking-wider">
-                      <th className="text-left px-4 py-2 w-[18%]">Part / Operation</th>
-                      <th className="text-center px-3 py-2 w-[10%]">Estimate A</th>
-                      <th className="text-center px-3 py-2 w-[10%]">Estimate B</th>
-                      <th className="text-right px-3 py-2 w-[10%]">A Value</th>
-                      <th className="text-right px-3 py-2 w-[10%]">B Value</th>
-                      <th className="text-right px-3 py-2 w-[10%]">Difference</th>
-                      <th className="text-left px-3 py-2 w-[14%]">Difference Type</th>
-                      <th className="text-left px-3 py-2 w-[18%]">Notes</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {items.map((item, i) => {
-                      const aOp = extractOpLabel(item.estimateA?.rawOperation as string, item.status, "a");
-                      const bOp = extractOpLabel(item.estimateB?.rawOperation as string, item.status, "b");
-                      const aVal = getDisplayValue(item.estimateA, category, item.status, "a");
-                      const bVal = getDisplayValue(item.estimateB, category, item.status, "b");
-                      const diffDisplay = getDiffDisplay(item);
-                      const diffType = getDiffType(item);
-                      const diffVal = item.dollarImpact ?? 0;
-                      const partOrOp = item.panelOrArea || item.normalizedOperation;
+              <div className="divide-y divide-gray-100">
+                {items.map((item, i) => {
+                  const aOp = extractOpLabel(item.estimateA?.rawOperation as string, item.status, "a");
+                  const bOp = extractOpLabel(item.estimateB?.rawOperation as string, item.status, "b");
+                  const diffDisplay = getDiffDisplay(item);
+                  const diffVal = item.dollarImpact ?? 0;
+                  const operation = item.normalizedOperation || item.category || "";
+                  const aHrs = Number(item.estimateA?.laborHours) || 0;
+                  const bHrs = Number(item.estimateB?.laborHours) || 0;
+                  const aTotal = Number(item.estimateA?.total) || 0;
+                  const bTotal = Number(item.estimateB?.total) || 0;
+                  const aPartPrice = Number(item.estimateA?.partPrice) || 0;
+                  const bPartPrice = Number(item.estimateB?.partPrice) || 0;
 
-                      const opStyle = (op: string) => {
-                        if (op === "Not Included") return "text-gray-400 italic";
-                        if (op === "Replace") return "text-blue-600";
-                        if (op === "Repair") return "text-emerald-600";
-                        if (op === "Blend" || op === "Refinish") return "text-purple-600";
-                        if (op === "R&I" || op === "R&R") return "text-cyan-600";
-                        return "text-gray-700";
-                      };
+                  const opStyle = (op: string) => {
+                    if (op === "Not Included") return "text-gray-400 italic";
+                    if (op === "Replace") return "text-blue-600";
+                    if (op === "Repair") return "text-emerald-600";
+                    if (op === "Blend" || op === "Refinish") return "text-purple-600";
+                    if (op === "R&I" || op === "R&R") return "text-cyan-600";
+                    return "text-gray-700";
+                  };
 
-                      return (
-                        <Fragment key={i}>
-                          <tr className={`border-b border-gray-100 hover:bg-gray-50 ${i % 2 === 1 ? "bg-gray-50/50" : ""}`}>
-                            <td className="px-4 py-2.5 text-gray-800 font-medium align-top">{partOrOp}</td>
-                            <td className={`px-3 py-2.5 text-center align-top font-medium ${opStyle(aOp)}`}>{aOp}</td>
-                            <td className={`px-3 py-2.5 text-center align-top font-medium ${opStyle(bOp)}`}>{bOp}</td>
-                            <td className="px-3 py-2.5 text-right tabular-nums text-gray-700 align-top">{aVal}</td>
-                            <td className="px-3 py-2.5 text-right tabular-nums text-gray-700 align-top">{bVal}</td>
-                            <td className={`px-3 py-2.5 text-right tabular-nums font-semibold align-top ${diffColor(diffVal)}`}>{diffDisplay}</td>
-                            <td className="px-3 py-2.5 text-gray-500 text-xs align-top">{diffType}</td>
-                            <td className="px-3 py-2.5 text-gray-500 text-xs align-top leading-relaxed">{item.notes || "—"}</td>
-                          </tr>
-                        </Fragment>
-                      );
-                    })}
-
-                    {/* Total Labor Difference row */}
-                    {isLabor && (
-                      <tr className="border-t-2 border-gray-300 bg-gray-50 total-row">
-                        <td colSpan={5} className="px-4 py-2.5 text-sm font-semibold text-gray-900">Total Labor Difference</td>
-                        <td className={`px-3 py-2.5 text-right tabular-nums font-bold text-sm ${diffColor(totalLaborDiff)}`}>
-                          {totalLaborDiff !== 0 ? `${totalLaborDiff > 0 ? "+" : ""}${fmt(totalLaborDiff)}` : "—"}
-                          {totalLaborHrsDiff !== 0 && (
-                            <span className="block text-xs font-normal text-gray-500">
-                              {totalLaborHrsDiff > 0 ? "+" : ""}{totalLaborHrsDiff.toFixed(1)} hrs
-                            </span>
-                          )}
-                        </td>
-                        <td colSpan={2} />
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
+                  return (
+                    <div key={i} className={`px-4 py-3 ${i % 2 === 1 ? "bg-gray-50/50" : ""}`}>
+                      <div className="flex items-center justify-between mb-1.5">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-medium text-gray-800">{operation}</span>
+                          <span className="text-xs text-gray-400">{item.category}</span>
+                        </div>
+                        <span className={`text-sm font-bold tabular-nums ${diffColor(diffVal)}`}>{diffDisplay}</span>
+                      </div>
+                      <div className="flex items-center gap-6 text-xs">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-gray-400">A:</span>
+                          <span className={`font-medium ${opStyle(aOp)}`}>{aOp}</span>
+                          {aHrs > 0 && <span className="text-gray-500">{aHrs.toFixed(1)} hrs</span>}
+                          {aPartPrice > 0 && <span className="text-gray-500">{fmt(aPartPrice)}</span>}
+                          {aTotal > 0 && <span className="text-gray-700 font-medium">{fmt(aTotal)}</span>}
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-gray-400">B:</span>
+                          <span className={`font-medium ${opStyle(bOp)}`}>{bOp}</span>
+                          {bHrs > 0 && <span className="text-gray-500">{bHrs.toFixed(1)} hrs</span>}
+                          {bPartPrice > 0 && <span className="text-gray-500">{fmt(bPartPrice)}</span>}
+                          {bTotal > 0 && <span className="text-gray-700 font-medium">{fmt(bTotal)}</span>}
+                        </div>
+                      </div>
+                      {item.notes && <p className="text-xs text-gray-400 mt-1">{item.notes}</p>}
+                    </div>
+                  );
+                })}
               </div>
             </div>
           );
