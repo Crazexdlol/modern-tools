@@ -494,19 +494,20 @@ function Results({ result, onReset }: { result: ComparisonResult; onReset: () =>
                     const aPartPrice = Number(item.estimateA?.partPrice) || 0;
                     const bPartPrice = Number(item.estimateB?.partPrice) || 0;
                     const isFirstInPanel = i === 0;
+                    const hrsDiff = aHrs - bHrs;
+                    const partDiff = aPartPrice - bPartPrice;
 
                     const formatCell = (op: string, hrs: number, partPrice: number, total: number) => {
                       if (op === "Not Included") return <span className="text-gray-400 italic">Not Included</span>;
-                      const parts: string[] = [];
-                      parts.push(op);
-                      if (hrs > 0) parts.push(`${hrs.toFixed(1)} hrs`);
-                      if (partPrice > 0) parts.push(fmt(partPrice));
-                      if (total > 0 && total !== partPrice) parts.push(fmt(total));
-                      return <span className="text-gray-700">{parts.join(" · ")}</span>;
+                      return (
+                        <div className="space-y-0.5">
+                          <div className="font-medium text-gray-800">{op}</div>
+                          {hrs > 0 && <div className="text-xs text-gray-500">{hrs.toFixed(1)} hrs</div>}
+                          {partPrice > 0 && <div className="text-xs text-gray-500">{fmt(partPrice)}</div>}
+                          {total > 0 && total !== partPrice && <div className="text-xs text-gray-700 font-medium">{fmt(total)}</div>}
+                        </div>
+                      );
                     };
-
-                    const diffDisplay = getDiffDisplay(item);
-                    const diffType = getDiffType(item);
 
                     return (
                       <tr key={`${panel}-${i}`} className={`border-b border-gray-100 ${isFirstInPanel ? "border-t border-gray-200" : ""}`}>
@@ -519,9 +520,32 @@ function Results({ result, onReset }: { result: ComparisonResult; onReset: () =>
                         <td className="px-4 py-2.5 align-top text-sm">
                           {formatCell(bOp, bHrs, bPartPrice, bTotal)}
                         </td>
-                        <td className={`px-4 py-2.5 align-top font-medium tabular-nums ${diffColor(diffVal)}`}>
-                          <span>{diffDisplay}</span>
-                          {diffType && <span className="block text-xs text-gray-400 font-normal">{diffType}</span>}
+                        <td className="px-4 py-2.5 align-top tabular-nums">
+                          <div className="space-y-0.5">
+                            {aOp !== bOp && aOp !== "Not Included" && bOp !== "Not Included" && (
+                              <div className="text-xs font-medium text-orange-600">{aOp} vs {bOp}</div>
+                            )}
+                            {(item.status === "only_in_a" || item.status === "only_in_b") && (
+                              <div className="text-xs font-medium text-orange-600">
+                                {item.status === "only_in_a" ? "Only in A" : "Only in B"}
+                              </div>
+                            )}
+                            {hrsDiff !== 0 && (
+                              <div className={`text-xs font-medium ${diffColor(hrsDiff)}`}>
+                                {hrsDiff > 0 ? "+" : ""}{hrsDiff.toFixed(1)} hrs
+                              </div>
+                            )}
+                            {partDiff !== 0 && (
+                              <div className={`text-xs font-medium ${diffColor(partDiff)}`}>
+                                {partDiff > 0 ? "+" : ""}{fmt(partDiff)}
+                              </div>
+                            )}
+                            {diffVal !== 0 && partDiff === 0 && hrsDiff === 0 && (
+                              <div className={`text-xs font-medium ${diffColor(diffVal)}`}>
+                                {diffVal > 0 ? "+" : ""}{fmt(diffVal)}
+                              </div>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     );
