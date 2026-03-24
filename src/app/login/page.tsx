@@ -35,12 +35,12 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-950 flex items-center justify-center px-4">
+    <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4">
       <div className="w-full max-w-sm">
-        <div className="bg-gray-900 border border-gray-800 rounded-2xl shadow-lg p-8">
+        <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-8">
           <div className="flex flex-col items-center mb-8">
             <Image src="/logo.png" alt="Modern Appraisers" width={160} height={48} className="h-12 w-auto mb-4" priority />
-            <h1 className="text-lg font-bold text-white">Modern Tools</h1>
+            <h1 className="text-lg font-bold text-gray-900">Modern Tools</h1>
             <p className="text-sm text-gray-400 mt-1">Sign in to continue</p>
           </div>
 
@@ -53,7 +53,7 @@ export default function LoginPage() {
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="Email"
                 autoFocus
-                className="w-full bg-gray-800 border border-gray-700 rounded-lg pl-10 pr-4 py-2.5 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full bg-gray-50 border border-gray-200 rounded-lg pl-10 pr-4 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent"
               />
             </div>
             <div className="relative">
@@ -63,7 +63,7 @@ export default function LoginPage() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="Password"
-                className="w-full bg-gray-800 border border-gray-700 rounded-lg pl-10 pr-4 py-2.5 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full bg-gray-50 border border-gray-200 rounded-lg pl-10 pr-4 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent"
               />
             </div>
             {error && (
@@ -72,7 +72,7 @@ export default function LoginPage() {
             <Button
               type="submit"
               disabled={!email || !password || loading}
-              className="w-full bg-blue-600 hover:bg-blue-500 text-white"
+              className="w-full bg-gray-900 hover:bg-gray-800 text-white"
             >
               {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Sign In'}
             </Button>

@@ -17,10 +17,10 @@ export function LogoutButton() {
   return (
     <button
       onClick={handleLogout}
-      className="text-gray-400 hover:text-white transition-colors p-1"
-      title="Sign out"
+      className="flex items-center gap-1.5 text-sm text-gray-400 hover:text-white transition-colors"
     >
       <LogOut className="w-4 h-4" />
+      Logout
     </button>
   )
 }
