@@ -204,10 +204,44 @@ function grabZip(text: string, ownerSection: string): string {
   return ''
 }
 
+async function ocrPDF(file: File): Promise<string> {
+  const Tesseract = await import('tesseract.js')
+  const pdfjsLib = await import('pdfjs-dist')
+  pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs'
+
+  const arrayBuffer = await file.arrayBuffer()
+  const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise
+  const parts: string[] = []
+
+  for (let i = 1; i <= Math.min(pdf.numPages, 3); i++) {
+    const page = await pdf.getPage(i)
+    const viewport = page.getViewport({ scale: 2 })
+    const canvas = document.createElement('canvas')
+    canvas.width = viewport.width
+    canvas.height = viewport.height
+    const ctx = canvas.getContext('2d')!
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await page.render({ canvasContext: ctx, viewport } as any).promise
+    const blob = await new Promise<Blob>((resolve) =>
+      canvas.toBlob((b) => resolve(b!), 'image/png')
+    )
+    const buffer = Buffer.from(await blob.arrayBuffer())
+    const { data: { text } } = await Tesseract.recognize(buffer, 'eng', {
+      logger: () => {},
+    })
+    parts.push(text)
+  }
+
+  return parts.join('\n')
+}
+
 export async function parseClaimPDF(file: File): Promise<ParsedClaim> {
-  const text = await extractTextFromPDF(file)
+  let text = await extractTextFromPDF(file)
   if (!text || text.trim().length < 20) {
-    throw new Error('Could not extract text from PDF. The file may be image-based.')
+    text = await ocrPDF(file)
+  }
+  if (!text || text.trim().length < 20) {
+    throw new Error('Could not extract text from PDF.')
   }
   return parseClaimText(text)
 }
