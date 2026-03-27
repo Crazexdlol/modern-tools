@@ -1,15 +1,16 @@
 "use client";
 
-import { useState, useCallback, Fragment, useEffect } from "react";
+import { useState, useCallback, useRef, Fragment, useEffect } from "react";
 import { useDropzone } from "react-dropzone";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import Image from "next/image";
-import { ArrowLeft, Upload, FileText, X, Loader2, AlertCircle, Printer, Trash2, ExternalLink, Plus, Search } from "lucide-react";
+import { ArrowLeft, Upload, FileText, X, Loader2, AlertCircle, Printer, Trash2, ExternalLink, Plus, Search, CheckCircle2, Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import { LogoutButton } from "@/components/logout-button";
+import { parseClaimPDF } from "@/lib/parse-claim-pdf";
 
 // ─── Vehicle area sort order (front to back) ───────────────────────────────
 const VEHICLE_AREA_ORDER: string[] = [
@@ -114,7 +115,7 @@ export interface HistoryEntry {
 
 import { fetchEstimateHistory, saveEstimateHistory, deleteEstimateHistory, type EstimateHistoryEntry } from '@/lib/supabase/history'
 
-async function saveToHistory(result: ComparisonResult, claim: EstimateClaimInfo) {
+async function saveToHistory(result: ComparisonResult, claim: EstimateClaimInfo, existingId?: string | null) {
   const { summary } = result.comparison;
   const aiVehicle = summary.vehicle ?? {};
   const mergedVehicle: Record<string, string> = {
@@ -125,7 +126,7 @@ async function saveToHistory(result: ComparisonResult, claim: EstimateClaimInfo)
     color: aiVehicle.color || "",
   };
   const entry: EstimateHistoryEntry = {
-    id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    id: existingId || `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
     date: new Date().toISOString(),
     vehicle: mergedVehicle,
     softwareA: (summary.estimateA?.software as string) ?? "",
@@ -293,7 +294,7 @@ function FileUploadZone({ label, file, onDrop, onRemove }: {
 }
 
 // ─── Results ───────────────────────────────────────────────────────────────
-function Results({ result, onReset }: { result: ComparisonResult; onReset: () => void }) {
+function Results({ result, onReset, onEdit }: { result: ComparisonResult; onReset: () => void; onEdit: () => void }) {
   const { summary, laborRateDifferences, lineItemDifferences, matchingItems, keyFindings } = result.comparison;
   const grouped = groupByPanel(lineItemDifferences ?? []);
   const totalDiff = summary.totalDifference ?? 0;
@@ -356,6 +357,9 @@ function Results({ result, onReset }: { result: ComparisonResult; onReset: () =>
             )}
           </div>
           <div className="flex gap-2">
+            <Button variant="outline" size="sm" onClick={onEdit} className="border-gray-200 text-gray-700 hover:bg-gray-100 gap-1.5">
+              <Pencil className="w-4 h-4" /> Edit
+            </Button>
             <Button variant="outline" size="sm" onClick={() => window.print()} className="border-gray-200 text-gray-700 hover:bg-gray-100 gap-1.5">
               <Printer className="w-4 h-4" /> Print
             </Button>
@@ -602,14 +606,91 @@ function ClaimInfoFormEstimate({ claim, onChange, decoding, onDecodeVin }: {
   decoding: boolean;
   onDecodeVin: () => void;
 }) {
+  const [pdfUploading, setPdfUploading] = useState(false);
+  const [pdfError, setPdfError] = useState<string | null>(null);
+  const [pdfSuccess, setPdfSuccess] = useState(false);
+  const pdfInputRef = useRef<HTMLInputElement>(null);
+
   const set = (field: keyof EstimateClaimInfo, value: string) =>
     onChange({ ...claim, [field]: value });
+
+  const handlePdfUpload = async (file: File) => {
+    setPdfUploading(true);
+    setPdfError(null);
+    setPdfSuccess(false);
+    try {
+      const data = await parseClaimPDF(file);
+      onChange({
+        ...claim,
+        maNumber: data.maNumber || claim.maNumber,
+        claimNumber: data.claimNumber || claim.claimNumber,
+        dateOfLoss: data.dateOfLoss || claim.dateOfLoss,
+        insuredName: data.insuredName || claim.insuredName,
+        ownerPhone: data.ownerPhone || claim.ownerPhone,
+        ownerEmail: data.ownerEmail || claim.ownerEmail,
+        ownerAddress: data.ownerAddress || claim.ownerAddress,
+        insuranceCompany: data.insuranceCompany || claim.insuranceCompany,
+        adjuster: data.adjuster || claim.adjuster,
+        adjusterPhone: data.adjusterPhone || claim.adjusterPhone,
+        adjusterEmail: data.adjusterEmail || claim.adjusterEmail,
+        vin: data.vin || claim.vin,
+        year: String(data.year || "") || claim.year,
+        make: data.make || claim.make,
+        model: data.model || claim.model,
+      });
+      setPdfSuccess(true);
+      setTimeout(() => setPdfSuccess(false), 3000);
+    } catch (err) {
+      setPdfError(err instanceof Error ? err.message : "PDF parse failed");
+    } finally {
+      setPdfUploading(false);
+      if (pdfInputRef.current) pdfInputRef.current.value = "";
+    }
+  };
 
   const inputCls = "w-full bg-white border border-gray-200 rounded-md px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent";
   const labelCls = "block text-xs font-medium text-gray-500 mb-1";
 
   return (
     <div className="space-y-6">
+      {/* PDF Upload */}
+      <div className="flex items-center gap-3">
+        <input
+          ref={pdfInputRef}
+          type="file"
+          accept=".pdf"
+          className="hidden"
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            if (file) handlePdfUpload(file);
+          }}
+        />
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className={`gap-2 border-dashed ${pdfSuccess ? "border-emerald-500 text-emerald-600" : ""}`}
+          disabled={pdfUploading}
+          onClick={() => pdfInputRef.current?.click()}
+        >
+          {pdfUploading ? (
+            <Loader2 className="w-4 h-4 animate-spin" />
+          ) : pdfSuccess ? (
+            <CheckCircle2 className="w-4 h-4" />
+          ) : (
+            <Upload className="w-4 h-4" />
+          )}
+          {pdfUploading ? "Parsing..." : pdfSuccess ? "Filled!" : "Upload Claim PDF"}
+        </Button>
+        <span className="text-xs text-gray-400">Auto-fill from a claim assignment PDF</span>
+        {pdfError && (
+          <p className="text-xs text-red-500 flex items-center gap-1">
+            <AlertCircle className="w-3 h-3" />
+            {pdfError}
+          </p>
+        )}
+      </div>
+
       <div>
         <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wider mb-3">Report Info</h3>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -842,6 +923,8 @@ function EstimateDisputePageInner() {
   const [result, setResult] = useState<ComparisonResult | null>(null);
   const [entries, setEntries] = useState<EstimateHistoryEntry[]>([]);
   const [mode, setMode] = useState<"dashboard" | "compare">("dashboard");
+  const [editing, setEditing] = useState(false);
+  const [currentEntryId, setCurrentEntryId] = useState<string | null>(null);
   const searchParams = useSearchParams();
 
   useEffect(() => {
@@ -872,7 +955,8 @@ function EstimateDisputePageInner() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Comparison failed");
       setResult(data);
-      await saveToHistory(data, claim);
+      setEditing(false);
+      await saveToHistory(data, claim, currentEntryId);
       const updated = await fetchEstimateHistory();
       setEntries(updated);
     } catch (err) {
@@ -885,12 +969,15 @@ function EstimateDisputePageInner() {
   const handleReset = () => {
     setClaim(defaultEstimateClaim());
     setFileA(null); setFileB(null); setResult(null); setError(null);
+    setEditing(false); setCurrentEntryId(null);
     if (entries.length > 0) setMode("dashboard");
   };
 
   const handleView = (entry: EstimateHistoryEntry) => {
     if (entry.claim) setClaim(entry.claim);
     setResult(entry.result);
+    setCurrentEntryId(entry.id);
+    setEditing(false);
     setMode("compare");
   };
 
@@ -899,6 +986,21 @@ function EstimateDisputePageInner() {
     setEntries(updated);
     await deleteEstimateHistory(id);
     if (updated.length === 0) setMode("compare");
+  };
+
+  const handleEdit = () => {
+    setEditing(true);
+    setFileA(null);
+    setFileB(null);
+    setError(null);
+  };
+
+  const handleSaveClaim = async () => {
+    if (!result || !currentEntryId) return;
+    await saveToHistory(result, claim, currentEntryId);
+    const updated = await fetchEstimateHistory();
+    setEntries(updated);
+    setEditing(false);
   };
 
   // VIN decode
@@ -944,13 +1046,20 @@ function EstimateDisputePageInner() {
             entries={entries}
             onView={handleView}
             onDelete={handleDelete}
-            onNewComparison={() => { setClaim(defaultEstimateClaim()); setResult(null); setFileA(null); setFileB(null); setError(null); setMode("compare"); }}
+            onNewComparison={() => { setClaim(defaultEstimateClaim()); setResult(null); setFileA(null); setFileB(null); setError(null); setEditing(false); setCurrentEntryId(null); setMode("compare"); }}
           />
-        ) : !result ? (
+        ) : result && !editing ? (
+          <Results result={result} onReset={handleReset} onEdit={handleEdit} />
+        ) : (
           <div className="max-w-3xl mx-auto">
-            {entries.length > 0 && (
+            {!editing && entries.length > 0 && (
               <Button variant="outline" size="sm" onClick={() => setMode("dashboard")} className="mb-4 border-gray-200 text-gray-600 hover:bg-gray-100">
                 <ArrowLeft className="w-4 h-4 mr-1" /> Back to Claims
+              </Button>
+            )}
+            {editing && (
+              <Button variant="outline" size="sm" onClick={() => setEditing(false)} className="mb-4 border-gray-200 text-gray-600 hover:bg-gray-100">
+                <ArrowLeft className="w-4 h-4 mr-1" /> Back to Results
               </Button>
             )}
 
@@ -965,9 +1074,10 @@ function EstimateDisputePageInner() {
             </Card>
 
             {/* Upload Estimates */}
-            <Card className="bg-white border-gray-200 shadow-sm">
+            <Card className="bg-white border-gray-200 shadow-sm mb-6">
               <CardHeader>
-                <CardTitle className="text-gray-900">Upload Estimates</CardTitle>
+                <CardTitle className="text-gray-900">{editing ? "Upload New Estimates" : "Upload Estimates"}</CardTitle>
+                {editing && <p className="text-xs text-gray-400 mt-1">Upload new estimates to re-run the comparison, or just save your claim info changes below.</p>}
               </CardHeader>
               <CardContent className="flex flex-col gap-5">
                 <FileUploadZone label="Estimate A" file={fileA} onDrop={setFileA} onRemove={() => setFileA(null)} />
@@ -983,9 +1093,14 @@ function EstimateDisputePageInner() {
                 </Button>
               </CardContent>
             </Card>
+
+            {/* Save claim info only (when editing an existing entry) */}
+            {editing && currentEntryId && (
+              <Button onClick={handleSaveClaim} variant="outline" className="w-full border-gray-200 text-gray-700 hover:bg-gray-100">
+                Save Claim Info Changes
+              </Button>
+            )}
           </div>
-        ) : (
-          <Results result={result} onReset={handleReset} />
         )}
       </main>
     </div>

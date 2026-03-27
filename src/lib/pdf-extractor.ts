@@ -1,7 +1,32 @@
-import { extractText, getDocumentProxy } from "unpdf";
+import { extractText, getDocumentProxy, renderPageAsImage } from "unpdf";
+import Tesseract from "tesseract.js";
 
 export async function extractTextFromPDF(buffer: Buffer): Promise<string> {
-  const pdf = await getDocumentProxy(new Uint8Array(buffer));
+  const uint8 = new Uint8Array(buffer);
+  const pdf = await getDocumentProxy(uint8);
   const { text } = await extractText(pdf, { mergePages: true });
-  return text;
+
+  // If the PDF has meaningful text content, return it
+  const stripped = text.replace(/\s/g, "");
+  if (stripped.length > 50) {
+    return text;
+  }
+
+  // Otherwise this is likely a scanned/photo-based PDF — use OCR
+  const totalPages = pdf.numPages;
+  const pagesToProcess = Math.min(totalPages, 10);
+  const ocrResults: string[] = [];
+
+  for (let i = 1; i <= pagesToProcess; i++) {
+    const imageArrayBuffer = await renderPageAsImage(pdf, i, { scale: 2 });
+    const imageBuffer = Buffer.from(imageArrayBuffer);
+    const { data: { text: pageText } } = await Tesseract.recognize(
+      imageBuffer,
+      "eng",
+      { logger: () => {} }
+    );
+    ocrResults.push(pageText);
+  }
+
+  return ocrResults.join("\n\n");
 }
