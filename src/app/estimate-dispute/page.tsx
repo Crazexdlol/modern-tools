@@ -294,26 +294,154 @@ function FileUploadZone({ label, file, onDrop, onRemove }: {
 }
 
 // ─── Results ───────────────────────────────────────────────────────────────
-function Results({ result, onReset, onEdit, onBack }: { result: ComparisonResult; onReset: () => void; onEdit: () => void; onBack: () => void }) {
-  const { summary, laborRateDifferences, lineItemDifferences, matchingItems, keyFindings } = result.comparison;
-  const grouped = groupByPanel(lineItemDifferences ?? []);
-  const totalDiff = summary.totalDifference ?? 0;
+function Results({ result, onReset, onEdit, onBack, onSave }: {
+  result: ComparisonResult; onReset: () => void; onEdit: () => void; onBack: () => void;
+  onSave: (updated: ComparisonResult) => void;
+}) {
+  const [isEditing, setIsEditing] = useState(false);
+  const [draft, setDraft] = useState<ComparisonResult>(JSON.parse(JSON.stringify(result)));
 
+  // Reset draft when result changes (e.g. new comparison)
+  useEffect(() => { setDraft(JSON.parse(JSON.stringify(result))); setIsEditing(false); }, [result]);
+
+  const data = isEditing ? draft : result;
+  const { summary, laborRateDifferences, lineItemDifferences, matchingItems, keyFindings } = data.comparison;
+  const grouped = groupByPanel(sortedDiffs(lineItemDifferences ?? []));
+
+  // Helpers for editing draft
+  const setSummaryField = (side: "estimateA" | "estimateB", key: string, val: number) => {
+    setDraft(prev => {
+      const next = JSON.parse(JSON.stringify(prev));
+      next.comparison.summary[side][key] = val;
+      // Recalculate grand total
+      const est = next.comparison.summary[side];
+      est.grandTotal = (Number(est.laborTotal) || 0) + (Number(est.partsTotal) || 0) + (Number(est.paintTotal) || 0) + (Number(est.subletTotal) || 0) + (Number(est.taxTotal) || 0);
+      next.comparison.summary.totalDifference = (Number(next.comparison.summary.estimateA.grandTotal) || 0) - (Number(next.comparison.summary.estimateB.grandTotal) || 0);
+      return next;
+    });
+  };
+
+  const setLaborRate = (idx: number, side: "estimateA" | "estimateB", val: number) => {
+    setDraft(prev => {
+      const next = JSON.parse(JSON.stringify(prev));
+      next.comparison.laborRateDifferences[idx][side] = val;
+      next.comparison.laborRateDifferences[idx].difference = (Number(next.comparison.laborRateDifferences[idx].estimateA) || 0) - (Number(next.comparison.laborRateDifferences[idx].estimateB) || 0);
+      return next;
+    });
+  };
+
+  const setLineItem = (flatIdx: number, side: "estimateA" | "estimateB", field: string, val: number | string) => {
+    setDraft(prev => {
+      const next = JSON.parse(JSON.stringify(prev));
+      const item = next.comparison.lineItemDifferences[flatIdx];
+      if (side === "estimateA" || side === "estimateB") {
+        item[side][field] = val;
+      } else {
+        (item as Record<string, unknown>)[field] = val;
+      }
+      // Recalculate dollarImpact
+      const aTotal = Number(item.estimateA?.total) || 0;
+      const bTotal = Number(item.estimateB?.total) || 0;
+      item.dollarImpact = aTotal - bTotal;
+      return next;
+    });
+  };
+
+  const setLineItemPanel = (flatIdx: number, val: string) => {
+    setDraft(prev => {
+      const next = JSON.parse(JSON.stringify(prev));
+      next.comparison.lineItemDifferences[flatIdx].panelOrArea = val;
+      return next;
+    });
+  };
+
+  const setLineItemStatus = (flatIdx: number, val: string) => {
+    setDraft(prev => {
+      const next = JSON.parse(JSON.stringify(prev));
+      next.comparison.lineItemDifferences[flatIdx].status = val;
+      return next;
+    });
+  };
+
+  const removeLineItem = (flatIdx: number) => {
+    setDraft(prev => {
+      const next = JSON.parse(JSON.stringify(prev));
+      next.comparison.lineItemDifferences.splice(flatIdx, 1);
+      return next;
+    });
+  };
+
+  const addLineItem = () => {
+    setDraft(prev => {
+      const next = JSON.parse(JSON.stringify(prev));
+      next.comparison.lineItemDifferences.push({
+        status: "different",
+        category: "Labor",
+        normalizedOperation: "",
+        panelOrArea: "",
+        estimateA: { rawOperation: "", laborHours: 0, laborRate: 0, laborTotal: 0, partType: "", partPrice: 0, total: 0 },
+        estimateB: { rawOperation: "", laborHours: 0, laborRate: 0, laborTotal: 0, partType: "", partPrice: 0, total: 0 },
+        dollarImpact: 0,
+        notes: "",
+      });
+      return next;
+    });
+  };
+
+  const setKeyFinding = (idx: number, val: string) => {
+    setDraft(prev => {
+      const next = JSON.parse(JSON.stringify(prev));
+      next.comparison.keyFindings[idx] = val;
+      return next;
+    });
+  };
+
+  const removeKeyFinding = (idx: number) => {
+    setDraft(prev => {
+      const next = JSON.parse(JSON.stringify(prev));
+      next.comparison.keyFindings.splice(idx, 1);
+      return next;
+    });
+  };
+
+  const addKeyFinding = () => {
+    setDraft(prev => {
+      const next = JSON.parse(JSON.stringify(prev));
+      if (!next.comparison.keyFindings) next.comparison.keyFindings = [];
+      next.comparison.keyFindings.push("");
+      return next;
+    });
+  };
+
+  const handleSave = () => {
+    onSave(draft);
+    setIsEditing(false);
+  };
+
+  const handleCancel = () => {
+    setDraft(JSON.parse(JSON.stringify(result)));
+    setIsEditing(false);
+  };
+
+  // Build flat index map for line items so we can reference the original array index
+  const flatItems: { item: LineItemDiff; flatIdx: number; panel: string; isFirstInPanel: boolean }[] = [];
+  for (const [panel, items] of grouped.entries()) {
+    items.forEach((item, i) => {
+      const flatIdx = (isEditing ? draft : result).comparison.lineItemDifferences.indexOf(item);
+      flatItems.push({ item, flatIdx, panel, isFirstInPanel: i === 0 });
+    });
+  }
+
+  const totalDiff = summary.totalDifference ?? 0;
   const estAName = (summary.estimateA?.fileName as string) || "Estimate A";
   const estBName = (summary.estimateB?.fileName as string) || "Estimate B";
   const estASoftware = (summary.estimateA?.software as string) || "";
   const estBSoftware = (summary.estimateB?.software as string) || "";
 
-  // Total labor difference
-  const laborItems = lineItemDifferences?.filter(i => i.category === "Labor") ?? [];
-  const totalLaborDiff = laborItems.reduce((sum, item) => sum + (item.dollarImpact ?? 0), 0);
-  const totalLaborHrsDiff = laborItems.reduce((sum, item) => {
-    const aHrs = Number(item.estimateA?.laborHours) || 0;
-    const bHrs = Number(item.estimateB?.laborHours) || 0;
-    return sum + (aHrs - bHrs);
-  }, 0);
-
   const diffColor = (val: number) => val > 0 ? "text-amber-600" : val < 0 ? "text-green-600" : "text-gray-400";
+
+  const editInput = "bg-white border border-gray-300 rounded px-2 py-1 text-sm text-right tabular-nums w-28 focus:outline-none focus:ring-2 focus:ring-blue-500";
+  const editInputLeft = "bg-white border border-gray-300 rounded px-2 py-1 text-sm tabular-nums w-full focus:outline-none focus:ring-2 focus:ring-blue-500";
 
   return (
     <>
@@ -351,26 +479,42 @@ function Results({ result, onReset, onEdit, onBack }: { result: ComparisonResult
               <ArrowLeft className="w-4 h-4 mr-1" /> Back
             </Button>
             <div>
-            <h2 className="text-2xl font-bold text-gray-900">Comparison Results</h2>
-            {summary.vehicle?.year && (
-              <p className="text-gray-500 text-sm mt-1">
-                {summary.vehicle.year} {summary.vehicle.make} {summary.vehicle.model}
-                {summary.vehicle.vin ? ` · VIN: ${summary.vehicle.vin}` : ""}
-                {summary.vehicle.color ? ` · ${summary.vehicle.color}` : ""}
-              </p>
-            )}
-          </div>
+              <h2 className="text-2xl font-bold text-gray-900">Comparison Results</h2>
+              {summary.vehicle?.year && (
+                <p className="text-gray-500 text-sm mt-1">
+                  {summary.vehicle.year} {summary.vehicle.make} {summary.vehicle.model}
+                  {summary.vehicle.vin ? ` · VIN: ${summary.vehicle.vin}` : ""}
+                  {summary.vehicle.color ? ` · ${summary.vehicle.color}` : ""}
+                </p>
+              )}
+            </div>
           </div>
           <div className="flex gap-2">
-            <Button variant="outline" size="sm" onClick={onEdit} className="border-gray-200 text-gray-700 hover:bg-gray-100 gap-1.5">
-              <Pencil className="w-4 h-4" /> Edit
-            </Button>
-            <Button variant="outline" size="sm" onClick={() => window.print()} className="border-gray-200 text-gray-700 hover:bg-gray-100 gap-1.5">
-              <Printer className="w-4 h-4" /> Print
-            </Button>
-            <Button variant="outline" size="sm" onClick={onReset} className="border-gray-200 text-gray-700 hover:bg-gray-100">
-              Estimate Scan
-            </Button>
+            {isEditing ? (
+              <>
+                <Button variant="outline" size="sm" onClick={handleCancel} className="border-gray-200 text-gray-700 hover:bg-gray-100">
+                  Cancel
+                </Button>
+                <Button size="sm" onClick={handleSave} className="bg-blue-600 hover:bg-blue-500 text-white gap-1.5">
+                  Save Changes
+                </Button>
+              </>
+            ) : (
+              <>
+                <Button variant="outline" size="sm" onClick={() => setIsEditing(true)} className="border-gray-200 text-gray-700 hover:bg-gray-100 gap-1.5">
+                  <Pencil className="w-4 h-4" /> Edit
+                </Button>
+                <Button variant="outline" size="sm" onClick={onEdit} className="border-gray-200 text-gray-700 hover:bg-gray-100 gap-1.5">
+                  <Upload className="w-4 h-4" /> Re-upload
+                </Button>
+                <Button variant="outline" size="sm" onClick={() => window.print()} className="border-gray-200 text-gray-700 hover:bg-gray-100 gap-1.5">
+                  <Printer className="w-4 h-4" /> Print
+                </Button>
+                <Button variant="outline" size="sm" onClick={onReset} className="border-gray-200 text-gray-700 hover:bg-gray-100">
+                  Estimate Scan
+                </Button>
+              </>
+            )}
           </div>
         </div>
 
@@ -386,6 +530,12 @@ function Results({ result, onReset, onEdit, onBack }: { result: ComparisonResult
           )}
           <p className="text-xs text-gray-400 mt-1">Generated {new Date().toLocaleDateString("en-US", { month: "2-digit", day: "2-digit", year: "numeric" })}</p>
         </div>
+
+        {isEditing && (
+          <div className="no-print mb-5 p-3 rounded-lg bg-blue-50 border border-blue-200 text-blue-700 text-sm">
+            Editing mode — click any value to change it. Save when done.
+          </div>
+        )}
 
         {/* ── Est A vs Est B Summary ── */}
         <div className="result-section rounded-lg border border-gray-200 bg-white shadow-sm mb-5 overflow-hidden">
@@ -429,11 +579,20 @@ function Results({ result, onReset, onEdit, onBack }: { result: ComparisonResult
                   const a = (summary.estimateA?.[key] as number) || 0;
                   const b = (summary.estimateB?.[key] as number) || 0;
                   const diff = a - b;
+                  const isGrandTotal = key === "grandTotal";
                   return (
                     <tr key={key} className={`border-b border-gray-100 ${bold ? "bg-gray-50 total-row" : ""}`}>
                       <td className={`px-4 py-2.5 ${bold ? "font-semibold text-gray-900" : "text-gray-700"}`}>{label}</td>
-                      <td className={`px-4 py-2.5 text-right tabular-nums ${bold ? "font-semibold text-gray-900" : "text-gray-700"}`}>{fmt(a)}</td>
-                      <td className={`px-4 py-2.5 text-right tabular-nums ${bold ? "font-semibold text-gray-900" : "text-gray-700"}`}>{fmt(b)}</td>
+                      <td className={`px-4 py-2.5 text-right tabular-nums ${bold ? "font-semibold text-gray-900" : "text-gray-700"}`}>
+                        {isEditing && !isGrandTotal ? (
+                          <input type="number" step="0.01" className={editInput} value={a || ""} onChange={(e) => setSummaryField("estimateA", key, parseFloat(e.target.value) || 0)} />
+                        ) : fmt(a)}
+                      </td>
+                      <td className={`px-4 py-2.5 text-right tabular-nums ${bold ? "font-semibold text-gray-900" : "text-gray-700"}`}>
+                        {isEditing && !isGrandTotal ? (
+                          <input type="number" step="0.01" className={editInput} value={b || ""} onChange={(e) => setSummaryField("estimateB", key, parseFloat(e.target.value) || 0)} />
+                        ) : fmt(b)}
+                      </td>
                       <td className={`px-4 py-2.5 text-right tabular-nums font-medium ${diff !== 0 ? diffColor(diff) : "text-gray-300"}`}>
                         {diff !== 0 ? `${diff > 0 ? "+" : ""}${fmt(diff)}` : "—"}
                       </td>
@@ -463,8 +622,16 @@ function Results({ result, onReset, onEdit, onBack }: { result: ComparisonResult
                 {laborRateDifferences.map((rate, i) => (
                   <tr key={i} className="border-b border-gray-100">
                     <td className="px-4 py-2.5 text-gray-700">{rate.rateType}</td>
-                    <td className="px-4 py-2.5 text-right tabular-nums text-gray-700">{rate.estimateA ? `${fmt(rate.estimateA)}/hr` : "—"}</td>
-                    <td className="px-4 py-2.5 text-right tabular-nums text-gray-700">{rate.estimateB ? `${fmt(rate.estimateB)}/hr` : "—"}</td>
+                    <td className="px-4 py-2.5 text-right tabular-nums text-gray-700">
+                      {isEditing ? (
+                        <input type="number" step="0.01" className={editInput} value={rate.estimateA || ""} onChange={(e) => setLaborRate(i, "estimateA", parseFloat(e.target.value) || 0)} />
+                      ) : rate.estimateA ? `${fmt(rate.estimateA)}/hr` : "—"}
+                    </td>
+                    <td className="px-4 py-2.5 text-right tabular-nums text-gray-700">
+                      {isEditing ? (
+                        <input type="number" step="0.01" className={editInput} value={rate.estimateB || ""} onChange={(e) => setLaborRate(i, "estimateB", parseFloat(e.target.value) || 0)} />
+                      ) : rate.estimateB ? `${fmt(rate.estimateB)}/hr` : "—"}
+                    </td>
                     <td className={`px-4 py-2.5 text-right tabular-nums font-medium ${rate.difference !== 0 ? diffColor(rate.difference) : "text-gray-300"}`}>
                       {rate.difference !== 0 ? `${rate.difference > 0 ? "+" : ""}${fmt(rate.difference)}/hr` : "—"}
                     </td>
@@ -477,8 +644,13 @@ function Results({ result, onReset, onEdit, onBack }: { result: ComparisonResult
 
         {/* ── Operations by Panel/Part ── */}
         <div className="result-section rounded-lg border border-gray-200 bg-white shadow-sm mb-5 overflow-hidden">
-          <div className="section-header px-4 py-2.5 border-b border-gray-200 bg-gray-50">
+          <div className="section-header px-4 py-2.5 border-b border-gray-200 bg-gray-50 flex items-center justify-between">
             <h3 className="text-sm font-semibold text-gray-900 uppercase tracking-wider">Operations</h3>
+            {isEditing && (
+              <Button variant="outline" size="sm" onClick={addLineItem} className="border-gray-300 text-gray-600 hover:bg-gray-100 gap-1 text-xs h-7">
+                <Plus className="w-3 h-3" /> Add Line
+              </Button>
+            )}
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -491,22 +663,21 @@ function Results({ result, onReset, onEdit, onBack }: { result: ComparisonResult
                 </tr>
               </thead>
               <tbody>
-                {Array.from(grouped.entries()).map(([panel, items]) => {
-                  return items.map((item, i) => {
-                    const aOp = extractOpLabel(item.estimateA?.rawOperation as string, item.status, "a");
-                    const bOp = extractOpLabel(item.estimateB?.rawOperation as string, item.status, "b");
-                    const diffVal = item.dollarImpact ?? 0;
-                    const aHrs = Number(item.estimateA?.laborHours) || 0;
-                    const bHrs = Number(item.estimateB?.laborHours) || 0;
-                    const aTotal = Number(item.estimateA?.total) || 0;
-                    const bTotal = Number(item.estimateB?.total) || 0;
-                    const aPartPrice = Number(item.estimateA?.partPrice) || 0;
-                    const bPartPrice = Number(item.estimateB?.partPrice) || 0;
-                    const isFirstInPanel = i === 0;
-                    const hrsDiff = aHrs - bHrs;
-                    const partDiff = aPartPrice - bPartPrice;
+                {flatItems.map(({ item, flatIdx, panel, isFirstInPanel }) => {
+                  const aOp = extractOpLabel(item.estimateA?.rawOperation as string, item.status, "a");
+                  const bOp = extractOpLabel(item.estimateB?.rawOperation as string, item.status, "b");
+                  const diffVal = item.dollarImpact ?? 0;
+                  const aHrs = Number(item.estimateA?.laborHours) || 0;
+                  const bHrs = Number(item.estimateB?.laborHours) || 0;
+                  const aTotal = Number(item.estimateA?.total) || 0;
+                  const bTotal = Number(item.estimateB?.total) || 0;
+                  const aPartPrice = Number(item.estimateA?.partPrice) || 0;
+                  const bPartPrice = Number(item.estimateB?.partPrice) || 0;
+                  const hrsDiff = aHrs - bHrs;
+                  const partDiff = aPartPrice - bPartPrice;
 
-                    const formatCell = (op: string, hrs: number, partPrice: number, total: number) => {
+                  const formatCell = (side: "estimateA" | "estimateB", op: string, hrs: number, partPrice: number, total: number) => {
+                    if (!isEditing) {
                       if (op === "Not Included") return <span className="text-gray-400 italic">Not Included</span>;
                       return (
                         <div className="space-y-0.5">
@@ -516,20 +687,41 @@ function Results({ result, onReset, onEdit, onBack }: { result: ComparisonResult
                           {total > 0 && total !== partPrice && <div className="text-xs text-gray-700 font-medium">{fmt(total)}</div>}
                         </div>
                       );
-                    };
-
+                    }
                     return (
-                      <tr key={`${panel}-${i}`} className={`border-b border-gray-100 ${isFirstInPanel ? "border-t border-gray-200" : ""}`}>
-                        <td className={`px-4 py-2.5 align-top ${isFirstInPanel ? "font-semibold text-gray-900" : "text-gray-400 text-xs pl-8"}`}>
-                          {isFirstInPanel ? panel : (item.normalizedOperation || item.category)}
-                        </td>
-                        <td className="px-4 py-2.5 align-top text-sm">
-                          {formatCell(aOp, aHrs, aPartPrice, aTotal)}
-                        </td>
-                        <td className="px-4 py-2.5 align-top text-sm">
-                          {formatCell(bOp, bHrs, bPartPrice, bTotal)}
-                        </td>
-                        <td className="px-4 py-2.5 align-top tabular-nums">
+                      <div className="space-y-1">
+                        <input className={editInputLeft} placeholder="Operation" value={(item[side]?.rawOperation as string) || ""} onChange={(e) => setLineItem(flatIdx, side, "rawOperation", e.target.value)} />
+                        <input type="number" step="0.1" className={editInputLeft} placeholder="Hours" value={hrs || ""} onChange={(e) => setLineItem(flatIdx, side, "laborHours", parseFloat(e.target.value) || 0)} />
+                        <input type="number" step="0.01" className={editInputLeft} placeholder="Part $" value={partPrice || ""} onChange={(e) => setLineItem(flatIdx, side, "partPrice", parseFloat(e.target.value) || 0)} />
+                        <input type="number" step="0.01" className={editInputLeft} placeholder="Total $" value={total || ""} onChange={(e) => setLineItem(flatIdx, side, "total", parseFloat(e.target.value) || 0)} />
+                      </div>
+                    );
+                  };
+
+                  return (
+                    <tr key={`${panel}-${flatIdx}`} className={`border-b border-gray-100 ${isFirstInPanel ? "border-t border-gray-200" : ""}`}>
+                      <td className={`px-4 py-2.5 align-top ${isFirstInPanel ? "font-semibold text-gray-900" : "text-gray-400 text-xs pl-8"}`}>
+                        {isEditing ? (
+                          <div className="flex items-center gap-1">
+                            <input className={editInputLeft} value={item.panelOrArea || ""} onChange={(e) => setLineItemPanel(flatIdx, e.target.value)} />
+                            <button onClick={() => removeLineItem(flatIdx)} className="text-gray-300 hover:text-red-500 shrink-0 p-0.5"><X className="w-3.5 h-3.5" /></button>
+                          </div>
+                        ) : (
+                          isFirstInPanel ? panel : (item.normalizedOperation || item.category)
+                        )}
+                      </td>
+                      <td className="px-4 py-2.5 align-top text-sm">
+                        {formatCell("estimateA", aOp, aHrs, aPartPrice, aTotal)}
+                      </td>
+                      <td className="px-4 py-2.5 align-top text-sm">
+                        {formatCell("estimateB", bOp, bHrs, bPartPrice, bTotal)}
+                      </td>
+                      <td className="px-4 py-2.5 align-top tabular-nums">
+                        {isEditing ? (
+                          <div className="text-sm text-gray-500">
+                            {diffVal !== 0 ? `${diffVal > 0 ? "+" : ""}${fmt(diffVal)}` : "—"}
+                          </div>
+                        ) : (
                           <div className="space-y-1">
                             {aOp !== bOp && aOp !== "Not Included" && bOp !== "Not Included" && (
                               <div className="text-sm font-bold text-orange-600">{aOp} vs {bOp}</div>
@@ -555,10 +747,10 @@ function Results({ result, onReset, onEdit, onBack }: { result: ComparisonResult
                               </div>
                             )}
                           </div>
-                        </td>
-                      </tr>
-                    );
-                  });
+                        )}
+                      </td>
+                    </tr>
+                  );
                 })}
               </tbody>
             </table>
@@ -584,19 +776,35 @@ function Results({ result, onReset, onEdit, onBack }: { result: ComparisonResult
         )}
 
         {/* ── Key Findings (bottom) ── */}
-        {keyFindings?.length > 0 && (
+        {(keyFindings?.length > 0 || isEditing) && (
           <div className="result-section rounded-lg border border-gray-200 bg-white shadow-sm overflow-hidden">
-            <div className="section-header px-4 py-2.5 border-b border-gray-200 bg-gray-50">
+            <div className="section-header px-4 py-2.5 border-b border-gray-200 bg-gray-50 flex items-center justify-between">
               <h3 className="text-sm font-semibold text-gray-900 uppercase tracking-wider">Key Findings</h3>
+              {isEditing && (
+                <Button variant="outline" size="sm" onClick={addKeyFinding} className="border-gray-300 text-gray-600 hover:bg-gray-100 gap-1 text-xs h-7">
+                  <Plus className="w-3 h-3" /> Add
+                </Button>
+              )}
             </div>
-            <ul className="px-4 py-3 space-y-1.5">
-              {keyFindings.map((f, i) => (
-                <li key={i} className="flex gap-2 text-sm text-gray-700">
-                  <span className="text-amber-600 font-bold shrink-0 mt-0.5">·</span>
-                  {f}
-                </li>
-              ))}
-            </ul>
+            {isEditing ? (
+              <div className="px-4 py-3 space-y-2">
+                {(keyFindings ?? []).map((f, i) => (
+                  <div key={i} className="flex items-center gap-2">
+                    <input className="flex-1 bg-white border border-gray-300 rounded px-2 py-1.5 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500" value={f} onChange={(e) => setKeyFinding(i, e.target.value)} />
+                    <button onClick={() => removeKeyFinding(i)} className="text-gray-300 hover:text-red-500 shrink-0"><X className="w-4 h-4" /></button>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <ul className="px-4 py-3 space-y-1.5">
+                {(keyFindings ?? []).map((f, i) => (
+                  <li key={i} className="flex gap-2 text-sm text-gray-700">
+                    <span className="text-amber-600 font-bold shrink-0 mt-0.5">·</span>
+                    {f}
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
         )}
       </div>
@@ -1000,6 +1208,13 @@ function EstimateDisputePageInner() {
     setError(null);
   };
 
+  const handleSaveResults = async (updated: ComparisonResult) => {
+    setResult(updated);
+    await saveToHistory(updated, claim, currentEntryId);
+    const refreshed = await fetchEstimateHistory();
+    setEntries(refreshed);
+  };
+
   const handleSaveClaim = async () => {
     if (!result || !currentEntryId) return;
     await saveToHistory(result, claim, currentEntryId);
@@ -1054,7 +1269,7 @@ function EstimateDisputePageInner() {
             onNewComparison={() => { setClaim(defaultEstimateClaim()); setResult(null); setFileA(null); setFileB(null); setError(null); setEditing(false); setCurrentEntryId(null); setMode("compare"); }}
           />
         ) : result && !editing ? (
-          <Results result={result} onReset={handleReset} onEdit={handleEdit} onBack={() => { setResult(null); setEditing(false); setCurrentEntryId(null); setMode("dashboard"); }} />
+          <Results result={result} onReset={handleReset} onEdit={handleEdit} onSave={handleSaveResults} onBack={() => { setResult(null); setEditing(false); setCurrentEntryId(null); setMode("dashboard"); }} />
         ) : (
           <div className="max-w-3xl mx-auto">
             {!editing && entries.length > 0 && (
