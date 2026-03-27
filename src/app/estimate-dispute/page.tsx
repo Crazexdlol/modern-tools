@@ -294,7 +294,7 @@ function FileUploadZone({ label, file, onDrop, onRemove }: {
 }
 
 // ─── Results ───────────────────────────────────────────────────────────────
-function Results({ result, onReset, onEdit }: { result: ComparisonResult; onReset: () => void; onEdit: () => void }) {
+function Results({ result, onReset, onEdit, onBack }: { result: ComparisonResult; onReset: () => void; onEdit: () => void; onBack: () => void }) {
   const { summary, laborRateDifferences, lineItemDifferences, matchingItems, keyFindings } = result.comparison;
   const grouped = groupByPanel(lineItemDifferences ?? []);
   const totalDiff = summary.totalDifference ?? 0;
@@ -346,7 +346,11 @@ function Results({ result, onReset, onEdit }: { result: ComparisonResult; onRese
       <div className="print-page">
         {/* Toolbar */}
         <div className="no-print flex items-center justify-between mb-6">
-          <div>
+          <div className="flex items-center gap-4">
+            <Button variant="outline" size="sm" onClick={onBack} className="border-gray-200 text-gray-600 hover:bg-gray-100">
+              <ArrowLeft className="w-4 h-4 mr-1" /> Back
+            </Button>
+            <div>
             <h2 className="text-2xl font-bold text-gray-900">Comparison Results</h2>
             {summary.vehicle?.year && (
               <p className="text-gray-500 text-sm mt-1">
@@ -355,6 +359,7 @@ function Results({ result, onReset, onEdit }: { result: ComparisonResult; onRese
                 {summary.vehicle.color ? ` · ${summary.vehicle.color}` : ""}
               </p>
             )}
+          </div>
           </div>
           <div className="flex gap-2">
             <Button variant="outline" size="sm" onClick={onEdit} className="border-gray-200 text-gray-700 hover:bg-gray-100 gap-1.5">
@@ -1049,7 +1054,7 @@ function EstimateDisputePageInner() {
             onNewComparison={() => { setClaim(defaultEstimateClaim()); setResult(null); setFileA(null); setFileB(null); setError(null); setEditing(false); setCurrentEntryId(null); setMode("compare"); }}
           />
         ) : result && !editing ? (
-          <Results result={result} onReset={handleReset} onEdit={handleEdit} />
+          <Results result={result} onReset={handleReset} onEdit={handleEdit} onBack={() => { setResult(null); setEditing(false); setCurrentEntryId(null); setMode("dashboard"); }} />
         ) : (
           <div className="max-w-3xl mx-auto">
             {!editing && entries.length > 0 && (
