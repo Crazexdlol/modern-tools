@@ -359,6 +359,94 @@ export const appraisalClauseData: AppraisalClauseEntry[] = [
     notes: 'Louisiana has some of the strongest consumer protection laws for insurance claims. The distinction between nonbinding expert appraisal (motor vehicle ACV) and binding formal appraisal (policy provision) is important.',
   },
   {
+    state: 'New Hampshire',
+    stateCode: 'NH',
+    statute: 'RSA 417:4, XV; N.H. Admin. Code Ins 1002.15; Ins 1002.17',
+    title: 'Motor Vehicle Total Loss Valuation, ACV Standards & Unfair Claims Practices',
+    summary: 'New Hampshire has detailed regulations governing ACV determination for total loss claims. Ins 1002.15 defines the local market area as a 75-mile radius, requires at least 2 comparable vehicles sold within 90 days, and gives consumers a 20-day right to challenge the valuation. The appraisal clause is a standard policy provision, not a statute.',
+    fullText: `ACV / TOTAL LOSS VALUATION (N.H. Admin. Code Ins 1002.15):
+
+FAIR MARKET VALUE (Ins 1002.02): The price at which an asset would change hands between a willing buyer and a willing seller when neither is under compulsion to act and both have knowledge of all facts relevant to the sale.
+
+LOCAL MARKET AREA (Ins 1002.02): A maximum distance of 75 miles surrounding the area where the motor vehicle is principally garaged, not limited to the geographic boundaries of the state of New Hampshire.
+
+ACV METHODS: Insurers must use one of two methods:
+(1) Department-Accepted Methodology — The average retail value derived from a process or methodology accepted by the NH Insurance Department as statistically valid for establishing fair market value in the local market area (approved vendors include CCC Information Services Inc.);
+(2) Documented Comparable Sales — Fair market value from no fewer than 2 motor vehicles of the same make, model, and year, sold within the previous 90 days within the 75-mile local market area. Alternatively, the average sales price from quotations obtained from at least 2 different licensed dealerships within the local market area. If exact matches are unavailable, vehicles of "like, kind, and quality" may be used.
+
+REQUIRED ADJUSTMENTS: Settlement amounts must reflect vehicle condition, mileage, accessories and options, and usual and customary documentary preparation fees.
+
+EXPANDING BEYOND 75 MILES: Insurers may collect data outside the 75-mile radius ONLY for construction equipment, commercial vehicles, or rare makes/models not customarily found in the local market — and only to the extent necessary to obtain sufficient data.
+
+TOTAL LOSS THRESHOLD: Cost of Repair + Salvage Value >= Actual Cash Value (approximately 75% in practice).
+
+SETTLEMENT DOCUMENTATION: When making a total loss offer, the insurer must provide a report explaining the basis for the valuation.
+
+20-DAY CONSUMER CHALLENGE RIGHT (Ins 1002.15): Within 20 days of receiving settlement payment, the insured may challenge the valuation by presenting evidence from 2 reliable sources showing the vehicle would have a higher fair market value. The insurer must recalculate. Exception: This right does not apply if the insurer included written notification of a specified, comparable vehicle of the same manufacturer, year, similar body style, similar options, and in as good or better condition, available for purchase at or below the settlement amount.
+
+REPAIR ESTIMATES (Ins 1002.14): The consumer is only responsible for the cost of one repair estimate. If the insurer requests additional estimates, the insurer pays for them.
+
+APPRAISAL STANDARDS (Ins 1002.17): Every settlement based on an insurer's appraisal must represent the fair and reasonable price charged by repair shops providing similar services. "Fair and reasonable" = the price from a recognized, competent, and conveniently located independent repair shop willing and able to complete repairs within a reasonable time. The insurer must provide the name and address of a shop willing to do the work at the quoted price upon request.
+
+AFTERMARKET PARTS (RSA 407-D): Aftermarket parts must be at least equal in like kind and quality to OEM parts. OEM parts are required for vehicles less than 2 years old with 30,000 miles or fewer, and for leased vehicles where aftermarket parts would diminish residual value. Written disclosure required if aftermarket parts are used.
+
+UNFAIR CLAIMS PRACTICES (RSA 417:4, XV): It is an unfair practice to knowingly misrepresent facts or policy provisions, fail to act promptly on claims, fail to attempt good faith settlement when liability is clear, compel litigation by offering substantially less than ultimately recovered, or knowingly underestimate the value of any claim.
+
+CLAIMS SETTLEMENT TIME LIMITS (Ins 1002.05): Investigation must commence within 5 working days; claims acknowledgment within 10 working days; initial response within 30 calendar days (15 for electronic claims) — pay, deny, or request more info; payment within 5 working days of settlement agreement; delay letters every 30 days with specific factual/legal reasons.
+
+VIRTUAL CLAIMS (INS 25-031-AB, April 2025): Insurers using virtual assessments must offer in-person inspection within a reasonable timeframe if the consumer requests one. Insurers cannot deny an in-person inspection request based on prior participation in a virtual assessment.`,
+    sourceUrl: 'https://www.law.cornell.edu/regulations/new-hampshire/N-H-Admin-Code-SS-Ins-1002.15',
+    sourceName: 'Cornell LII - N.H. Admin. Code Ins 1002.15',
+    keyPoints: [
+      'Local market area = 75-mile radius from where the vehicle is principally garaged (can cross state lines)',
+      'Minimum 2 comparable vehicles of same make/model/year sold within previous 90 days required',
+      'Adjustments must be made for condition, mileage, accessories, options, and documentary fees',
+      'Two approved ACV methods: NHID-accepted valuation methodology (e.g., CCC) or documented comparable sales from 2+ vehicles or 2+ dealership quotes',
+      'Expanding beyond 75 miles only allowed for commercial vehicles, construction equipment, or rare makes/models',
+      'Total loss threshold: Cost of Repair + Salvage Value >= ACV',
+      'Insurer must provide a report explaining the valuation basis with every total loss offer',
+      'Consumer has 20 days after receiving payment to challenge valuation with evidence from 2 reliable sources — insurer must recalculate',
+      '20-day challenge right does NOT apply if insurer identified a specific comparable vehicle available at or below the settlement price',
+      'Consumer pays for only 1 repair estimate — insurer pays for any additional estimates they request',
+      'OEM parts required for vehicles under 2 years old with 30,000 miles or fewer (RSA 407-D)',
+      'Claims investigation must begin within 5 working days; acknowledgment within 10 working days',
+      'Initial response within 30 calendar days (15 for electronic); payment within 5 working days of agreement',
+      'Knowingly underestimating claim value is a statutory unfair claims practice (RSA 417:4, XV)',
+      'Penalties: up to $2,500 per violation; private right of action available after Insurance Commissioner finding (RSA 417:10, 417:19)',
+      'Virtual claims: consumers have the right to request an in-person inspection even after a virtual assessment (2025 bulletin)',
+    ],
+    process: [
+      'File your claim and ensure the insurer inspects the vehicle or provides a valuation report',
+      'Review the insurer\'s ACV determination — verify they used an NHID-accepted methodology or at least 2 comparable vehicles within 75 miles sold in the last 90 days',
+      'Check that proper adjustments were made for condition, mileage, options, and documentary fees',
+      'If you disagree with the valuation, gather evidence from 2 reliable sources showing a higher fair market value within the local market area',
+      'Submit your challenge within 20 days of receiving settlement payment — the insurer must recalculate',
+      'If the insurer fails to recalculate or acts in bad faith, file a complaint with the NH Insurance Department (1-800-852-3416)',
+      'Invoke the appraisal clause in your policy — each side selects an appraiser, appraisers select an umpire, and the award of any two is binding',
+      'If the appraisal clause process fails, consult an attorney about filing suit under RSA 417:19 (requires Insurance Commissioner finding first)',
+    ],
+    acvMethods: [
+      'NHID-Accepted Valuation Methodology (approved vendors include CCC Information Services Inc.) — must be statistically valid for the local market area',
+      'Documented Comparable Sales — at least 2 vehicles of same make/model/year sold within 90 days within 75-mile radius',
+      'Licensed Dealership Quotations — average sales price from at least 2 different licensed dealerships within the local market area',
+      'Like, Kind, and Quality vehicles permitted when exact make/model/year matches are unavailable',
+    ],
+    geographicRequirements: '75-mile radius from principal garagement (can cross state lines). Expansion beyond 75 miles only for commercial vehicles, construction equipment, or rare makes/models not found locally.',
+    totalLossThreshold: 'Cost of Repair + Salvage Value >= ACV (approximately 75% in practice)',
+    penalties: 'Up to $2,500 per violation by Insurance Commissioner (RSA 417:10). Private right of action after Commissioner finding (RSA 417:19). Insurer may also face license suspension or revocation.',
+    timeframes: '5 working days to begin investigation; 10 working days acknowledgment; 30 days initial response (15 electronic); 5 working days payment after agreement; 20 days for consumer to challenge valuation',
+    binding: 'Appraisal clause is a standard policy provision — award of any two (appraiser + umpire) is binding on the amount of loss',
+    umpireProcess: 'Policy-based: appraisers select umpire; if unable to agree, typically a court judge makes the selection per policy terms',
+    notes: 'New Hampshire has no standalone appraisal clause statute — the appraisal right comes from standard policy language. However, NH has very detailed administrative regulations (Ins 1002) governing ACV determination, claims handling timelines, and consumer challenge rights that are among the more consumer-friendly in New England. The 75-mile comp radius, 90-day sales window, and 20-day challenge right are particularly important for appraisers to understand.',
+    additionalLinks: [
+      { label: 'Ins 1002 - Full Administrative Rules', url: 'https://www.law.cornell.edu/regulations/new-hampshire/title-Ins/chapter-Ins-1000/part-Ins-1002' },
+      { label: 'RSA 417:4 - Unfair Claims Practices', url: 'https://law.justia.com/codes/new-hampshire/title-xxxvii/chapter-417/section-417-4/' },
+      { label: 'RSA 407-D - Aftermarket Parts', url: 'https://gc.nh.gov/rsa/html/xxxvii/407-d/407-d-mrg.htm' },
+      { label: 'NHID Accepted Valuation Methods', url: 'https://www.insurance.nh.gov/about-us/property-casualty-division/list-accepted-valuation-methods-total-loss' },
+      { label: 'NHID Auto Insurance Consumer Guide', url: 'https://mm.nh.gov/files/uploads/nhid/documents/nh-auto-guide.pdf' },
+    ],
+  },
+  {
     state: 'New York',
     stateCode: 'NY',
     statute: 'N.Y. Ins. Law § 3404; 11 NYCRR § 216.7 (Regulation 64)',
