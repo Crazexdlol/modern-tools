@@ -37,6 +37,14 @@ const apps = [
     accentColor: "border-l-orange-500 hover:border-l-orange-600",
   },
   {
+    id: "summary-page",
+    title: "Summary Page",
+    description: "Claim ID, OA contact, status log & state laws",
+    href: "/summary-page",
+    status: "active" as const,
+    accentColor: "border-l-indigo-500 hover:border-l-indigo-600",
+  },
+  {
     id: "dv",
     title: "DV",
     description: "Diminished value claims",
@@ -58,6 +66,7 @@ export default function Dashboard() {
             <Link href="/acv" className="text-sm font-medium text-gray-400 hover:text-white transition-colors">ACV</Link>
             <Link href="/rules-laws" className="text-sm font-medium text-gray-400 hover:text-white transition-colors">Rules / Laws</Link>
             <Link href="/negotiations" className="text-sm font-medium text-gray-400 hover:text-white transition-colors">Negotiations</Link>
+            <Link href="/summary-page" className="text-sm font-medium text-gray-400 hover:text-white transition-colors">Summary Page</Link>
           </nav>
           <div className="ml-auto">
             <LogoutButton />
