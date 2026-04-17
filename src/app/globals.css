@@ -128,3 +128,10 @@
     scrollbar-gutter: stable;
   }
 }
+
+@media print {
+  .summary-print-root,
+  .summary-print-root * {
+    font-family: "Times New Roman", Times, serif !important;
+  }
+}

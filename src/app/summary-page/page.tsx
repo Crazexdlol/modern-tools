@@ -182,7 +182,7 @@ export default function SummaryPagePage() {
     );
 
   return (
-    <div className="min-h-screen bg-gray-50 text-gray-900">
+    <div className="summary-print-root min-h-screen bg-gray-50 text-gray-900">
       <header className="border-b border-gray-800 bg-gray-950 shadow-sm print:hidden">
         <div className="max-w-7xl mx-auto px-6 py-4 flex items-center gap-8">
           <Link href="/">
