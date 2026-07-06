@@ -76,7 +76,7 @@ export default function Dashboard() {
 
       <main className="max-w-6xl mx-auto px-6 py-16">
         <div className="mb-12">
-          <h2 className="text-3xl font-bold mb-1 text-gray-900">Apps</h2>
+          <h2 className="text-3xl font-bold mb-1 text-gray-900">App</h2>
           <p className="text-gray-400 text-sm">Select a tool to get started.</p>
         </div>
 
