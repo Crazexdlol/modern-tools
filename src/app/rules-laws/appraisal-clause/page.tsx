@@ -2,8 +2,7 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
-import Image from 'next/image'
-import { LogoutButton } from '@/components/logout-button'
+import { AppHeader } from '@/components/app-header'
 import { Search, ExternalLink, ChevronDown, ChevronUp, Clock, Gavel, Users, FileText, MapPin, ListChecks, AlertTriangle, Scale, DollarSign, ArrowLeft } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { appraisalClauseData, allStates, type AppraisalClauseEntry } from '@/lib/rules-laws/appraisal-clause-data'
@@ -267,21 +266,7 @@ export default function AppraisalClausePage() {
 
   return (
     <div className="min-h-screen bg-gray-50 text-gray-900">
-      <header className="border-b border-gray-800 bg-gray-950 shadow-sm sticky top-0 z-10">
-        <div className="max-w-7xl mx-auto px-6 py-4 flex items-center gap-8">
-          <Link href="/"><Image src="/logo.png" alt="Modern Appraisers" width={160} height={48} className="h-9 w-auto" /></Link>
-          <nav className="flex items-center gap-6">
-            <Link href="/estimate-dispute" className="text-sm font-medium text-gray-400 hover:text-white transition-colors">Estimate Dispute</Link>
-            <Link href="/acv" className="text-sm font-medium text-gray-400 hover:text-white transition-colors">ACV</Link>
-            <Link href="/rules-laws" className="text-sm font-medium text-white">Rules / Laws</Link>
-            <Link href="/negotiations" className="text-sm font-medium text-gray-400 hover:text-white transition-colors">Negotiations</Link>
-            <Link href="/summary-page" className="text-sm font-medium text-gray-400 hover:text-white transition-colors">Summary Page</Link>
-          </nav>
-          <div className="ml-auto">
-            <LogoutButton />
-          </div>
-        </div>
-      </header>
+      <AppHeader />
 
       <main className="max-w-4xl mx-auto px-6 py-8">
         <div className="flex items-center gap-3 mb-1">

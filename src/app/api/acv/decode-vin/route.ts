@@ -19,6 +19,7 @@ async function decodeWithMarketCheck(vin: string, apiKey: string) {
     engine: data.engine || '',
     drivetrain: data.drivetrain || '',
     transmission: data.transmission || '',
+    fuelType: normalizeFuelType(data.fuel_type || data.powertrain_type || ''),
     bodyStyle: data.body_style || '',
   }
 }
@@ -37,6 +38,8 @@ async function decodeWithNHTSA(vin: string) {
     'All-Wheel Drive': 'AWD', '4x4': '4WD',
   }
 
+  const fuelRaw = [r.ElectrificationLevel, r.FuelTypePrimary, r.FuelTypeSecondary].filter(Boolean).join(' ')
+
   return {
     year: parseInt(r.ModelYear) || 0,
     make: r.Make || '',
@@ -45,8 +48,21 @@ async function decodeWithNHTSA(vin: string) {
     engine: [r.DisplacementL ? `${r.DisplacementL}L` : '', r.EngineCylinders ? `${r.EngineCylinders}cyl` : ''].filter(Boolean).join(' ') || '',
     drivetrain: driveMap[r.DriveType] || r.DriveType || '',
     transmission: r.TransmissionStyle || '',
+    fuelType: normalizeFuelType(fuelRaw),
     bodyStyle: r.BodyClass || '',
   }
+}
+
+function normalizeFuelType(raw: string): string {
+  const s = (raw || '').toLowerCase()
+  if (!s) return ''
+  if (s.includes('plug-in') || s.includes('plug in') || s.includes('phev')) return 'Plug-in Hybrid'
+  if (s.includes('hybrid') || s.includes('hev')) return 'Hybrid'
+  if (s.includes('electric') || s.includes('bev') || s.includes('ev')) return 'Electric'
+  if (s.includes('diesel')) return 'Diesel'
+  if (s.includes('flex') || s.includes('e85')) return 'Flex Fuel'
+  if (s.includes('gasoline') || s.includes('gas') || s.includes('petrol')) return 'Gasoline'
+  return ''
 }
 
 export async function GET(request: NextRequest) {

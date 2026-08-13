@@ -3,6 +3,8 @@ import type { ClaimInfo, SelectedComp, ACVAdjustments, ACVResult } from '@/lib/a
 
 // ── ACV History ──────────────────────────────────────────────────────────────
 
+export type ClaimStatus = 'open' | 'closed'
+
 export interface ACVHistoryEntry {
   id: string
   date: string
@@ -16,23 +18,29 @@ export interface ACVHistoryEntry {
   adjustments: ACVAdjustments
   result: ACVResult
   mileageRate?: number
+  status?: ClaimStatus
+  // Award / Closing Notes editor state (jsonb blob; shape lives in comp-finder).
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  reportsState?: any
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   auctionListings?: any[]
+  // Per-claim Estimate Dispute result (jsonb; shape lives in the estimate tab).
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  estimate?: any
+  // Documents tab metadata (files live in the claim-documents storage bucket).
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  documents?: any[]
+  // Diminished Value tab state (jsonb; shape lives in the DV tab).
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  dv?: any
+  // Reports tab — Invoice state (jsonb; shape lives in reports-tab.tsx).
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  invoice?: any
 }
 
-export async function fetchACVHistory(): Promise<ACVHistoryEntry[]> {
-  const supabase = createClient()
-  const { data, error } = await supabase
-    .from('acv_history')
-    .select('*')
-    .order('date', { ascending: false })
-
-  if (error) {
-    console.error('Failed to fetch ACV history:', error)
-    return []
-  }
-
-  return (data ?? []).map(row => ({
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function rowToEntry(row: any): ACVHistoryEntry {
+  return {
     id: row.id,
     date: row.date,
     mode: row.mode,
@@ -45,7 +53,56 @@ export async function fetchACVHistory(): Promise<ACVHistoryEntry[]> {
     adjustments: row.adjustments as ACVAdjustments,
     result: row.result as ACVResult,
     mileageRate: Number(row.mileage_rate ?? 0),
-  }))
+    status: row.status === 'closed' ? 'closed' : 'open',
+    reportsState: row.reports_state ?? undefined,
+    auctionListings: row.auction_listings ?? undefined,
+    estimate: row.estimate ?? undefined,
+    documents: row.documents ?? undefined,
+    dv: row.dv ?? undefined,
+    invoice: row.invoice ?? undefined,
+  }
+}
+
+// Returns null on a fetch error so callers can show a real error state
+// instead of an empty-looking dashboard.
+export async function fetchACVHistory(): Promise<ACVHistoryEntry[] | null> {
+  const supabase = createClient()
+  const { data, error } = await supabase
+    .from('acv_history')
+    .select('*')
+    .order('date', { ascending: false })
+
+  if (error) {
+    console.error('Failed to fetch ACV history:', error)
+    return null
+  }
+
+  return (data ?? []).map(rowToEntry)
+}
+
+export async function fetchACVEntry(id: string): Promise<ACVHistoryEntry | null> {
+  const supabase = createClient()
+  const { data, error } = await supabase
+    .from('acv_history')
+    .select('*')
+    .eq('id', id)
+    .maybeSingle()
+
+  if (error) {
+    console.error('Failed to fetch ACV entry:', error)
+    return null
+  }
+
+  return data ? rowToEntry(data) : null
+}
+
+export async function setClaimStatus(id: string, status: ClaimStatus) {
+  const supabase = createClient()
+  const { error } = await supabase
+    .from('acv_history')
+    .update({ status })
+    .eq('id', id)
+  if (error) console.error('Failed to set claim status:', error)
 }
 
 export async function saveACVHistory(entry: ACVHistoryEntry, editId?: string | null) {
@@ -55,13 +112,12 @@ export async function saveACVHistory(entry: ACVHistoryEntry, editId?: string | n
 
   const id = editId || entry.id || `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
 
-  if (editId) {
-    await supabase.from('acv_history').delete().eq('id', editId)
-  }
-
-  const { error } = await supabase.from('acv_history').upsert({
-    id,
-    user_id: user.id,
+  // NOTE: no delete-before-upsert. Deleting and re-inserting dropped columns
+  // that weren't part of this payload (reports_state), wiping the Opposing
+  // Appraiser / Award / Closing Notes state on any save that omitted it.
+  // Optional fields are included only when present so a save that omits them
+  // (e.g. a claim-info-only save) never nulls a sibling tool's data.
+  const payload: Record<string, unknown> = {
     date: entry.date,
     mode: entry.mode,
     vehicle: entry.vehicle,
@@ -73,9 +129,48 @@ export async function saveACVHistory(entry: ACVHistoryEntry, editId?: string | n
     adjustments: entry.adjustments,
     result: entry.result,
     mileage_rate: entry.mileageRate ?? 0,
-  })
+  }
+  if (entry.status !== undefined) payload.status = entry.status
+  if (entry.reportsState !== undefined) payload.reports_state = entry.reportsState
+  if (entry.auctionListings !== undefined) payload.auction_listings = entry.auctionListings
+  if (entry.estimate !== undefined) payload.estimate = entry.estimate
+  if (entry.documents !== undefined) payload.documents = entry.documents
+  if (entry.dv !== undefined) payload.dv = entry.dv
+  if (entry.invoice !== undefined) payload.invoice = entry.invoice
 
-  if (error) console.error('Failed to save ACV history:', error)
+  // Update-first, insert-if-missing (NOT a blind upsert): claims are shared
+  // team-wide, and an upsert would stamp the saver's user_id onto a teammate's
+  // row, silently reassigning attribution.
+  let { data: updated, error: updateError } = await supabase
+    .from('acv_history')
+    .update(payload)
+    .eq('id', id)
+    .select('id')
+
+  if (updateError && updateError.code === '42703') {
+    // documents/dv/invoice columns not migrated yet — save everything else
+    // rather than losing the claim edit.
+    delete payload.documents
+    delete payload.dv
+    delete payload.invoice
+    ;({ data: updated, error: updateError } = await supabase
+      .from('acv_history')
+      .update(payload)
+      .eq('id', id)
+      .select('id'))
+  }
+
+  if (updateError) {
+    console.error('Failed to save ACV history:', updateError)
+    return
+  }
+
+  if (!updated || updated.length === 0) {
+    const { error: insertError } = await supabase
+      .from('acv_history')
+      .insert({ id, user_id: user.id, ...payload })
+    if (insertError) console.error('Failed to save ACV history:', insertError)
+  }
 }
 
 export async function deleteACVHistory(id: string) {

@@ -87,22 +87,30 @@ export function getMileageRate(make: string, model: string, trim: string, year: 
   return Math.round(baseRate * multiplier * 1000) / 1000 // round to 3 decimals
 }
 
+// Coerce to a finite number; NaN/undefined/null (e.g. missing miles on a
+// listing, or a partially saved adjustment) become 0 instead of poisoning
+// every downstream total with NaN.
+const num = (v: unknown): number => {
+  const n = Number(v)
+  return Number.isFinite(n) ? n : 0
+}
+
 export function calculateCompValue(comp: Pick<SelectedComp, 'price' | 'mileageAdjDollar' | 'yearAdjDollar'>): number {
-  return comp.price + comp.mileageAdjDollar + comp.yearAdjDollar
+  return num(comp.price) + num(comp.mileageAdjDollar) + num(comp.yearAdjDollar)
 }
 
 export function calculateACV(comps: SelectedComp[], adjustments: ACVAdjustments): ACVResult {
-  const comp1Value = comps[0]?.compValue ?? 0
-  const comp2Value = comps[1]?.compValue ?? 0
-  const comp3Value = comps[2]?.compValue ?? 0
+  const comp1Value = num(comps[0]?.compValue)
+  const comp2Value = num(comps[1]?.compValue)
+  const comp3Value = num(comps[2]?.compValue)
   const compCount = Math.min(comps.length, 3) || 1
   const averageValue = (comp1Value + comp2Value + comp3Value) / compCount
   const totalAdjustments =
-    adjustments.vehicleHistory +
-    adjustments.priorDamages +
-    adjustments.additions +
-    adjustments.deductions
-  const taxAmount = averageValue * (adjustments.taxRate / 100)
+    num(adjustments.vehicleHistory) +
+    num(adjustments.priorDamages) +
+    num(adjustments.additions) +
+    num(adjustments.deductions)
+  const taxAmount = averageValue * (num(adjustments.taxRate) / 100)
   const acv = averageValue + totalAdjustments + taxAmount
   return { comp1Value, comp2Value, comp3Value, averageValue, totalAdjustments, taxAmount, acv }
 }

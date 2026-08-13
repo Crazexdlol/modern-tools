@@ -1,6 +1,7 @@
 export interface ClaimInfo {
   maNumber: string
   claimNumber: string
+  handlingAppraiser?: string
   dateOfLoss: string
   clientType: 'Insured' | 'Claimant'
   clientName: string
@@ -20,6 +21,7 @@ export interface ClaimInfo {
   engine: string
   drivetrain: string
   transmission: string
+  fuelType: string
   mileage: number
   zip: string
   radius: number
@@ -37,6 +39,7 @@ export interface MarketComp {
   engine: string
   drivetrain: string
   transmission: string
+  fuelType: string
   dealerName: string
   dealerPhone: string
   dealerCity: string
