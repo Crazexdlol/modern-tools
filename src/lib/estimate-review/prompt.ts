@@ -69,14 +69,16 @@ export function buildSystemBlocks() {
 
 // Build the user message: estimate text + optional photo image blocks.
 // Photos are passed in as base64.
+export type PhotoMediaType = 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp'
+
 export function buildUserMessage(
   estimateText: string,
-  photos: Array<{ media_type: 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp'; data: string }>,
+  photos: Array<{ media_type: PhotoMediaType; data: string }>,
   fileName: string,
 ) {
   const content: Array<
     | { type: 'text'; text: string }
-    | { type: 'image'; source: { type: 'base64'; media_type: string; data: string } }
+    | { type: 'image'; source: { type: 'base64'; media_type: PhotoMediaType; data: string } }
   > = []
 
   if (photos.length > 0) {
