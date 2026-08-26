@@ -16,21 +16,36 @@ export function getPPagesText(): string {
 // System block A: uncached, small — task instructions + schema.
 export const SYSTEM_INSTRUCTIONS = `You are an expert auto-body damage appraiser reviewing an insurance company appraiser's ("IA's") estimate for over-writing per the MOTOR / CCC P-Pages rulebook provided below.
 
-Your job: flag every line item in the estimate that violates the rulebook. Only flag items backed by explicit rulebook text. DO NOT flag judgment calls (Replace-vs-Repair opinions, part-quality disputes) that aren't rulebook-defined.
+Your job: flag ONLY line items where IA over-billed against the rulebook, i.e. cases where the correction would reduce IA's total. Only flag items backed by explicit rulebook text. DO NOT flag judgment calls (Replace-vs-Repair opinions, part-quality disputes) that aren't rulebook-defined.
 
-The four categories to flag:
-1. not_included — the IA billed separately for an operation the rulebook says is Included in a base R&R/refinish time
-2. overlap — the IA billed adjacent operations without applying the rulebook's overlap deduction
-3. excess_labor — the IA's labor hours materially exceed the published guide time (>20% or >0.5 hrs, whichever is larger)
-4. duplicate — same operation billed under two names, or a part billed when it's part of an already-billed assembly
+### The four categories
 
-For each flag, cite the rulebook section (e.g. "P-Pages Ch. 11-18" or "G2 Guide") and quote the relevant text verbatim in ruleQuote.
+1. not_included — the IA billed separately for an operation the rulebook says is Included in a base R&R/refinish time. Suggested action MUST be "remove" and suggested.total MUST be 0. Impact MUST equal -iaBilled.total.
+2. overlap — the IA billed adjacent operations without applying the rulebook's overlap deduction. Suggested is the reduced amount after the deduction.
+3. excess_labor — the IA's labor hours materially exceed the published guide time (>20% or >0.5 hrs, whichever is larger). Suggested is the guide time × labor rate.
+4. duplicate — same operation billed under two names, or a part billed when it's part of an already-billed assembly. Suggested action is "remove" for the redundant line.
 
-If reference photos are provided, use them as evidence — e.g. photos showing only cosmetic damage may support flagging a Replace as excessive. Reference the photo in ruleQuote if you use one.
+### ⚠️ CRITICAL RULES (violating any of these produces a broken review)
+
+1. **Every flag must have non-zero impact.** If your suggested correction produces the same total as iaBilled (impact would be $0), DO NOT include that line as a flag. That means IA billed it correctly per the rulebook — say nothing.
+2. **If category is "not_included": action MUST be "remove", suggested.total MUST be 0, impact MUST be -iaBilled.total.** No exceptions.
+3. **If action is "remove": suggested.total MUST be 0 and impact MUST be -iaBilled.total.**
+4. **Verify each flag before including it:** does my suggested truly reduce IA's total? If no, drop the flag.
+5. **The rulebook says "does not include X" or "X is billed separately" or "special notation" — those describe VALID separately-billable items.** DO NOT flag those. Only flag items where the rulebook explicitly says "included" and IA billed anyway.
+6. **When in doubt, do NOT flag.** Under-flagging is much better than false-flagging — every wrong flag undermines the credibility of the entire review.
+
+### Citations & evidence
+
+For each flag, cite the rulebook section (e.g. "P-Pages Ch. 11-18" or "G2 Guide") and quote the relevant text verbatim in ruleQuote. The ruleQuote must clearly support that IA over-billed — if you find yourself writing quotes like "the estimate marks this correctly", that's your cue that this is NOT a flag.
+
+If reference photos or documents are provided, use them as evidence — e.g. photos showing only cosmetic damage may support flagging a Replace as excessive. Reference the photo in ruleQuote if you use one.
+
+### Parse metadata
 
 Also parse the estimate's grand total (the "TOTAL COST" or "GRAND TOTAL" line, whichever is the final billed amount) into grandTotalBilled, and the detected software (CCC ONE, Mitchell, Audatex, Web-Est, Estimating Edge, or "Unknown") into software.
 
-Return JSON ONLY — no markdown, no prose. Schema:
+### Return schema (JSON ONLY — no markdown, no prose)
+
 {
   "grandTotalBilled": 0.00,
   "software": "CCC ONE",
@@ -49,7 +64,7 @@ Return JSON ONLY — no markdown, no prose. Schema:
   ]
 }
 
-Notes:
+### Additional notes
 - impact is always negative (represents a proposed reduction).
 - If nothing is flag-worthy, return {"grandTotalBilled": N, "software": "...", "flags": []}.
 - Order flags by descending |impact|.
@@ -148,10 +163,48 @@ function extractFirstJsonObject(raw: string): string {
   throw new Error('Unbalanced JSON in model response')
 }
 
+// Coerce a raw flag to enforce the invariants the AI is instructed to follow.
+// - not_included ⇒ action=remove, suggested.total=0
+// - action=remove ⇒ suggested.total=0
+// - impact recomputed from iaBilled.total − suggested.total (always ≤ 0)
+// Returns null if the flag would have zero impact (drop it — IA billed correctly).
+function coerceFlag(f: Flag): Flag | null {
+  const iaTotal = Number(f.iaBilled?.total) || 0
+
+  // not_included is always a full-remove.
+  if (f.category === 'not_included' && f.suggested) {
+    f.suggested.action = 'remove'
+    f.suggested.total = 0
+  }
+
+  // action=remove implies suggested.total=0 (belt-and-suspenders for model slippage).
+  if (f.suggested?.action === 'remove') {
+    f.suggested.total = 0
+  }
+
+  const suggestedTotal = Number(f.suggested?.total) || 0
+  const computedImpact = -(iaTotal - suggestedTotal)
+
+  // If the model returned a non-zero impact but the math says zero, prefer the math.
+  // If the model returned zero (or omitted it), fall back to the computed value.
+  f.impact = computedImpact
+
+  // Drop no-op flags — a $0 impact means IA billed this line correctly.
+  if (Math.round(Math.abs(f.impact) * 100) === 0) return null
+
+  return f
+}
+
 export function parseReviewResponse(raw: string): ParsedReviewPayload {
   const jsonText = extractFirstJsonObject(raw)
   const parsed = JSON.parse(jsonText) as ParsedReviewPayload
   if (!Array.isArray(parsed.flags)) throw new Error('Response missing flags array')
+
+  // Coerce invariants + drop zero-impact flags.
+  parsed.flags = parsed.flags
+    .map(coerceFlag)
+    .filter((f): f is Flag => f !== null)
+
   parsed.flags.sort((a, b) => Math.abs(b.impact) - Math.abs(a.impact))
   return parsed
 }
