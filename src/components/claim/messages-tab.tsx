@@ -10,7 +10,7 @@ import {
   markMessagesRead,
   type Message,
 } from "@/lib/supabase/messages"
-import { fetchAllProfilesBrowser, type Profile } from "@/lib/supabase/profiles"
+import { fetchAllProfilesBrowser, useCurrentProfile, type Profile } from "@/lib/supabase/profiles"
 
 // Regex for detecting http(s) URLs and app-relative paths in message bodies.
 // Kept intentionally simple — real message bodies with pathological punctuation
@@ -49,6 +49,8 @@ function fmtStamp(iso: string): string {
 }
 
 export function MessagesTab({ claimId }: { claimId: string }) {
+  const { profile } = useCurrentProfile()
+  const myId = profile?.id ?? null
   const [messages, setMessages] = useState<Message[]>([])
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -70,16 +72,22 @@ export function MessagesTab({ claimId }: { claimId: string }) {
     try {
       const list = await fetchMessages(claimId)
       setMessages(list)
-      // Default recipient picker to the previous message's recipients (reply-style).
+      // Default recipient picker to a proper reply-all: everyone involved in
+      // the previous message (sender + their recipients) MINUS the current
+      // user. Prevents self-notifying and gives the natural "reply" behavior.
       if (list.length > 0 && recipientIds.length === 0) {
-        setRecipientIds(list[list.length - 1].recipientIds)
+        const last = list[list.length - 1]
+        const conversation = new Set<string>(last.recipientIds)
+        if (last.senderId) conversation.add(last.senderId)
+        if (myId) conversation.delete(myId)
+        setRecipientIds(Array.from(conversation))
       }
     } catch (err) {
       setLoadError(err instanceof Error ? err.message : "Failed to load messages")
     } finally {
       setLoading(false)
     }
-  }, [claimId, recipientIds.length])
+  }, [claimId, recipientIds.length, myId])
 
   // Initial load + fetch profiles + mark-as-read on mount.
   useEffect(() => {
@@ -109,10 +117,11 @@ export function MessagesTab({ claimId }: { claimId: string }) {
   const pickerOptions = useMemo(() => {
     const q = pickerQuery.trim().toLowerCase()
     return profiles
+      .filter(p => p.id !== myId)                       // can't pick yourself
       .filter(p => !recipientIds.includes(p.id))
       .filter(p => !q || (p.name || "").toLowerCase().includes(q) || p.email.toLowerCase().includes(q))
       .slice(0, 12)
-  }, [profiles, recipientIds, pickerQuery])
+  }, [profiles, recipientIds, pickerQuery, myId])
 
   const selectedProfiles = useMemo(
     () => recipientIds.map(id => profiles.find(p => p.id === id)).filter((p): p is Profile => !!p),

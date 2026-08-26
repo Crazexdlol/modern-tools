@@ -36,12 +36,15 @@ export async function GET() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
 
-  // Fetch every message where the caller is a recipient (RLS still narrows
-  // to claims the caller can see — belt + suspenders).
+  // Fetch every message where the caller is a recipient AND is not the
+  // sender (self-messages should never show up in your own unread queue,
+  // even if you accidentally add yourself to the recipient list). RLS still
+  // narrows to claims the caller can see — belt + suspenders.
   const { data: msgs, error: msgErr } = await supabase
     .from('messages')
     .select('id, claim_id, sender_name, created_at')
     .contains('recipient_ids', [user.id])
+    .neq('sender_id', user.id)
     .order('created_at', { ascending: false })
   if (msgErr) return NextResponse.json({ error: msgErr.message }, { status: 400 })
   const messages = (msgs as MessageQueueRow[]) ?? []

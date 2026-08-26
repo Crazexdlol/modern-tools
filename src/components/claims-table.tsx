@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { Search, Trash2, X } from 'lucide-react'
 import { deleteACVHistory, type ACVHistoryEntry } from '@/lib/supabase/history'
@@ -42,6 +42,13 @@ export function ClaimsTable({
   const [deleteTarget, setDeleteTarget] = useState<ACVHistoryEntry | null>(null)
   const [deleteBusy, setDeleteBusy] = useState(false)
 
+  // Look up an assignee's display name by profile id.
+  const nameFor = useCallback((id: string | null | undefined): string => {
+    if (!id) return ''
+    const p = profiles.find(x => x.id === id)
+    return p?.name || p?.email || 'Unknown'
+  }, [profiles])
+
   const filtered = useMemo(() => {
     if (!searchQuery.trim()) return entries
     const q = searchQuery.toLowerCase().trim()
@@ -51,16 +58,10 @@ export function ClaimsTable({
       (e.claim?.claimNumber ?? '').toLowerCase().includes(q) ||
       e.vehicle?.toLowerCase().includes(q) ||
       (e.claim?.insuredName ?? '').toLowerCase().includes(q) ||
-      (e.claim?.insuranceCompany ?? '').toLowerCase().includes(q)
+      (e.claim?.insuranceCompany ?? '').toLowerCase().includes(q) ||
+      nameFor(e.assignedTo).toLowerCase().includes(q)
     )
-  }, [entries, searchQuery])
-
-  // Look up an assignee's display name by profile id.
-  const nameFor = (id: string | null | undefined): string => {
-    if (!id) return ''
-    const p = profiles.find(x => x.id === id)
-    return p?.name || p?.email || 'Unknown'
-  }
+  }, [entries, searchQuery, nameFor])
 
   const filteredIds = useMemo(() => filtered.map(e => e.id), [filtered])
   const allFilteredSelected =
@@ -254,27 +255,35 @@ export function ClaimsTable({
             ) : (
               filtered.map((entry) => {
                 const isSelected = selectedIds.has(entry.id)
+                const openClaim = () => router.push(`/claims/${entry.id}`)
                 return (
                   <tr
                     key={entry.id}
-                    onClick={() => router.push(`/claims/${entry.id}`)}
-                    className={`border-b border-gray-100 hover:bg-gray-50 cursor-pointer transition-colors ${
+                    onDoubleClick={openClaim}
+                    className={`border-b border-gray-100 hover:bg-gray-50 transition-colors ${
                       isSelected ? 'bg-blue-50/40' : ''
                     }`}
                   >
                     {adminView && (
-                      <td className="w-10 px-3 py-3" onClick={(e) => e.stopPropagation()}>
+                      <td className="w-10 px-3 py-3">
                         <input
                           type="checkbox"
                           aria-label={`Select claim ${entry.maNumber || entry.id}`}
                           checked={isSelected}
                           onChange={() => toggleOne(entry.id)}
-                          onClick={(e) => e.stopPropagation()}
                           className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
                         />
                       </td>
                     )}
-                    <td className="px-4 py-3 text-gray-900 font-medium">{entry.maNumber || '—'}</td>
+                    <td className="px-4 py-3">
+                      <button
+                        type="button"
+                        onClick={openClaim}
+                        className="text-gray-900 font-medium hover:text-blue-600 hover:underline text-left"
+                      >
+                        {entry.maNumber || '—'}
+                      </button>
+                    </td>
                     <td className="px-4 py-3 text-gray-700">{entry.claim?.insuredName || '—'}</td>
                     <td className="px-4 py-3 text-gray-700">{entry.vehicle || '—'}</td>
                     <td className="px-4 py-3 text-gray-500 font-mono text-xs">{entry.vin || '—'}</td>

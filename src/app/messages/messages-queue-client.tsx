@@ -1,6 +1,7 @@
 "use client"
 
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
 import { Loader2 } from 'lucide-react'
 import { fetchUnreadQueue, type UnreadClaim } from '@/lib/supabase/messages'
@@ -12,6 +13,7 @@ function fmtStamp(iso: string): string {
 }
 
 export function MessagesQueueClient() {
+  const router = useRouter()
   const [claims, setClaims] = useState<UnreadClaim[] | null>(null)
   const [error, setError] = useState<string | null>(null)
 
@@ -52,7 +54,11 @@ export function MessagesQueueClient() {
         </thead>
         <tbody>
           {claims.map(c => (
-            <tr key={c.claimId} className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
+            <tr
+              key={c.claimId}
+              onDoubleClick={() => router.push(`/claims/${encodeURIComponent(c.claimId)}?tab=messages`)}
+              className="border-b border-gray-100 hover:bg-gray-50 transition-colors"
+            >
               <td className="px-4 py-3">
                 <Link
                   href={`/claims/${encodeURIComponent(c.claimId)}?tab=messages`}
