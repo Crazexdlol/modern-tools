@@ -98,7 +98,7 @@ export function AssignmentSheet({ data }: { data: AssignmentSheetData }) {
           </div>
           <div className="header-right">
             <div className="title">Assignment Sheet</div>
-            <div className="printed">Printed: {printedOn}</div>
+            <div className="printed">{printedOn}</div>
           </div>
         </div>
 
@@ -268,9 +268,10 @@ function MoneyRow({ label, value }: { label: string; value: number }) {
 }
 
 // Called by the Print button. Captures the off-screen assignment-sheet
-// portal via html2canvas, fits it onto a single Letter-size PDF page via
-// jspdf, and prompts the OS Save-As picker. PDF output has no browser
-// chrome so physical prints from the saved PDF come out clean.
+// portal, composes a Letter-size PDF, then opens it in a NEW BROWSER TAB
+// so the user gets a full preview. From the tab they can save to any
+// folder (browser's download button / Ctrl+S) or send to a physical
+// printer (Ctrl+P). The PDF itself has no browser chrome — clean output.
 export async function triggerAssignmentSheetPrint(fileName: string): Promise<void> {
   try {
     const el = document.querySelector('.assignment-sheet') as HTMLElement | null
@@ -303,11 +304,24 @@ export async function triggerAssignmentSheetPrint(fileName: string): Promise<voi
     const offsetY = (pageHeightPt - renderHeight) / 2
 
     const pdf = new jsPDF({ unit: 'pt', format: 'letter' })
+    // Metadata: the tab title / suggested filename in the PDF viewer.
+    pdf.setProperties({ title: fileName.replace(/\.pdf$/i, '') })
     const img = canvas.toDataURL('image/jpeg', 0.95)
     pdf.addImage(img, 'JPEG', offsetX, offsetY, renderWidth, renderHeight)
 
     const blob = pdf.output('blob')
-    await savePdfWithPicker(blob, fileName)
+    const url = URL.createObjectURL(blob)
+    // Open the PDF in a new tab. Browser's built-in viewer shows it with
+    // download + print controls; user chooses save location or prints.
+    const win = window.open(url, '_blank')
+    if (!win) {
+      // Popup blocked. Fall back to the OS Save-As dialog so the user still
+      // gets the file — better than a silent failure.
+      alert('Popup blocked. Saving the PDF instead — pick a folder in the dialog.')
+      await savePdfWithPicker(blob, fileName)
+    }
+    // Free the blob URL after the tab has had a moment to load.
+    setTimeout(() => URL.revokeObjectURL(url), 60_000)
   } catch (err) {
     console.error('Assignment sheet print failed:', err)
     alert(`Print failed: ${err instanceof Error ? err.message : String(err)}`)
