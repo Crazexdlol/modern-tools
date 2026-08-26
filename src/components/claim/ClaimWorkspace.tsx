@@ -38,6 +38,7 @@ import {
   formatCurrency,
 } from '@/lib/acv/calculations'
 import { saveACVHistory, fetchACVEntry, setClaimStatus, type ClaimStatus } from '@/lib/supabase/history'
+import { useCurrentProfile, fetchAllProfilesBrowser, type Profile } from '@/lib/supabase/profiles'
 import { LossSearchTab, type LossListing } from '@/components/claim/loss-search-tab'
 import { EstimateTab } from '@/components/claim/estimate-tab'
 import { DocumentsTab } from '@/components/claim/documents-tab'
@@ -2319,6 +2320,25 @@ function ClaimWorkspaceInner({ claimId }: { claimId: string }) {
 
   // Claim workspace additions: status, per-claim tool data, load state.
   const [status, setStatus] = useState<ClaimStatus>('open')
+  // Role-based workflow state (Task 11). Writes go through /api/claims/[id]/*
+  // routes — these setters only reflect what the API returned so the UI updates
+  // without a full page reload.
+  const [assignedTo, setAssignedTo] = useState<string | null>(null)
+  const [submittedAt, setSubmittedAt] = useState<string | null>(null)
+  // Hydrated for parity with the server row; not rendered yet. Future work will
+  // surface "submitted by X" in the banner.
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const [submittedBy, setSubmittedBy] = useState<string | null>(null)
+  const [workflowBusy, setWorkflowBusy] = useState(false)
+  const [allProfiles, setAllProfiles] = useState<Profile[]>([])
+  const { profile } = useCurrentProfile()
+  const role = profile?.role
+  const isAdmin = role === 'admin'
+  const userId = profile?.id
+  const isAssignee = !!userId && assignedTo === userId
+  const isSubmitted = !!submittedAt
+  const isClosed = status === 'closed'
+  const readOnly = !isAdmin && (isSubmitted || isClosed || (!!userId && !isAssignee))
   const [auctionListings, setAuctionListings] = useState<LossListing[]>([])
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [estimate, setEstimate] = useState<any>(undefined)
@@ -2365,6 +2385,9 @@ function ClaimWorkspaceInner({ claimId }: { claimId: string }) {
       setAdjustments(entry.adjustments)
       setEditingId(entry.id)
       setStatus(entry.status ?? 'open')
+      setAssignedTo(entry.assignedTo ?? null)
+      setSubmittedAt(entry.submittedAt ?? null)
+      setSubmittedBy(entry.submittedBy ?? null)
       setAuctionListings((entry.auctionListings as LossListing[] | undefined) ?? [])
       setEstimate(entry.estimate)
       setDocuments((entry.documents as ClaimDocument[] | undefined) ?? [])
@@ -2754,6 +2777,43 @@ function ClaimWorkspaceInner({ claimId }: { claimId: string }) {
     setHasUnsavedChanges(false)
   }
 
+  // Task 11 workflow: Submit / Approve / Send Back / Reopen. Writes go through
+  // dedicated API routes so the column-guard trigger enforces role-based rules.
+  // After each action we refetch the entry to sync the local UI with whatever
+  // the server actually persisted.
+  const callWorkflow = async (path: string, confirmMsg?: string) => {
+    if (confirmMsg && !confirm(confirmMsg)) return
+    if (!editingId) return
+    setWorkflowBusy(true)
+    const res = await fetch(`/api/claims/${editingId}/${path}`, { method: 'POST' })
+    setWorkflowBusy(false)
+    if (!res.ok) {
+      const b = await res.json().catch(() => ({} as { error?: string }))
+      alert((b as { error?: string }).error ?? 'Action failed')
+      return
+    }
+    const fresh = await fetchACVEntry(editingId)
+    if (fresh) {
+      setStatus(fresh.status ?? 'open')
+      setAssignedTo(fresh.assignedTo ?? null)
+      setSubmittedAt(fresh.submittedAt ?? null)
+      setSubmittedBy(fresh.submittedBy ?? null)
+    }
+  }
+  const handleSubmit   = () => callWorkflow('submit',    'Submit this claim for admin review? You will not be able to edit it after submitting.')
+  const handleApprove  = () => callWorkflow('approve',   'Approve and close this claim?')
+  const handleSendBack = () => callWorkflow('send-back', 'Send this claim back to the appraiser?')
+  const handleReopen   = () => callWorkflow('reopen',    'Reopen this closed claim?')
+
+  // Admin needs the list of users for the inline assign dropdown; skip the
+  // fetch for non-admins to avoid the extra roundtrip on every workspace load.
+  useEffect(() => {
+    if (!isAdmin) return
+    let cancelled = false
+    fetchAllProfilesBrowser().then(list => { if (!cancelled) setAllProfiles(list) })
+    return () => { cancelled = true }
+  }, [isAdmin])
+
   const handleVinDecoded = async (updatedClaim: ClaimInfo) => {
     // Save with the CURRENT comps/result — previously this saved an empty
     // comps array, wiping the claim's saved comps whenever a VIN was re-decoded.
@@ -2884,24 +2944,113 @@ function ClaimWorkspaceInner({ claimId }: { claimId: string }) {
               </Button>
             </div>
           )}
+          {/* Task 11: role-aware workflow buttons. Anchored right when there
+              are no unsaved-changes buttons already claiming ml-auto. */}
+          {!isNew && editingId && (
+            <div className={cn('flex items-center gap-2', !hasUnsavedChanges && 'ml-auto')}>
+              {!isSubmitted && !isClosed && (isAssignee || isAdmin) && (
+                <Button
+                  onClick={handleSubmit}
+                  disabled={workflowBusy}
+                  size="sm"
+                  className="bg-emerald-600 hover:bg-emerald-500 text-white"
+                >
+                  Submit
+                </Button>
+              )}
+              {isAdmin && isSubmitted && !isClosed && (
+                <>
+                  <Button
+                    onClick={handleApprove}
+                    disabled={workflowBusy}
+                    size="sm"
+                    className="bg-emerald-600 hover:bg-emerald-500 text-white"
+                  >
+                    Approve
+                  </Button>
+                  <Button
+                    onClick={handleSendBack}
+                    disabled={workflowBusy}
+                    size="sm"
+                    variant="outline"
+                  >
+                    Send Back
+                  </Button>
+                </>
+              )}
+              {isAdmin && isClosed && (
+                <Button
+                  onClick={handleReopen}
+                  disabled={workflowBusy}
+                  size="sm"
+                  variant="outline"
+                >
+                  Reopen
+                </Button>
+              )}
+            </div>
+          )}
         </div>
 
         {isNew ? (
           <h1 className="text-3xl font-extrabold text-gray-900 tracking-tight mb-6">New Claim</h1>
         ) : (
-          <div className="flex flex-wrap items-center gap-y-4 mb-6 bg-white border border-gray-200 rounded-xl shadow-sm px-6 py-4">
-            {[
-              { label: 'MA #', value: claim.maNumber },
-              { label: 'CL #', value: claim.claimNumber },
-              { label: 'Vehicle', value: claimVehicle },
-              { label: 'Client', value: claim.clientName },
-              { label: 'Owner', value: claim.insuredName },
-            ].map((stat, i) => (
-              <Fragment key={stat.label}>
-                {i > 0 && <span className="hidden sm:block w-px self-stretch bg-gray-200 mx-6" />}
-                <ClaimHeaderStat label={stat.label} value={stat.value} />
-              </Fragment>
-            ))}
+          <div className="mb-6 bg-white border border-gray-200 rounded-xl shadow-sm px-6 py-4">
+            <div className="flex flex-wrap items-center gap-y-4">
+              {[
+                { label: 'MA #', value: claim.maNumber },
+                { label: 'CL #', value: claim.claimNumber },
+                { label: 'Vehicle', value: claimVehicle },
+                { label: 'Client', value: claim.clientName },
+                { label: 'Owner', value: claim.insuredName },
+              ].map((stat, i) => (
+                <Fragment key={stat.label}>
+                  {i > 0 && <span className="hidden sm:block w-px self-stretch bg-gray-200 mx-6" />}
+                  <ClaimHeaderStat label={stat.label} value={stat.value} />
+                </Fragment>
+              ))}
+            </div>
+            {/* Task 11: admin-only inline assignee picker. Uses the assign API
+                so the DB stays the source of truth; local state mirrors it. */}
+            {isAdmin && editingId && (
+              <div className="flex items-center gap-2 text-xs text-gray-500 mt-4 pt-4 border-t border-gray-100">
+                <span>Assigned to:</span>
+                <select
+                  value={assignedTo ?? ''}
+                  onChange={async (e) => {
+                    const val = e.target.value || null
+                    setAssignedTo(val)
+                    const res = await fetch(`/api/claims/${editingId}/assign`, {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ assignedTo: val }),
+                    })
+                    if (!res.ok) {
+                      const b = await res.json().catch(() => ({} as { error?: string }))
+                      alert((b as { error?: string }).error ?? 'Assign failed')
+                      // Rehydrate from server so a failed change doesn't leave the UI stale.
+                      const fresh = await fetchACVEntry(editingId)
+                      if (fresh) setAssignedTo(fresh.assignedTo ?? null)
+                    }
+                  }}
+                  className="bg-white border border-gray-200 rounded px-2 py-1 text-sm"
+                >
+                  <option value="">Unassigned</option>
+                  {allProfiles.map(p => (
+                    <option key={p.id} value={p.id}>{p.name || p.email}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Task 11: submitted read-only banner for non-admins. Admins still see
+            Approve / Send Back in the toolbar so they don't need this notice. */}
+        {isSubmitted && !isAdmin && submittedAt && (
+          <div className="mb-4 p-3 rounded-lg bg-blue-50 border border-blue-200 text-blue-700 text-sm">
+            Submitted on {new Date(submittedAt).toLocaleString()}. Waiting on admin review.
+            This claim is read-only until an admin sends it back or approves it.
           </div>
         )}
 
@@ -3013,6 +3162,10 @@ function ClaimWorkspaceInner({ claimId }: { claimId: string }) {
           </div>
         )}
 
+        {/* Task 11: read-only for non-admins when claim is submitted, closed,
+            or assigned to someone else. The tab bar above stays clickable so
+            the user can still navigate around and view. */}
+        <fieldset disabled={readOnly} className="border-0 p-0 m-0 min-w-0">
         {/* Step 1: Claim Info + Opposing Appraiser */}
         {step === 1 && (
           <div>
@@ -3630,6 +3783,7 @@ function ClaimWorkspaceInner({ claimId }: { claimId: string }) {
             />
           </div>
         )}
+        </fieldset>
       </main>
 
     </div>
