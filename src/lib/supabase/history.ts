@@ -19,6 +19,13 @@ export interface ACVHistoryEntry {
   result: ACVResult
   mileageRate?: number
   status?: ClaimStatus
+  // Role-based workflow columns (see supabase-migration-roles.sql). Writes go
+  // through dedicated API routes (Task 6) — saveACVHistory intentionally does
+  // NOT include these in its payload, and the column-guard trigger will reject
+  // appraiser attempts to change them anyway.
+  assignedTo?: string | null    // uuid | null; null = unassigned
+  submittedAt?: string | null   // ISO timestamp | null
+  submittedBy?: string | null   // uuid | null
   // Award / Closing Notes editor state (jsonb blob; shape lives in comp-finder).
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   reportsState?: any
@@ -54,6 +61,9 @@ function rowToEntry(row: any): ACVHistoryEntry {
     result: row.result as ACVResult,
     mileageRate: Number(row.mileage_rate ?? 0),
     status: row.status === 'closed' ? 'closed' : 'open',
+    assignedTo: row.assigned_to ?? null,
+    submittedAt: row.submitted_at ?? null,
+    submittedBy: row.submitted_by ?? null,
     reportsState: row.reports_state ?? undefined,
     auctionListings: row.auction_listings ?? undefined,
     estimate: row.estimate ?? undefined,
