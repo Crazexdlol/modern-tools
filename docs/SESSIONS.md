@@ -18,6 +18,59 @@ Read `CLAUDE.md` first if you haven't. Then read the top entry here before touch
 
 ---
 
+## 2026-08-26 — Role-based access shipped (admin + appraiser roles, claim assignment, submit workflow)
+
+**Worked on:** Split Modern Tools' single-shared-login model into two roles. **Admin** sees everything, creates users, assigns claims, and approves/reopens; **appraiser** sees only claims assigned to them and can only submit a claim for admin review, not close or reassign. Includes admin user-management page, personal profile page (name + password change for everyone), an admin-controlled site setting that gates whether appraisers can create claims (default ON), a Completed Assignments queue on the admin dashboard, and full server-side enforcement via RLS + triggers + service-role-guarded API routes. Existing ~487 claims stayed untouched; all start unassigned. Bootstrap admin is the single pre-existing account (xsfabot@gmail.com).
+
+Full design at `docs/superpowers/specs/2026-08-26-role-based-access-design.md`; implementation plan at `docs/superpowers/plans/2026-08-26-role-based-access.md`. Built via superpowers brainstorming → writing-plans → subagent-driven-development (12 tasks, each with implementer + spec review + code-quality review).
+
+**Changed (new files):**
+- `supabase-migration-roles.sql` + `supabase-migration-roles-rollback.sql` — schema for `profiles`, `site_settings`, `assigned_to`/`submitted_at`/`submitted_by` on `acv_history`, RLS policies, column-guard triggers, storage bucket scoping.
+- `src/lib/supabase/service.ts` — server-only `createServiceClient()` using `SUPABASE_SERVICE_ROLE_KEY`.
+- `src/lib/supabase/profiles.ts` — `Role`, `Profile` types + `fetchCurrentProfileBrowser`, `fetchAllProfilesBrowser`, `useCurrentProfile` (session-cached).
+- `src/lib/supabase/site-settings.ts` — `fetchSiteSetting<T>()`.
+- `src/lib/auth/require-admin.ts` — `requireAdmin`, `requireAuth`, `fetchClaim` for API-route guards.
+- `src/app/api/admin/users/route.ts` + `[id]/route.ts` — POST create, PATCH update role/name, DELETE.
+- `src/app/api/admin/site-settings/route.ts` — PATCH allow_regular_create_claims.
+- `src/app/api/claims/[id]/{assign,submit,send-back,approve,reopen}/route.ts` — 5 workflow endpoints, service-role internally, caller identity validated in each.
+- `src/app/api/profile/route.ts` — PATCH own name (user session, not service role).
+- `src/app/profile/page.tsx` — personal Profile page (name + password change via reauth + updateUser).
+- `src/app/admin/_guard.tsx` — server component that 404s non-admins.
+- `src/app/admin/page.tsx` — redirects to /admin/users.
+- `src/app/admin/users/page.tsx` + `users-admin-client.tsx` — users table with role dropdown, inline name edit, add-user modal, delete guard.
+- `src/app/admin/settings/page.tsx` + `settings-admin-client.tsx` — allow-appraisers-to-create-claims toggle.
+
+**Changed (modified files):**
+- `src/lib/supabase/history.ts` — `ACVHistoryEntry` now surfaces `assignedTo`/`submittedAt`/`submittedBy` (workflow-controlled — not written from `saveACVHistory`).
+- `src/components/app-header.tsx` — profile dropdown with Profile / Admin (admin-only) / Sign out.
+- `src/components/claims-table.tsx` — role-aware Assigned To column with inline assign dropdown (admin only), Submitted column for the admin queue.
+- `src/app/page.tsx` — Dashboard: admin dual-card (Open Claims + Completed Assignments); appraiser single-card filtered to their assigned open. New Claim button gated by role + site setting.
+- `src/app/claims/page.tsx` — extends existing table with `adminView` + `profiles`; RLS handles row-level scoping automatically.
+- `src/components/claim/ClaimWorkspace.tsx` — Submit / Approve / Send-Back / Reopen buttons in top toolbar (state-appropriate); submitted-read-only banner + `<fieldset disabled>` for appraiser view of submitted claims; admin inline assign dropdown in header stats; hides open/closed status pill + Save Changes button for non-admins; auto-save timer skips when read-only. Removed the old Step-1 "Submit Claim" button (which bypassed the new workflow by writing status='closed' directly).
+
+**Deploy status: LIVE.** `modern-tools-rho.vercel.app` → `dpl_BC1157BCgHqeVntL7uEWQnTwrfWn` (`modern-tools-cc2p2lzgv`). Alias verified. Sanity-checked prod: `POST /api/admin/users` with no session returns HTTP 401 `Not authenticated` (guard active).
+
+Prerequisite steps completed by Henry BEFORE the code deploy:
+- `supabase-migration-roles.sql` executed in Supabase SQL editor. Verification query confirmed **487 claims preserved**, **1 admin profile** (his account), **1 site_settings row**.
+- `SUPABASE_SERVICE_ROLE_KEY` added to Vercel Production environment.
+
+**Rollback:**
+- Code: `npx vercel promote modern-tools-fwomnen8n-henry-as-projects-88caed67.vercel.app --scope henry-as-projects-88caed67 --yes` (prior good build from 2026-08-26 earlier).
+- Schema: run `supabase-migration-roles-rollback.sql` in Supabase SQL editor (drops all new columns/tables/policies/triggers, restores prior authenticated-wide RLS). Loss-free since existing rows were never modified.
+
+**In progress / broken / unknowns:**
+- **First-run validation is on Henry.** The AI test path is identical to prior features and each task was reviewed for spec + quality, but full end-to-end (create appraiser account → assign claim → appraiser sees only assigned → submit → admin approves → closed) requires a real second user account. Henry needs to (1) log in, (2) go to /admin/users, (3) create a test appraiser account, (4) assign a claim to them, (5) log in as that appraiser and walk the full loop.
+- **Session cache staleness.** `useCurrentProfile` caches role per session; if an admin demotes an active user session, the client keeps showing admin UI until reload. RLS enforces server-side so no data risk, just cosmetic. Documented; can add Realtime sub later.
+- **No email invites, no notifications.** Admin sets password directly (told to user out-of-band); no notification on assign/submit/send-back. Deferred per design.
+- **Column-guard trigger relies on Postgres RLS + trigger cooperation.** If someone drops the trigger via the Supabase dashboard, appraisers regain the ability to change protected columns. Not a common risk but noted.
+
+**Next:**
+- Henry: create the first appraiser account and run the end-to-end test.
+- If flags surface (broken flow, unexpected access, styling issues), file them as small follow-ups.
+- Long-term: email invite flow, in-app notifications, admin impersonation, audit-log viewer — all out of scope for v1 and easy to add on top.
+
+---
+
 ## 2026-08-25 (evening) — Estimate Review feature: shipped
 
 **Worked on:** New AI tool inside the claim workspace's **Estimate Dispute** tab: **Estimate Review**. The Estimate Dispute tab now has two underline sub-tabs — **Compare Two Estimates** (existing, unchanged) and **Estimate Review** (new). Estimate Review uploads 1+ auto-body estimate PDFs plus up to 10 optional reference photos, sends everything to Claude Sonnet 4.6 with the full CCC/MOTOR P-Pages rulebook attached (prompt caching), and returns a table of flagged line items. Each flag cites the P-Pages rule, quotes the relevant text verbatim, suggests a corrected value, and shows the $ impact. There is no auto-computed proposed grand total — Henry decides what to argue. Reviews accumulate on the claim (list of cards, newest on top). Each completed review auto-files a PDF into the claim's Documents tab.
