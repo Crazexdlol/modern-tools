@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { ClaimInfo } from "@/lib/acv/types";
 import type { EstimateReview } from "@/lib/estimate-review/types";
+import { EstimateReviewTab } from "./estimate-review-tab";
 
 // ─── Vehicle area sort order (front to back) ───────────────────────────────
 const VEHICLE_AREA_ORDER: string[] = [
@@ -751,10 +752,10 @@ function Results({ result, onReset, onEdit, onBack, onSave }: {
   );
 }
 
-// ─── Estimate Dispute tab (claim workspace) ────────────────────────────────
+// ─── Compare Two Estimates (sub-tab inside Estimate Dispute) ───────────────
 // Upload two estimates → AI comparison → results saved onto THIS claim
 // (acv_history.estimate) via the workspace auto-save. No separate history.
-export function EstimateTab({
+function CompareEstimates({
   claim,
   estimate,
   onChange,
@@ -856,6 +857,63 @@ export function EstimateTab({
           {loading ? "Comparing... (can take a minute)" : "Compare Estimates"}
         </Button>
       </div>
+    </div>
+  );
+}
+
+// ─── Estimate Dispute tab (claim workspace) ────────────────────────────────
+// Shell that routes between two sub-tabs: Compare Two Estimates (the existing
+// tool) and Estimate Review (P-Pages-driven AI review). Sub-tabs are rendered
+// as GitHub-style underline tabs; state lives here, not in the URL.
+type SubTab = "compare" | "review";
+
+function defaultSubTab(estimate: ClaimEstimate | null): SubTab {
+  const hasCompare = !!estimate?.result;
+  const hasReviews = !!(estimate?.reviews && estimate.reviews.length > 0);
+  if (hasReviews && !hasCompare) return "review";
+  return "compare";
+}
+
+export function EstimateTab({
+  claim,
+  estimate,
+  onChange,
+}: {
+  claim: ClaimInfo;
+  estimate: ClaimEstimate | null;
+  onChange: (next: ClaimEstimate) => void;
+}) {
+  const [subTab, setSubTab] = useState<SubTab>(() => defaultSubTab(estimate));
+
+  return (
+    <div className="space-y-4">
+      <div className="no-print flex gap-6 border-b border-gray-200">
+        {(["compare", "review"] as const).map((id) => {
+          const active = subTab === id;
+          const label = id === "compare" ? "Compare Two Estimates" : "Estimate Review";
+          return (
+            <button
+              key={id}
+              type="button"
+              onClick={() => setSubTab(id)}
+              className={cn(
+                "py-2 text-sm font-semibold transition-colors -mb-px",
+                active
+                  ? "text-gray-900 border-b-2 border-blue-600"
+                  : "text-gray-500 hover:text-gray-700 border-b-2 border-transparent",
+              )}
+            >
+              {label}
+            </button>
+          );
+        })}
+      </div>
+
+      {subTab === "compare" ? (
+        <CompareEstimates claim={claim} estimate={estimate} onChange={onChange} />
+      ) : (
+        <EstimateReviewTab claim={claim} estimate={estimate} onChange={onChange} />
+      )}
     </div>
   );
 }
