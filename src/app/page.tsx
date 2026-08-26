@@ -1,8 +1,9 @@
 "use client"
 
 import { useState, useEffect } from 'react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { Plus } from 'lucide-react'
+import { Plus, Inbox } from 'lucide-react'
 import { MigrateData } from "@/components/migrate-data"
 import { AppHeader } from "@/components/app-header"
 import { ClaimsTable } from "@/components/claims-table"
@@ -57,15 +58,31 @@ export default function DashboardPage() {
             <h2 className="text-2xl font-bold text-gray-900">Dashboard</h2>
             <p className="text-sm text-gray-400">{openClaims.length} open</p>
           </div>
-          {canCreate && (
-            <button
-              onClick={startNewClaim}
-              className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white text-sm font-bold px-5 py-2.5 rounded-lg transition-colors shadow-sm"
-            >
-              <Plus className="w-4 h-4" />
-              New Claim
-            </button>
-          )}
+          <div className="flex items-center gap-2">
+            {isAdmin && (
+              <Link
+                href="/completed-assignments"
+                className="flex items-center gap-2 bg-white border border-gray-200 hover:border-gray-300 text-gray-700 text-sm font-bold px-4 py-2.5 rounded-lg transition-colors shadow-sm"
+              >
+                <Inbox className="w-4 h-4" />
+                Completed Assignments
+                {submittedClaims.length > 0 && (
+                  <span className="inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full bg-blue-600 text-white text-xs font-bold">
+                    {submittedClaims.length}
+                  </span>
+                )}
+              </Link>
+            )}
+            {canCreate && (
+              <button
+                onClick={startNewClaim}
+                className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white text-sm font-bold px-5 py-2.5 rounded-lg transition-colors shadow-sm"
+              >
+                <Plus className="w-4 h-4" />
+                New Claim
+              </button>
+            )}
+          </div>
         </div>
 
         {fetchError && (
@@ -74,38 +91,16 @@ export default function DashboardPage() {
           </div>
         )}
 
-        {/* Open Claims card */}
-        <section>
-          <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">Open Claims</h3>
-          <ClaimsTable
-            entries={openClaims}
-            onDeleted={(id) => setEntries(prev => prev.filter(e => e.id !== id))}
-            emptyText={isAdmin ? 'No open claims.' : 'No claims assigned to you.'}
-            adminView={isAdmin}
-            profiles={profiles}
-            onAssignmentChanged={load}
-          />
-        </section>
-
-        {/* Completed Assignments (admin only) */}
-        {isAdmin && (
-          <section>
-            <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">Completed Assignments</h3>
-            {submittedClaims.length === 0 ? (
-              <div className="text-sm text-gray-400 italic">No completed assignments to review.</div>
-            ) : (
-              <ClaimsTable
-                entries={submittedClaims}
-                onDeleted={(id) => setEntries(prev => prev.filter(e => e.id !== id))}
-                emptyText=""
-                adminView
-                profiles={profiles}
-                showSubmittedColumn
-                onAssignmentChanged={load}
-              />
-            )}
-          </section>
-        )}
+        {/* Open Claims — the only table on the dashboard. Completed assignments
+            live on /completed-assignments (button above). */}
+        <ClaimsTable
+          entries={openClaims}
+          onDeleted={(id) => setEntries(prev => prev.filter(e => e.id !== id))}
+          emptyText={isAdmin ? 'No open claims.' : 'No claims assigned to you.'}
+          adminView={isAdmin}
+          profiles={profiles}
+          onAssignmentChanged={load}
+        />
       </main>
     </div>
   )

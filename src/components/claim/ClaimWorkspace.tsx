@@ -27,6 +27,7 @@ import {
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
 import type { ClaimInfo, MarketComp, SelectedComp, ACVAdjustments, ACVResult } from '@/lib/acv/types'
@@ -2784,12 +2785,27 @@ function ClaimWorkspaceInner({ claimId }: { claimId: string }) {
   // dedicated API routes so the column-guard trigger enforces role-based rules.
   // After each action we refetch the entry to sync the local UI with whatever
   // the server actually persisted.
-  const callWorkflow = async (path: string, confirmMsg?: string) => {
-    if (confirmMsg && !confirm(confirmMsg)) return
-    if (!editingId) return
+  //
+  // Confirmation is done via the in-app ConfirmDialog (see JSX below) rather
+  // than the browser confirm() popup. `pendingWorkflow` holds the current
+  // pending action; the dialog reads title/message from a lookup table.
+  interface PendingWorkflow {
+    path: 'submit' | 'approve' | 'send-back' | 'reopen'
+    title: string
+    message: string
+    confirmLabel: string
+    variant: 'primary' | 'danger'
+  }
+  const [pendingWorkflow, setPendingWorkflow] = useState<PendingWorkflow | null>(null)
+
+  const runWorkflow = async () => {
+    if (!pendingWorkflow) return
+    if (!editingId) { setPendingWorkflow(null); return }
+    const path = pendingWorkflow.path
     setWorkflowBusy(true)
     const res = await fetch(`/api/claims/${editingId}/${path}`, { method: 'POST' })
     setWorkflowBusy(false)
+    setPendingWorkflow(null)
     if (!res.ok) {
       const b = await res.json().catch(() => ({} as { error?: string }))
       alert((b as { error?: string }).error ?? 'Action failed')
@@ -2803,10 +2819,35 @@ function ClaimWorkspaceInner({ claimId }: { claimId: string }) {
       setSubmittedBy(fresh.submittedBy ?? null)
     }
   }
-  const handleSubmit   = () => callWorkflow('submit',    'Submit this claim for admin review? You will not be able to edit it after submitting.')
-  const handleApprove  = () => callWorkflow('approve',   'Approve and close this claim?')
-  const handleSendBack = () => callWorkflow('send-back', 'Send this claim back to the appraiser?')
-  const handleReopen   = () => callWorkflow('reopen',    'Reopen this closed claim?')
+
+  const handleSubmit = () => setPendingWorkflow({
+    path: 'submit',
+    title: 'Submit this claim for admin review?',
+    message: 'You will not be able to edit the claim after submitting. Only an admin can then approve it or send it back.',
+    confirmLabel: 'Submit',
+    variant: 'primary',
+  })
+  const handleApprove = () => setPendingWorkflow({
+    path: 'approve',
+    title: 'Approve and close this claim?',
+    message: 'The claim will be marked closed and move to the All Claims list.',
+    confirmLabel: 'Approve',
+    variant: 'primary',
+  })
+  const handleSendBack = () => setPendingWorkflow({
+    path: 'send-back',
+    title: 'Send this claim back to the appraiser?',
+    message: 'The appraiser will be able to edit the claim again and re-submit.',
+    confirmLabel: 'Send Back',
+    variant: 'primary',
+  })
+  const handleReopen = () => setPendingWorkflow({
+    path: 'reopen',
+    title: 'Reopen this closed claim?',
+    message: 'The claim will return to the Open Claims list. Any prior submission history is cleared.',
+    confirmLabel: 'Reopen',
+    variant: 'primary',
+  })
 
   // Admin needs the list of users for the inline assign dropdown; skip the
   // fetch for non-admins to avoid the extra roundtrip on every workspace load.
@@ -2973,6 +3014,17 @@ function ClaimWorkspaceInner({ claimId }: { claimId: string }) {
             </div>
           )}
         </div>
+
+        <ConfirmDialog
+          open={!!pendingWorkflow}
+          title={pendingWorkflow?.title ?? ''}
+          message={pendingWorkflow?.message ?? ''}
+          confirmLabel={pendingWorkflow?.confirmLabel ?? 'Confirm'}
+          variant={pendingWorkflow?.variant ?? 'primary'}
+          busy={workflowBusy}
+          onConfirm={runWorkflow}
+          onCancel={() => setPendingWorkflow(null)}
+        />
 
         {isNew ? (
           <h1 className="text-3xl font-extrabold text-gray-900 tracking-tight mb-6">New Claim</h1>
