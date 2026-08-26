@@ -2986,7 +2986,7 @@ function ClaimWorkspaceInner({ claimId }: { claimId: string }) {
           {!isNew && editingId && (
             <button
               type="button"
-              onClick={triggerAssignmentSheetPrint}
+              onClick={() => triggerAssignmentSheetPrint(`${claim.maNumber || 'claim'}-assignment-sheet.pdf`)}
               className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-600 hover:text-gray-900 text-sm font-medium transition-colors"
               title="Print the assignment sheet"
             >

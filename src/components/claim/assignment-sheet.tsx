@@ -1,14 +1,18 @@
 "use client"
 
 // Assignment Sheet — a single-page printable summary of the claim.
-// Rendered via a React portal directly into <body> so print CSS can hide
-// every OTHER body child without also hiding this sheet (which would happen
-// if it were nested deep in the app tree). See triggerAssignmentSheetPrint.
+// Rendered as a hidden portal in <body>; captured to a PDF blob via
+// html2canvas + jspdf when the Print button is clicked, then handed to the
+// OS Save-As picker. PDF output has no browser chrome (no URL footer), so
+// physical prints of the saved PDF come out clean.
 import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
+import html2canvas from 'html2canvas'
+import { jsPDF } from 'jspdf'
 import type { ClaimInfo } from '@/lib/acv/types'
 import { formatCurrency } from '@/lib/acv/calculations'
 import { mileageModifierFor, type DVState } from '@/components/claim/dv-tab'
+import { savePdfWithPicker } from '@/lib/save-pdf'
 
 export interface AssignmentSheetData {
   claim: ClaimInfo
@@ -63,7 +67,10 @@ export function AssignmentSheet({ data }: { data: AssignmentSheetData }) {
   // Mount into <body> via a portal so print CSS can hide every OTHER body
   // child without also hiding this sheet.
   const [mounted, setMounted] = useState(false)
-  useEffect(() => { setMounted(true) }, [])
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- mount-flag pattern; setState fires once to signal client-side render (createPortal needs document)
+    setMounted(true)
+  }, [])
   if (!mounted) return null
 
   const printedOn = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
@@ -170,13 +177,10 @@ export function AssignmentSheet({ data }: { data: AssignmentSheetData }) {
       </div>
 
       <style jsx global>{`
+        /* The portal stays display:none on screen; html2canvas captures it
+           via an onclone hook that forces the clone visible (see
+           triggerAssignmentSheetPrint). */
         .assignment-print-portal { display: none; }
-        @media print {
-          body.printing-assignment-sheet > *:not(.assignment-print-portal) { display: none !important; }
-          body.printing-assignment-sheet .assignment-print-portal { display: block !important; }
-          @page { size: letter; margin: 0.4in; }
-          html, body { background: white !important; }
-        }
         .assignment-sheet {
           background: white;
           color: black;
@@ -193,7 +197,9 @@ export function AssignmentSheet({ data }: { data: AssignmentSheetData }) {
           padding-bottom: 8px;
           margin-bottom: 10px;
         }
-        .header-left .logo { height: 44px; width: auto; display: block; }
+        /* filter: brightness(0) forces the white/light logo image to render
+           as solid black on the printed page (preserves transparency). */
+        .header-left .logo { height: 44px; width: auto; display: block; filter: brightness(0); }
         .header-right { text-align: right; }
         .title { font-size: 20px; font-weight: 700; letter-spacing: 0.02em; line-height: 1.1; }
         .printed { font-size: 11px; color: #444; margin-top: 2px; }
@@ -250,19 +256,53 @@ function MoneyRow({ label, value }: { label: string; value: number }) {
   )
 }
 
-// Called by the Print button. Adds a body class that hides everything except
-// this portal in print CSS, opens the browser print dialog, then removes the
-// class after the dialog closes (onafterprint or the sync fallback).
-export function triggerAssignmentSheetPrint() {
-  const CLASS = 'printing-assignment-sheet'
-  document.body.classList.add(CLASS)
-  const cleanup = () => {
-    document.body.classList.remove(CLASS)
-    window.removeEventListener('afterprint', cleanup)
+// Called by the Print button. Captures the hidden assignment-sheet portal
+// via html2canvas, fits the image onto a single Letter-size PDF page via
+// jspdf, and prompts the OS Save-As picker. PDF output has no browser chrome
+// so physical prints from the saved PDF come out clean (no URL footer).
+export async function triggerAssignmentSheetPrint(fileName: string): Promise<void> {
+  const el = document.querySelector('.assignment-sheet') as HTMLElement | null
+  if (!el) return
+
+  const canvas = await html2canvas(el, {
+    scale: 2,
+    backgroundColor: '#ffffff',
+    windowWidth: 816, // 8.5in at 96dpi — matches Summary page's approach
+    onclone: (clonedDoc) => {
+      // The portal is display:none on screen. Force the CLONE (which
+      // html2canvas actually renders from) visible without touching the
+      // live DOM.
+      const portal = clonedDoc.querySelector('.assignment-print-portal') as HTMLElement | null
+      if (portal) {
+        portal.style.display = 'block'
+        portal.style.position = 'static'
+        portal.style.width = '816px'
+        portal.style.background = '#ffffff'
+      }
+    },
+  })
+
+  // Fit the captured image onto a single Letter page. The sheet is designed
+  // to fit in one page already; if the capture is taller than one page, we
+  // scale down to fit rather than paginating (the assignment sheet is
+  // one-page-always per spec).
+  const pageWidthPt = 612  // Letter, points (8.5in × 72pt/in)
+  const pageHeightPt = 792 // Letter, points (11in × 72pt/in)
+  const imgAspect = canvas.height / canvas.width
+  let renderWidth = pageWidthPt
+  let renderHeight = pageWidthPt * imgAspect
+  if (renderHeight > pageHeightPt) {
+    // Scale down to fit height, center horizontally.
+    renderHeight = pageHeightPt
+    renderWidth = pageHeightPt / imgAspect
   }
-  window.addEventListener('afterprint', cleanup)
-  window.print()
-  // Fallback: some browsers fire afterprint immediately; some don't fire it
-  // reliably. Belt: also clean up after a short timeout.
-  setTimeout(cleanup, 1000)
+  const offsetX = (pageWidthPt - renderWidth) / 2
+  const offsetY = (pageHeightPt - renderHeight) / 2
+
+  const pdf = new jsPDF({ unit: 'pt', format: 'letter' })
+  const img = canvas.toDataURL('image/jpeg', 0.95)
+  pdf.addImage(img, 'JPEG', offsetX, offsetY, renderWidth, renderHeight)
+
+  const blob = pdf.output('blob')
+  await savePdfWithPicker(blob, fileName)
 }
