@@ -3092,7 +3092,7 @@ function ClaimWorkspaceInner({ claimId }: { claimId: string }) {
             (Claim Info / Documents) on top, the tools below. */}
         {!isNew && (
         <div className="mb-6">
-          <div className="flex items-center gap-2 mb-3">
+          <div className="flex items-center justify-center gap-12 mb-5 border-b border-gray-200">
             {CLAIM_TABS.map((tab) => {
               const active = tabForStep(step) === tab.id
               return (
@@ -3101,10 +3101,10 @@ function ClaimWorkspaceInner({ claimId }: { claimId: string }) {
                   type="button"
                   onClick={() => setStep(tab.step)}
                   className={cn(
-                    'px-4 py-1.5 rounded-full text-xs font-semibold border transition-colors',
+                    'pb-3 text-lg font-bold whitespace-nowrap border-b-2 -mb-px transition-colors',
                     active
-                      ? 'bg-blue-600 border-blue-600 text-white'
-                      : 'bg-white border-gray-200 text-gray-600 hover:border-gray-300'
+                      ? 'border-blue-600 text-blue-600'
+                      : 'border-transparent text-gray-500 hover:text-gray-900 hover:border-gray-300'
                   )}
                 >
                   {tab.label}
