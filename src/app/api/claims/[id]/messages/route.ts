@@ -1,0 +1,130 @@
+import { NextRequest, NextResponse } from 'next/server'
+import { createServerClient } from '@supabase/ssr'
+import { cookies } from 'next/headers'
+import { requireClaimAccess } from '@/lib/auth/require-claim-access'
+
+export const runtime = 'nodejs'
+
+const MAX_BODY_LEN = 4000
+
+interface MessageRow {
+  id: string
+  claim_id: string
+  sender_id: string | null
+  sender_name: string
+  recipient_ids: string[]
+  recipient_names: string[]
+  body: string
+  created_at: string
+}
+
+function rowToMessage(r: MessageRow) {
+  return {
+    id: r.id,
+    claimId: r.claim_id,
+    senderId: r.sender_id,
+    senderName: r.sender_name,
+    recipientIds: r.recipient_ids,
+    recipientNames: r.recipient_names,
+    body: r.body,
+    createdAt: r.created_at,
+  }
+}
+
+async function getSupabaseFromCookies() {
+  const cookieStore = await cookies()
+  return createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    { cookies: { getAll() { return cookieStore.getAll() }, setAll() {} } }
+  )
+}
+
+// GET /api/claims/[id]/messages — list all messages on the claim, oldest-first.
+export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params
+  const { errorResponse } = await requireClaimAccess(id)
+  if (errorResponse) return errorResponse
+
+  const supabase = await getSupabaseFromCookies()
+  const { data, error } = await supabase
+    .from('messages')
+    .select('*')
+    .eq('claim_id', id)
+    .order('created_at', { ascending: true })
+  if (error) return NextResponse.json({ error: error.message }, { status: 400 })
+
+  return NextResponse.json({ messages: (data as MessageRow[]).map(rowToMessage) })
+}
+
+// POST /api/claims/[id]/messages — send a message.
+// Body: { recipientIds: string[], body: string }
+export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { id: claimId } = await params
+  const { caller, errorResponse } = await requireClaimAccess(claimId)
+  if (errorResponse) return errorResponse
+
+  const body = await request.json().catch(() => null) as { recipientIds?: unknown; body?: unknown } | null
+  if (!body) return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
+
+  const text = typeof body.body === 'string' ? body.body.trim() : ''
+  if (!text) return NextResponse.json({ error: 'Message body is required' }, { status: 400 })
+  if (text.length > MAX_BODY_LEN) {
+    return NextResponse.json({ error: `Message is too long (max ${MAX_BODY_LEN} characters)` }, { status: 400 })
+  }
+
+  const recipientIds = Array.isArray(body.recipientIds)
+    ? (body.recipientIds.filter((v): v is string => typeof v === 'string'))
+    : []
+  if (recipientIds.length === 0) {
+    return NextResponse.json({ error: 'At least one recipient is required' }, { status: 400 })
+  }
+
+  const supabase = await getSupabaseFromCookies()
+
+  // Look up sender + recipient profiles for the captured display names.
+  const allIds = Array.from(new Set([caller!.userId, ...recipientIds]))
+  const { data: profs, error: profErr } = await supabase
+    .from('profiles')
+    .select('id, name, email')
+    .in('id', allIds)
+  if (profErr) return NextResponse.json({ error: profErr.message }, { status: 400 })
+
+  const profMap = new Map<string, { name: string; email: string }>()
+  for (const p of profs ?? []) profMap.set(p.id as string, { name: (p.name as string) || '', email: (p.email as string) || '' })
+
+  const senderProf = profMap.get(caller!.userId)
+  if (!senderProf) return NextResponse.json({ error: 'Sender profile not found' }, { status: 403 })
+
+  // Validate every recipient id is a real profile.
+  const missing = recipientIds.filter(rid => !profMap.has(rid))
+  if (missing.length > 0) {
+    return NextResponse.json({ error: `Unknown recipient(s): ${missing.join(', ')}` }, { status: 400 })
+  }
+
+  const senderName = senderProf.name || senderProf.email || 'Unknown'
+  const recipientNames = recipientIds.map(rid => {
+    const p = profMap.get(rid)!
+    return p.name || p.email || 'Unknown'
+  })
+
+  const id = crypto.randomUUID()
+  const { data: inserted, error: insertErr } = await supabase
+    .from('messages')
+    .insert({
+      id,
+      claim_id: claimId,
+      sender_id: caller!.userId,
+      sender_name: senderName,
+      recipient_ids: recipientIds,
+      recipient_names: recipientNames,
+      body: text,
+    })
+    .select('*')
+    .maybeSingle()
+  if (insertErr || !inserted) {
+    return NextResponse.json({ error: insertErr?.message ?? 'Insert failed' }, { status: 400 })
+  }
+
+  return NextResponse.json({ message: rowToMessage(inserted as MessageRow) })
+}
