@@ -98,5 +98,15 @@ export async function fillNotesPdf(data: NotesPdfData): Promise<Uint8Array> {
   })
   form.acroForm.dict.delete(PDFName.of('CO'))
 
+  // Ensure every field has a proper appearance before flattening — pdf-lib's
+  // flatten() bakes the current appearance stream into page content, and any
+  // fields we cleared AP on above would render blank otherwise.
+  form.getFields().forEach(f => {
+    try { form.getTextField(f.getName()).defaultUpdateAppearances(timesRoman) } catch { /* not a text field */ }
+  })
+
+  // Flatten so values print as static text (no editable form fields).
+  form.flatten()
+
   return doc.save()
 }

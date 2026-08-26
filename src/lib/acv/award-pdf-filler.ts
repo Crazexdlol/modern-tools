@@ -62,5 +62,8 @@ export async function fillAwardPdf(data: AwardPdfData): Promise<Uint8Array> {
     } catch { /* field may not exist */ }
   }
 
+  // Flatten so values print as static text (no editable form fields).
+  form.flatten()
+
   return doc.save()
 }

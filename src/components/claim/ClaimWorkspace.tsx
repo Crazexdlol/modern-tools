@@ -182,6 +182,7 @@ function ClaimInfoForm({
         maNumber: data.maNumber || claim.maNumber,
         claimNumber: data.claimNumber || claim.claimNumber,
         dateOfLoss: data.dateOfLoss || claim.dateOfLoss,
+        dateReceived: data.dateReceived || claim.dateReceived,
         clientType: data.clientType || claim.clientType,
         clientName: data.clientName || claim.clientName,
         insuredName: data.insuredName || claim.insuredName,
@@ -1217,6 +1218,9 @@ function getDropdownValue(type: NotesType): string {
 interface ReportsState {
   notesType: NotesType
   notesData: {
+    // Closing Notes date. Empty until the tab is first opened; then auto-set to
+    // that day's date. Editable. Falls back to today's date at PDF generation.
+    date: string
     maValueNum: number
     appraiserName: string
     appraiserCompany: string
@@ -1248,6 +1252,10 @@ function defaultReportsState(claim: ClaimInfo): ReportsState {
   return {
     notesType: 'acv',
     notesData: {
+      // Left empty so it can auto-fill with today's date on FIRST tab open,
+      // not at claim-creation time. See the useEffect near ReportsStep's view
+      // handler.
+      date: '',
       maValueNum: 0,
       appraiserName: '',
       appraiserCompany: '',
@@ -1263,10 +1271,12 @@ function defaultReportsState(claim: ClaimInfo): ReportsState {
       vehicleOwner: claim.insuredName || '',
       vehicle: [claim.year, claim.make, claim.model].filter(Boolean).join(' '),
       dateOfLoss: claim.dateOfLoss || '',
-      claimDate: new Date().toISOString().split('T')[0],
+      // Left empty so it can auto-fill on FIRST Award tab open — matches
+      // Closing Notes behavior. Signature date defaults the same way.
+      claimDate: '',
       claimNumber: claim.claimNumber || '',
       acvAmountNum: 0,
-      signatureDate1: new Date().toISOString().split('T')[0],
+      signatureDate1: '',
       signatureDate2: '',
       signatureBlock1: 'Henry Aleksanyan\nModern Appraisers',
       signatureBlock2: '',
@@ -1388,7 +1398,8 @@ function ReportsStep({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          date: today,
+          // Use the user-set date if present; fall back to today.
+          date: notesData.date || today,
           fileNumber: claim.maNumber,
           claimNumber: claim.claimNumber,
           insuranceCompany: claim.insuranceCompany,
@@ -1501,14 +1512,20 @@ function ReportsStep({
           // Claim Info actually has a value, so an existing entry is never wiped.
           const opposingAppraiser = notesData.appraiserName || existing.opposingAppraiser
           const oaCompany = notesData.appraiserCompany || existing.oaCompany
+          // Same idea for Date Received Claim: only backfill if the summary's
+          // field is currently empty AND we have a value from the CL PDF parse.
+          const dateReceivedClaim =
+            existing.dateReceivedClaim || claim.dateReceived || ''
           const needsSync =
             opposingAppraiser !== existing.opposingAppraiser ||
-            oaCompany !== existing.oaCompany
+            oaCompany !== existing.oaCompany ||
+            dateReceivedClaim !== existing.dateReceivedClaim
           const synced = needsSync
             ? {
                 ...existing,
                 opposingAppraiser,
                 oaCompany,
+                dateReceivedClaim,
                 updatedAt: new Date().toISOString(),
               }
             : existing
@@ -1530,6 +1547,8 @@ function ReportsStep({
         vehicleOwner: claim.insuredName || '',
         vehicle: [claim.year, claim.make, claim.model].filter(Boolean).join(' '),
         dateOfLoss: claim.dateOfLoss || '',
+        // Auto-fill from the CL PDF's Appraisal Information > Date Created.
+        dateReceivedClaim: claim.dateReceived || '',
         opposingAppraiser: notesData.appraiserName || '',
         oaCompany: notesData.appraiserCompany || '',
       }
@@ -1563,6 +1582,41 @@ function ReportsStep({
     } else {
       setSelectedReport(view)
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view])
+
+  // First-open date auto-fill: when the user opens the Closing Notes or Award
+  // tab and the date field is still empty, fill in today's date. Editable
+  // afterwards; a manual clear that leaves the field empty will re-fill on the
+  // next open (acceptable trade-off — dates rarely stay intentionally blank).
+  useEffect(() => {
+    if (view !== 'closing-notes') return
+    if (reportsState.notesData.date) return
+    const today = new Date().toISOString().split('T')[0]
+    onReportsStateChange(prev =>
+      prev.notesData.date
+        ? prev
+        : { ...prev, notesData: { ...prev.notesData, date: today } },
+    )
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view])
+
+  useEffect(() => {
+    if (view !== 'award-agreement') return
+    const today = new Date().toISOString().split('T')[0]
+    onReportsStateChange(prev => {
+      const needsClaimDate = !prev.awardData.claimDate
+      const needsSigDate = !prev.awardData.signatureDate1
+      if (!needsClaimDate && !needsSigDate) return prev
+      return {
+        ...prev,
+        awardData: {
+          ...prev.awardData,
+          claimDate: needsClaimDate ? today : prev.awardData.claimDate,
+          signatureDate1: needsSigDate ? today : prev.awardData.signatureDate1,
+        },
+      }
+    })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [view])
 
@@ -1851,6 +1905,17 @@ function ReportsStep({
             </div>
           </CardHeader>
           <CardContent className="space-y-4">
+            {/* Date (auto-fills today on first open; editable) */}
+            <div className="w-48">
+              <label className={labelCls}>Date</label>
+              <input
+                type="date"
+                className={inputCls}
+                value={notesData.date}
+                onChange={(e) => setNotes('date', e.target.value)}
+              />
+            </div>
+
             {/* Type selector */}
             <div>
               <label className={labelCls}>Assignment Type</label>
@@ -2679,10 +2744,18 @@ function ClaimWorkspaceInner({ claimId }: { claimId: string }) {
   const saveExtras = { status, auctionListings, estimate, documents, dv, invoice }
 
   // Auto-file a generated/printed report PDF into the claim's Documents tab.
+  // Always numbers files of the same source per claim ("MA1234-award (1).pdf",
+  // "MA1234-award (2).pdf", ...) so Henry can distinguish multiple saves of the
+  // same report type (an updated award, a revised summary, etc).
   const addDocument = async (blob: Blob, name: string, source: ClaimDocument['source']) => {
     const id = editingIdRef.current
     if (!id) return
-    const doc = await uploadClaimDocument(id, blob, name, source)
+    const seq = documents.filter(d => d.source === source).length + 1
+    const dot = name.lastIndexOf('.')
+    const stem = dot > 0 ? name.slice(0, dot) : name
+    const ext = dot > 0 ? name.slice(dot) : ''
+    const numbered = `${stem} (${seq})${ext}`
+    const doc = await uploadClaimDocument(id, blob, numbered, source)
     if (doc) setDocuments(prev => [...prev, doc])
   }
 

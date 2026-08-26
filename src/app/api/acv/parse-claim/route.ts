@@ -42,6 +42,8 @@ function parseClaimText(text: string) {
     text.match(/Vehicle Information[\s\S]*?(?=Appraisal Information|Damage|$)/i)?.[0] || ''
   const insuranceSection =
     text.match(/Insurance Information[\s\S]*?(?=Owner Information|$)/i)?.[0] || text
+  const appraisalSection =
+    text.match(/Appraisal Information[\s\S]*?(?=Damage|Vehicle Information|$)/i)?.[0] || ''
 
   // File / MA number
   const maNumber = grab(text, 'File #')
@@ -63,6 +65,21 @@ function parseClaimText(text: string) {
     const d = new Date(dolRaw)
     if (!isNaN(d.getTime())) {
       dateOfLoss = d.toISOString().split('T')[0]
+    }
+  }
+
+  // Date received (assignment created) — from Appraisal Information > Date Created.
+  // This becomes Date Received Claim on the Summary Page.
+  const dcRaw =
+    grabFromSection(appraisalSection || text, 'Date Created') ||
+    grabFromSection(appraisalSection || text, 'Date Assigned')
+  let dateReceived = ''
+  if (dcRaw) {
+    // Assignment PDFs often include a time ("07/29/2026 10:15 AM"); take just the date.
+    const cleaned = dcRaw.replace(/\s+\d{1,2}:\d{2}(:\d{2})?\s*(AM|PM)?.*$/i, '').trim()
+    const d = new Date(cleaned)
+    if (!isNaN(d.getTime())) {
+      dateReceived = d.toISOString().split('T')[0]
     }
   }
 
@@ -106,6 +123,7 @@ function parseClaimText(text: string) {
     maNumber,
     claimNumber,
     dateOfLoss,
+    dateReceived,
     clientType,
     clientName: clientName || '',
     insuredName: insuredName || `${firstName} ${lastName}`.trim(),

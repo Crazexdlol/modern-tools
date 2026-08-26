@@ -255,6 +255,11 @@ export async function fillACVPdf(
     }
   })
 
+  // Flatten AcroForm fields so the printed PDF is clean static text — no
+  // editable fields, no accidental edits from the reader. All appearances
+  // were already updated to Times Roman above, so flatten renders them as-is.
+  form.flatten()
+
   // ── Add comp listing pages ──────────────────────────────────────────────────
   await addCompPages(doc, claim, comps)
 

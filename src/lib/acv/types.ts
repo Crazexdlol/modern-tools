@@ -2,6 +2,11 @@ export interface ClaimInfo {
   maNumber: string
   claimNumber: string
   handlingAppraiser?: string
+  // Date the assignment was received (parsed from the CL PDF's Appraisal
+  // Information -> Date Created field). Auto-fills Date Received Claim on
+  // the Summary Page. Optional so existing claims that predate this field
+  // continue to work.
+  dateReceived?: string
   dateOfLoss: string
   clientType: 'Insured' | 'Claimant'
   clientName: string

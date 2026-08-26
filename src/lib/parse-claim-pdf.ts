@@ -68,6 +68,9 @@ export interface ParsedClaim {
   maNumber: string
   claimNumber: string
   dateOfLoss: string
+  // Date the assignment was received (from Appraisal Information > Date Created).
+  // Empty if the field wasn't found or couldn't be parsed as a date.
+  dateReceived: string
   clientType: 'Insured' | 'Claimant'
   clientName: string
   insuredName: string
@@ -93,6 +96,8 @@ function parseClaimText(text: string): ParsedClaim {
     text.match(/Vehicle Information[\s\S]*?(?=Appraisal Information|Damage|$)/i)?.[0] || ''
   const insuranceSection =
     text.match(/Insurance Information[\s\S]*?(?=Owner Information|$)/i)?.[0] || text
+  const appraisalSection =
+    text.match(/Appraisal Information[\s\S]*?(?=Damage|Vehicle Information|$)/i)?.[0] || ''
 
   // File / MA number
   const maNumber = grab(text, 'File #')
@@ -113,6 +118,21 @@ function parseClaimText(text: string): ParsedClaim {
     const d = new Date(dolRaw)
     if (!isNaN(d.getTime())) {
       dateOfLoss = d.toISOString().split('T')[0]
+    }
+  }
+
+  // Date received (assignment created) — from Appraisal Information > Date Created.
+  // Auto-fills Date Received Claim on the Summary Page.
+  const dcRaw =
+    grab(appraisalSection || text, 'Date Created') ||
+    grab(appraisalSection || text, 'Date Assigned')
+  let dateReceived = ''
+  if (dcRaw) {
+    // Assignment PDFs often include a time ("07/29/2026 10:15 AM"); take just the date.
+    const cleaned = dcRaw.replace(/\s+\d{1,2}:\d{2}(:\d{2})?\s*(AM|PM)?.*$/i, '').trim()
+    const d = new Date(cleaned)
+    if (!isNaN(d.getTime())) {
+      dateReceived = d.toISOString().split('T')[0]
     }
   }
 
@@ -157,6 +177,7 @@ function parseClaimText(text: string): ParsedClaim {
     maNumber: na(maNumber),
     claimNumber: na(claimNumber),
     dateOfLoss,
+    dateReceived,
     clientType,
     clientName: na(clientName),
     insuredName: na(insuredName || `${firstName} ${lastName}`.trim()),
