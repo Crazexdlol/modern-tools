@@ -4,7 +4,6 @@
 // Rendered via a React portal directly into <body> so print CSS can hide
 // every OTHER body child without also hiding this sheet (which would happen
 // if it were nested deep in the app tree). See triggerAssignmentSheetPrint.
-import Image from 'next/image'
 import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { ClaimInfo } from '@/lib/acv/types'
@@ -84,7 +83,8 @@ export function AssignmentSheet({ data }: { data: AssignmentSheetData }) {
         {/* Header */}
         <div className="header">
           <div className="header-left">
-            <Image src="/logo.png" alt="Modern Appraisers" width={220} height={64} className="h-14 w-auto" />
+            {/* eslint-disable-next-line @next/next/no-img-element -- plain <img> renders more reliably than next/image in a print portal */}
+            <img src="/logo.png" alt="Modern Appraisers" className="logo" />
           </div>
           <div className="header-right">
             <div className="title">Assignment Sheet</div>
@@ -174,50 +174,54 @@ export function AssignmentSheet({ data }: { data: AssignmentSheetData }) {
         @media print {
           body.printing-assignment-sheet > *:not(.assignment-print-portal) { display: none !important; }
           body.printing-assignment-sheet .assignment-print-portal { display: block !important; }
-          @page { margin: 0.5in; }
+          @page { size: letter; margin: 0.4in; }
+          html, body { background: white !important; }
         }
         .assignment-sheet {
           background: white;
           color: black;
           font-family: "Times New Roman", Times, serif;
-          padding: 24px;
-          max-width: 8.5in;
+          padding: 16px 20px;
+          max-width: 7.7in;
           margin: 0 auto;
         }
         .header {
           display: flex;
           justify-content: space-between;
-          align-items: flex-start;
+          align-items: center;
           border-bottom: 2px solid #000;
-          padding-bottom: 14px;
-          margin-bottom: 18px;
+          padding-bottom: 8px;
+          margin-bottom: 10px;
         }
+        .header-left .logo { height: 44px; width: auto; display: block; }
         .header-right { text-align: right; }
-        .title { font-size: 24px; font-weight: 700; letter-spacing: 0.02em; }
-        .printed { font-size: 12px; color: #444; margin-top: 4px; }
+        .title { font-size: 20px; font-weight: 700; letter-spacing: 0.02em; line-height: 1.1; }
+        .printed { font-size: 11px; color: #444; margin-top: 2px; }
         .section {
-          margin-bottom: 14px;
-          padding-bottom: 12px;
-          border-bottom: 1px solid #ccc;
+          margin-bottom: 8px;
+          padding-bottom: 6px;
+          border-bottom: 1px solid #bbb;
+          page-break-inside: avoid;
+          break-inside: avoid;
         }
-        .section:last-of-type { border-bottom: none; }
+        .section:last-of-type { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
         .section h3 {
-          font-size: 11px;
+          font-size: 10px;
           font-weight: 700;
-          letter-spacing: 0.15em;
+          letter-spacing: 0.12em;
           text-transform: uppercase;
           color: #444;
-          margin: 0 0 8px 0;
+          margin: 0 0 4px 0;
         }
         .grid-2 {
           display: grid;
           grid-template-columns: 1fr 1fr;
-          gap: 6px 32px;
+          gap: 4px 32px;
         }
         .grid-money {
           display: grid;
           grid-template-columns: 1fr auto;
-          gap: 4px 32px;
+          gap: 3px 32px;
           max-width: 420px;
         }
       `}</style>
