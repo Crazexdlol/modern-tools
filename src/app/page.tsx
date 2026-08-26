@@ -28,7 +28,10 @@ export default function DashboardPage() {
     setProfiles(profs)
     setAllowCreate(gate ?? true)
   }
-  useEffect(() => { load() }, [])
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- mount-load pattern; setState fires only after the async fetch resolves
+    load()
+  }, [])
 
   const isAdmin = profile?.role === 'admin'
   const openClaims = entries.filter(e => e.status !== 'closed' && !e.submittedAt)

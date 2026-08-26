@@ -78,8 +78,8 @@ export function useCurrentProfile(): { profile: Profile | null; loading: boolean
   }
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- mount-load pattern; setState fires only after the async fetch resolves
     if (!cache) load()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   return { profile, loading, refresh: () => { cache = null; load() } }

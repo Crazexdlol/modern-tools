@@ -11,12 +11,18 @@ export function UsersAdminClient() {
   const [showAdd, setShowAdd] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  // Load the profile list. Initial `loading` state is true; the fetch clears
+  // it. On subsequent refreshes (after add/delete/role change) we skip the
+  // brief loading flicker since the table already has data.
   const load = async () => {
-    setLoading(true)
-    setProfiles(await fetchAllProfilesBrowser())
+    const rows = await fetchAllProfilesBrowser()
+    setProfiles(rows)
     setLoading(false)
   }
-  useEffect(() => { load() }, [])
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- mount-load pattern; setState fires only after the async fetch resolves
+    void load()
+  }, [])
 
   const changeRole = async (id: string, role: Role) => {
     setError(null)
