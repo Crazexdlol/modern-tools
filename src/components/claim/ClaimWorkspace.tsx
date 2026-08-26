@@ -2449,6 +2449,9 @@ function ClaimWorkspaceInner({ claimId }: { claimId: string }) {
     if (!claim.maNumber && !claim.insuredName) return
     // Don't fire while a claim is still loading from Supabase.
     if (loadingClaim || claimNotFound) return
+    // Read-only viewers (non-admin, and not the assignee, or claim is
+    // submitted/closed) must not trigger writes — the server would reject.
+    if (readOnly) return
     setHasUnsavedChanges(true)
     if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current)
     autoSaveTimer.current = setTimeout(() => {
@@ -2849,27 +2852,6 @@ function ClaimWorkspaceInner({ claimId }: { claimId: string }) {
     setCreatingClaim(false)
   }
 
-  // Submit = save + close in one step, then leave the workspace for the All
-  // Claims dashboard (where closed claims live). Confirmed first since it's
-  // not reversible from this screen.
-  const [submittingClaim, setSubmittingClaim] = useState(false)
-  const submitClaim = async () => {
-    if (!confirm('Submit this claim? It will be marked closed and moved off the open dashboard.')) return
-    setSubmittingClaim(true)
-    if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current)
-    let id = editingIdRef.current
-    if (!id) {
-      id = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
-      editingIdRef.current = id
-      setEditingId(id)
-    }
-    await saveToHistory(claim, builtComps, adjustments, result, modeRef.current, id, mileageRate, reportsState, { ...saveExtras, status: 'closed' })
-    setStatus('closed')
-    setHasUnsavedChanges(false)
-    setSubmittingClaim(false)
-    router.push('/claims')
-  }
-
   const startOver = () => {
     // Cancel any pending auto-save so the cleared claim isn't resurrected.
     if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current)
@@ -2917,7 +2899,7 @@ function ClaimWorkspaceInner({ claimId }: { claimId: string }) {
             <ArrowLeft className="w-4 h-4" />
             Dashboard
           </Link>
-          {!isNew && (
+          {!isNew && isAdmin && (
             <button
               onClick={toggleStatus}
               className={cn(
@@ -2931,7 +2913,7 @@ function ClaimWorkspaceInner({ claimId }: { claimId: string }) {
               {status === 'open' ? 'Open' : 'Closed'}
             </button>
           )}
-          {hasUnsavedChanges && (
+          {!readOnly && hasUnsavedChanges && (
             <div className="flex items-center gap-2 ml-auto">
               <span className="text-xs text-amber-600 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full font-medium">Unsaved changes</span>
               <Button
@@ -3225,18 +3207,6 @@ function ClaimWorkspaceInner({ claimId }: { claimId: string }) {
                 >
                   {creatingClaim ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Plus className="w-4 h-4 mr-2" />}
                   Create Claim
-                </Button>
-              </div>
-            )}
-            {!isNew && (
-              <div className="flex justify-end mt-6">
-                <Button
-                  onClick={submitClaim}
-                  disabled={submittingClaim}
-                  className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold"
-                >
-                  {submittingClaim ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Check className="w-4 h-4 mr-2" />}
-                  Submit Claim
                 </Button>
               </div>
             )}
