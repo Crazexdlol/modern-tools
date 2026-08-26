@@ -1,11 +1,12 @@
 "use client"
 
-import { useState, useEffect } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
 import { usePathname } from 'next/navigation'
+import { ChevronDown, User as UserIcon, Shield } from 'lucide-react'
 import { LogoutButton } from '@/components/logout-button'
-import { createClient } from '@/lib/supabase/client'
+import { useCurrentProfile } from '@/lib/supabase/profiles'
 
 const NAV_ITEMS = [
   { label: 'Dashboard', href: '/' },
@@ -16,13 +17,19 @@ const NAV_ITEMS = [
 
 export function AppHeader() {
   const pathname = usePathname()
-  // Show who is signed in — claims are shared team-wide, so it matters.
-  const [userEmail, setUserEmail] = useState<string | null>(null)
+  const { profile } = useCurrentProfile()
+  const [menuOpen, setMenuOpen] = useState(false)
+  const menuRef = useRef<HTMLDivElement | null>(null)
+
   useEffect(() => {
-    createClient().auth.getUser().then(({ data }) => {
-      setUserEmail(data.user?.email ?? null)
-    })
+    const onDocClick = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false)
+    }
+    document.addEventListener('mousedown', onDocClick)
+    return () => document.removeEventListener('mousedown', onDocClick)
   }, [])
+
+  const displayLabel = profile?.name || profile?.email || ''
 
   return (
     <header className="no-print border-b border-gray-800 bg-gray-950 shadow-sm sticky top-0 z-10">
@@ -30,8 +37,6 @@ export function AppHeader() {
         <Link href="/"><Image src="/logo.png" alt="Modern Appraisers" width={160} height={48} className="h-9 w-auto" priority /></Link>
         <nav className="flex items-center gap-6">
           {NAV_ITEMS.map(item => {
-            // '/claims' (All Claims list) and '/claims/[id]' (workspace) are
-            // distinct: an open workspace highlights Dashboard.
             const active = item.href === '/'
               ? pathname === '/' || pathname.startsWith('/claims/')
               : item.href === '/claims'
@@ -48,9 +53,37 @@ export function AppHeader() {
             )
           })}
         </nav>
-        <div className="ml-auto flex items-center gap-4">
-          {userEmail && <span className="text-xs text-gray-500">{userEmail}</span>}
-          <LogoutButton />
+        <div className="ml-auto flex items-center gap-2">
+          {displayLabel && (
+            <div className="relative" ref={menuRef}>
+              <button
+                onClick={() => setMenuOpen(o => !o)}
+                className="flex items-center gap-1 text-xs text-gray-400 hover:text-white px-2 py-1 rounded transition-colors"
+              >
+                {displayLabel}
+                <ChevronDown className="w-3 h-3" />
+              </button>
+              {menuOpen && (
+                <div className="absolute right-0 top-full mt-1 w-48 bg-white border border-gray-200 rounded-lg shadow-lg py-1 z-20">
+                  <Link href="/profile" onClick={() => setMenuOpen(false)}
+                        className="flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-100">
+                    <UserIcon className="w-4 h-4" /> Profile
+                  </Link>
+                  {profile?.role === 'admin' && (
+                    <Link href="/admin/users" onClick={() => setMenuOpen(false)}
+                          className="flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-100">
+                      <Shield className="w-4 h-4" /> Admin
+                    </Link>
+                  )}
+                  <div className="border-t border-gray-100 my-1" />
+                  <div className="px-3 py-1">
+                    <LogoutButton />
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+          {!displayLabel && <LogoutButton />}
         </div>
       </div>
     </header>
