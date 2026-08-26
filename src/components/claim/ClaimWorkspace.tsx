@@ -44,6 +44,7 @@ import { LossSearchTab, type LossListing } from '@/components/claim/loss-search-
 import { EstimateTab } from '@/components/claim/estimate-tab'
 import { DocumentsTab } from '@/components/claim/documents-tab'
 import { MessagesTab } from '@/components/claim/messages-tab'
+import { AssignmentSheet, triggerAssignmentSheetPrint } from '@/components/claim/assignment-sheet'
 import { DVTab, type DVState } from '@/components/claim/dv-tab'
 import { ReportsTab, type InvoiceReportState } from '@/components/claim/reports-tab'
 import { uploadClaimDocument, type ClaimDocument } from '@/lib/supabase/documents'
@@ -2855,11 +2856,13 @@ function ClaimWorkspaceInner({ claimId }: { claimId: string }) {
   // Admin needs the list of users for the Reassign popover; skip the fetch for
   // non-admins to avoid the extra roundtrip on every workspace load.
   useEffect(() => {
-    if (!isAdmin) return
+    // Fetch profiles regardless of role: admins use them for the Reassign
+    // popover; everyone needs them to resolve the assignee's name for the
+    // Assignment Sheet's "Handling (Us)" line.
     let cancelled = false
     fetchAllProfilesBrowser().then(list => { if (!cancelled) setAllProfiles(list) })
     return () => { cancelled = true }
-  }, [isAdmin])
+  }, [])
 
   // Reassign flow (admin-only): the toolbar button opens a popover of
   // appraisers. Selecting one arms a ConfirmDialog. Confirming POSTs to the
@@ -2980,6 +2983,17 @@ function ClaimWorkspaceInner({ claimId }: { claimId: string }) {
             <ArrowLeft className="w-4 h-4" />
             Dashboard
           </Link>
+          {!isNew && editingId && (
+            <button
+              type="button"
+              onClick={triggerAssignmentSheetPrint}
+              className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-600 hover:text-gray-900 text-sm font-medium transition-colors"
+              title="Print the assignment sheet"
+            >
+              <Printer className="w-4 h-4" />
+              Print
+            </button>
+          )}
           {!readOnly && hasUnsavedChanges && (
             <div className="flex items-center gap-2 ml-auto">
               <span className="text-xs text-amber-600 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full font-medium">Unsaved changes</span>
@@ -3866,6 +3880,30 @@ function ClaimWorkspaceInner({ claimId }: { claimId: string }) {
         )}
       </main>
 
+      {/* Assignment Sheet — hidden print portal. Only renders in print output
+          when the Print button is clicked (triggerAssignmentSheetPrint adds a
+          body class the sheet's CSS reads). Always mounted so the print flow
+          has no async delay. */}
+      {!isNew && editingId && (
+        <AssignmentSheet
+          data={{
+            claim,
+            status,
+            submittedAt,
+            assignedToName: allProfiles.find(p => p.id === assignedTo)?.name
+              || allProfiles.find(p => p.id === assignedTo)?.email
+              || '',
+            notesType: reportsState.notesType,
+            opposingAppraiserName: reportsState.notesData.appraiserName,
+            opposingAppraiserCompany: reportsState.notesData.appraiserCompany,
+            opposingAppraiserValue: reportsState.notesData.appraiserValueNum,
+            agreementAmount: reportsState.notesData.agreementAmountNum,
+            umpireAmount: reportsState.notesData.umpireAmountNum,
+            ourAcv: result.acv,
+            dv: dv ?? null,
+          }}
+        />
+      )}
     </div>
   )
 }
