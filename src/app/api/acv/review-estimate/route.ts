@@ -22,7 +22,9 @@ export const maxDuration = 300 // allow long AI streams
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 const MAX_CONCURRENT = 3
-const MAX_PHOTOS = 10
+// Hard safety cap on photos per request. Prevents accidental drag-a-folder mistakes
+// and stays inside Anthropic request-size limits. Client-side soft cap matches.
+const MAX_PHOTOS = 100
 
 async function extractEstimateText(file: File): Promise<string> {
   const buffer = Buffer.from(await file.arrayBuffer())

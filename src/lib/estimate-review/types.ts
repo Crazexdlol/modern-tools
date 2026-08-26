@@ -20,6 +20,10 @@ export interface Flag {
   suggested: FlagAmount & { action: SuggestedAction }
   ruleReference: string     // e.g. "P-Pages Ch. 11-18"
   ruleQuote: string         // verbatim excerpt
+  // Plain-English explanation of the specific over-write on THIS line: what IA
+  // did, what the rulebook says, and how the two conflict. Written as a full
+  // sentence a lay reader can follow, not a citation.
+  reason: string
   impact: number            // negative dollars (reduction)
 }
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { useDropzone } from "react-dropzone";
 import { AlertCircle, FileText, Loader2, Trash2, Upload, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -112,44 +112,56 @@ function FlagTable({ flags }: { flags: Flag[] }) {
         </thead>
         <tbody>
           {flags.map((flag, i) => (
-            <tr key={i} className="border-b border-gray-100 align-top">
-              <td className="px-4 py-3">
-                <div className="font-semibold text-gray-900">{flag.lineDescription}</div>
-                {flag.panelOrArea && (
-                  <div className="text-xs text-gray-400 mt-0.5">{flag.panelOrArea}</div>
-                )}
-                <span
-                  className={cn(
-                    "inline-block mt-1.5 text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded",
-                    CATEGORY_STYLE[flag.category],
+            <Fragment key={i}>
+              <tr className="align-top border-t border-gray-200">
+                <td className="px-4 pt-3 pb-1">
+                  <div className="font-semibold text-gray-900">{flag.lineDescription}</div>
+                  {flag.panelOrArea && (
+                    <div className="text-xs text-gray-400 mt-0.5">{flag.panelOrArea}</div>
                   )}
-                >
-                  {CATEGORY_LABEL[flag.category]}
-                </span>
-              </td>
-              <td className="px-4 py-3 text-gray-700 text-xs">
-                {fmtBilled(flag.iaBilled)}
-                {flag.iaBilled.total !== 0 && (
-                  <div className="text-gray-500 mt-0.5">= {fmtMoney(flag.iaBilled.total)}</div>
-                )}
-              </td>
-              <td className="px-4 py-3 text-xs text-gray-700 max-w-xs">
-                <div className="text-gray-500 font-semibold mb-0.5">{flag.ruleReference}</div>
-                <div className="italic text-gray-600 line-clamp-3" title={flag.ruleQuote}>
-                  &ldquo;{flag.ruleQuote}&rdquo;
-                </div>
-              </td>
-              <td className="px-4 py-3 text-gray-700 text-xs">
-                {fmtSuggested(flag.suggested)}
-                {flag.suggested.action !== "remove" && flag.suggested.total !== 0 && (
-                  <div className="text-gray-500 mt-0.5">= {fmtMoney(flag.suggested.total)}</div>
-                )}
-              </td>
-              <td className="px-4 py-3 text-right font-bold text-amber-700 tabular-nums">
-                {flag.impact < 0 ? "-" : "+"}
-                {fmtMoney(Math.abs(flag.impact))}
-              </td>
-            </tr>
+                  <span
+                    className={cn(
+                      "inline-block mt-1.5 text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded",
+                      CATEGORY_STYLE[flag.category],
+                    )}
+                  >
+                    {CATEGORY_LABEL[flag.category]}
+                  </span>
+                </td>
+                <td className="px-4 pt-3 pb-1 text-gray-700 text-xs">
+                  {fmtBilled(flag.iaBilled)}
+                  {flag.iaBilled.total !== 0 && (
+                    <div className="text-gray-500 mt-0.5">= {fmtMoney(flag.iaBilled.total)}</div>
+                  )}
+                </td>
+                <td className="px-4 pt-3 pb-1 text-xs text-gray-700 max-w-xs">
+                  <div className="text-gray-500 font-semibold mb-0.5">{flag.ruleReference}</div>
+                  <div className="italic text-gray-600 line-clamp-3" title={flag.ruleQuote}>
+                    &ldquo;{flag.ruleQuote}&rdquo;
+                  </div>
+                </td>
+                <td className="px-4 pt-3 pb-1 text-gray-700 text-xs">
+                  {fmtSuggested(flag.suggested)}
+                  {flag.suggested.action !== "remove" && flag.suggested.total !== 0 && (
+                    <div className="text-gray-500 mt-0.5">= {fmtMoney(flag.suggested.total)}</div>
+                  )}
+                </td>
+                <td className="px-4 pt-3 pb-1 text-right font-bold text-amber-700 tabular-nums">
+                  {flag.impact < 0 ? "-" : "+"}
+                  {fmtMoney(Math.abs(flag.impact))}
+                </td>
+              </tr>
+              <tr className="border-b border-gray-100">
+                <td colSpan={5} className="px-4 pt-1 pb-3">
+                  <div className="text-xs text-gray-500 uppercase tracking-wider font-semibold mb-1">
+                    Why this was flagged
+                  </div>
+                  <div className="text-sm text-gray-700 leading-relaxed">
+                    {flag.reason}
+                  </div>
+                </td>
+              </tr>
+            </Fragment>
           ))}
         </tbody>
       </table>
@@ -157,7 +169,26 @@ function FlagTable({ flags }: { flags: Flag[] }) {
   );
 }
 
-const MAX_PHOTOS = 10;
+// Soft cap on photo count. Guards against accidental drag-a-folder-of-500-files
+// mistakes and Anthropic request-size limits, but is otherwise generous. Raise
+// if a real workflow needs more.
+const MAX_PHOTOS = 100;
+
+// Rough ETA for the review call, in seconds. Baseline 30s per estimate + 5s per
+// photo + a bit more for subsequent estimates (they run 3-at-a-time in parallel
+// on the server, so wall time grows less than linearly).
+function estimateReviewSeconds(estimateCount: number, photoCount: number): number {
+  const perEstimate = 30 + Math.ceil(estimateCount / 3 - 1) * 20;
+  const photos = photoCount * 5;
+  return Math.max(20, perEstimate + photos);
+}
+
+function fmtDuration(ms: number): string {
+  const totalSec = Math.floor(ms / 1000);
+  const m = Math.floor(totalSec / 60);
+  const s = totalSec % 60;
+  return `${m}:${s.toString().padStart(2, "0")}`;
+}
 
 function buildEmptyEstimate(prev: ClaimEstimate | null): ClaimEstimate {
   return {
@@ -276,7 +307,19 @@ export function EstimateReviewTab({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showUpload, setShowUpload] = useState(reviews.length === 0);
+  const [runStartMs, setRunStartMs] = useState<number | null>(null);
+  const [elapsedMs, setElapsedMs] = useState(0);
+  const [estimatedTotalSec, setEstimatedTotalSec] = useState(0);
   const cardRefs = useRef<Record<string, HTMLDivElement | null>>({});
+
+  // Tick the elapsed clock while a run is in flight.
+  useEffect(() => {
+    if (!loading || runStartMs === null) return;
+    const tick = () => setElapsedMs(Date.now() - runStartMs);
+    tick();
+    const id = window.setInterval(tick, 500);
+    return () => window.clearInterval(id);
+  }, [loading, runStartMs]);
 
   const vehicleLabel = [claim.year || "", claim.make, claim.model].filter(Boolean).join(" ");
 
@@ -284,6 +327,9 @@ export function EstimateReviewTab({
     if (estimates.length === 0) return;
     setLoading(true);
     setError(null);
+    setRunStartMs(Date.now());
+    setElapsedMs(0);
+    setEstimatedTotalSec(estimateReviewSeconds(estimates.length, photos.length));
     try {
       const formData = new FormData();
       for (const f of estimates) formData.append("estimates", f);
@@ -377,7 +423,7 @@ export function EstimateReviewTab({
               "image/*": [".jpg", ".jpeg", ".png", ".webp"],
               "application/pdf": [".pdf"],
             }}
-            hint="Drop up to 10 vehicle photos or PDFs (multi-page PDFs are fine)"
+            hint="Drop as many vehicle photos or PDFs as you need (multi-page PDFs are fine)"
             max={MAX_PHOTOS}
           />
           {error && (
@@ -397,6 +443,17 @@ export function EstimateReviewTab({
                 ? `Reviewing ${estimates.length} estimate${estimates.length === 1 ? "" : "s"}…`
                 : "Run Review"}
             </Button>
+            {loading && (
+              <div className="text-xs text-gray-500 tabular-nums">
+                Elapsed <span className="font-semibold text-gray-700">{fmtDuration(elapsedMs)}</span>
+                {estimatedTotalSec > 0 && elapsedMs / 1000 <= estimatedTotalSec && (
+                  <> · est. finish <span className="font-semibold text-gray-700">~{fmtDuration(estimatedTotalSec * 1000)}</span></>
+                )}
+                {estimatedTotalSec > 0 && elapsedMs / 1000 > estimatedTotalSec && (
+                  <> · <span className="text-amber-600">taking longer than usual</span></>
+                )}
+              </div>
+            )}
             {reviews.length > 0 && !loading && (
               <button
                 type="button"

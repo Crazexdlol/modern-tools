@@ -53,9 +53,24 @@ Manual entries are line items the appraiser typed in rather than pulled from the
 
 For rulebook-based flags (not_included, overlap, excess_labor, duplicate): cite the rulebook section (e.g. "P-Pages Ch. 11-18" or "G2 Guide") and quote the relevant text verbatim in ruleQuote.
 
-For manual_entry flags: ruleReference is "Manual Entry — no database equivalent" (or similar); ruleQuote is your reasoning ("Labor time of 3.5 hrs for a bracket install exceeds typical 1.0 hr for similar operations. No CCC guide entry supports this time.").
+For manual_entry flags: ruleReference is "Manual Entry — no database equivalent" (or similar); ruleQuote is a brief snippet from any adjacent rulebook guidance that applies, or the estimate's original label for the item.
 
-If reference photos or documents are provided, use them as evidence — reference the photo in ruleQuote where relevant.
+### The "reason" field — plain-English explanation per flag
+
+Every flag MUST include a "reason" string that explains, in one to three full sentences, exactly what IA did, what the rulebook says, and how the two conflict. Write it so a lay reader (an insured, an attorney, a paralegal) can understand the over-write without reading the rulebook themselves. Include specific numbers.
+
+GOOD reason examples:
+- "IA billed 3.5 hours to R&R this front bumper cover. The MOTOR P-Pages published guide time for this operation is 1.7 hours, which is 1.8 hours over-billed at the shop's $75/hr labor rate = $135 in excess labor."
+- "IA billed 0.5 hours to aim the headlamps as a separate line item. The MOTOR G2 Guide states that headlamp aim is Included in the R&R headlamp operation and cannot be billed separately."
+- "IA billed R&R Quarter Panel and R&R Roof as adjacent operations but did not apply the -4.0 hour overlap deduction the P-Pages require when both are performed together. The missing deduction, at $85/hr, equals $340."
+- "Manual entry for 'Custom bumper reinforcement fabrication' billed at 3.5 hours plus $185 in parts. No CCC database entry supports fabrication of this kind, and the labor time is high for the described operation; the described work appears more consistent with 1.5-2.0 hours."
+
+BAD reason examples (do not do this):
+- "See rule quote" (empty; the reason IS the plain-English explanation)
+- "The rulebook says this is included" (too terse — must state what IA did AND what the rule says)
+- Restating the rule verbatim (redundant with ruleQuote)
+
+If reference photos or documents are provided, use them as evidence and reference them in the reason where relevant.
 
 ### Parse metadata
 
@@ -76,6 +91,7 @@ Parse the estimate's grand total (the "TOTAL COST" or "GRAND TOTAL" line, whiche
       "suggested": { "action": "reduce", "laborHours": 1.7, "laborRate": 75, "partPrice": 0, "total": 127.50 },
       "ruleReference": "P-Pages Ch. 11-18",
       "ruleQuote": "R&R front bumper cover — 1.7 hrs. Base time includes cover removal, R&I of impact absorbers, and reinstallation.",
+      "reason": "IA billed 3.5 hours to R&R this front bumper cover. The MOTOR P-Pages published guide time is 1.7 hours. That's 1.8 hours over-billed at the shop's $75/hr labor rate = $135 in excess labor.",
       "impact": -135.00
     }
   ],
@@ -197,6 +213,14 @@ function extractFirstJsonObject(raw: string): string {
 // Returns null if the flag would have zero impact (drop it — IA billed correctly).
 function coerceFlag(f: Flag): Flag | null {
   const iaTotal = Number(f.iaBilled?.total) || 0
+
+  // Defensive fallback: if the model forgot the "reason" field, synthesize a
+  // basic one from what we have. Better than showing an empty explanation.
+  if (!f.reason || typeof f.reason !== 'string' || !f.reason.trim()) {
+    f.reason = f.ruleQuote
+      ? `Rulebook (${f.ruleReference}): "${f.ruleQuote}"`
+      : `IA billed this line; see ${f.ruleReference} for the applicable rule.`
+  }
 
   // not_included is always a full-remove.
   if (f.category === 'not_included' && f.suggested) {
