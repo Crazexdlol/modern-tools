@@ -7,7 +7,10 @@
 // physical prints of the saved PDF come out clean.
 import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
-import html2canvas from 'html2canvas'
+// Use html2canvas-pro (drop-in fork) — the original html2canvas doesn't
+// understand modern CSS color functions (oklch, lab) that Tailwind v4
+// generates, and throws "unsupported color function" on capture.
+import html2canvas from 'html2canvas-pro'
 import { jsPDF } from 'jspdf'
 import type { ClaimInfo } from '@/lib/acv/types'
 import { formatCurrency } from '@/lib/acv/calculations'
