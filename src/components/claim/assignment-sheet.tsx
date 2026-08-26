@@ -177,10 +177,18 @@ export function AssignmentSheet({ data }: { data: AssignmentSheetData }) {
       </div>
 
       <style jsx global>{`
-        /* The portal stays display:none on screen; html2canvas captures it
-           via an onclone hook that forces the clone visible (see
-           triggerAssignmentSheetPrint). */
-        .assignment-print-portal { display: none; }
+        /* Off-screen instead of display:none: keeps the element rendered
+           (images actually load, layout is computed) so html2canvas can
+           capture real pixel dimensions. User never sees it — it's way
+           beyond the viewport. */
+        .assignment-print-portal {
+          position: absolute;
+          left: -99999px;
+          top: 0;
+          width: 8.5in;
+          pointer-events: none;
+          z-index: -1;
+        }
         .assignment-sheet {
           background: white;
           color: black;
@@ -256,53 +264,49 @@ function MoneyRow({ label, value }: { label: string; value: number }) {
   )
 }
 
-// Called by the Print button. Captures the hidden assignment-sheet portal
-// via html2canvas, fits the image onto a single Letter-size PDF page via
-// jspdf, and prompts the OS Save-As picker. PDF output has no browser chrome
-// so physical prints from the saved PDF come out clean (no URL footer).
+// Called by the Print button. Captures the off-screen assignment-sheet
+// portal via html2canvas, fits it onto a single Letter-size PDF page via
+// jspdf, and prompts the OS Save-As picker. PDF output has no browser
+// chrome so physical prints from the saved PDF come out clean.
 export async function triggerAssignmentSheetPrint(fileName: string): Promise<void> {
-  const el = document.querySelector('.assignment-sheet') as HTMLElement | null
-  if (!el) return
+  try {
+    const el = document.querySelector('.assignment-sheet') as HTMLElement | null
+    if (!el) {
+      alert('Assignment sheet not ready yet — reload the page and try again.')
+      return
+    }
 
-  const canvas = await html2canvas(el, {
-    scale: 2,
-    backgroundColor: '#ffffff',
-    windowWidth: 816, // 8.5in at 96dpi — matches Summary page's approach
-    onclone: (clonedDoc) => {
-      // The portal is display:none on screen. Force the CLONE (which
-      // html2canvas actually renders from) visible without touching the
-      // live DOM.
-      const portal = clonedDoc.querySelector('.assignment-print-portal') as HTMLElement | null
-      if (portal) {
-        portal.style.display = 'block'
-        portal.style.position = 'static'
-        portal.style.width = '816px'
-        portal.style.background = '#ffffff'
-      }
-    },
-  })
+    const canvas = await html2canvas(el, {
+      scale: 2,
+      backgroundColor: '#ffffff',
+      windowWidth: 816, // 8.5in at 96dpi
+      useCORS: true,
+      logging: false,
+    })
 
-  // Fit the captured image onto a single Letter page. The sheet is designed
-  // to fit in one page already; if the capture is taller than one page, we
-  // scale down to fit rather than paginating (the assignment sheet is
-  // one-page-always per spec).
-  const pageWidthPt = 612  // Letter, points (8.5in × 72pt/in)
-  const pageHeightPt = 792 // Letter, points (11in × 72pt/in)
-  const imgAspect = canvas.height / canvas.width
-  let renderWidth = pageWidthPt
-  let renderHeight = pageWidthPt * imgAspect
-  if (renderHeight > pageHeightPt) {
-    // Scale down to fit height, center horizontally.
-    renderHeight = pageHeightPt
-    renderWidth = pageHeightPt / imgAspect
+    // Fit the captured image onto a single Letter page. The sheet is designed
+    // to fit in one page already; if the capture is taller than one page, we
+    // scale down to fit rather than paginating (spec: one page always).
+    const pageWidthPt = 612  // Letter, points (8.5in × 72pt/in)
+    const pageHeightPt = 792 // Letter, points (11in × 72pt/in)
+    const imgAspect = canvas.height / canvas.width
+    let renderWidth = pageWidthPt
+    let renderHeight = pageWidthPt * imgAspect
+    if (renderHeight > pageHeightPt) {
+      renderHeight = pageHeightPt
+      renderWidth = pageHeightPt / imgAspect
+    }
+    const offsetX = (pageWidthPt - renderWidth) / 2
+    const offsetY = (pageHeightPt - renderHeight) / 2
+
+    const pdf = new jsPDF({ unit: 'pt', format: 'letter' })
+    const img = canvas.toDataURL('image/jpeg', 0.95)
+    pdf.addImage(img, 'JPEG', offsetX, offsetY, renderWidth, renderHeight)
+
+    const blob = pdf.output('blob')
+    await savePdfWithPicker(blob, fileName)
+  } catch (err) {
+    console.error('Assignment sheet print failed:', err)
+    alert(`Print failed: ${err instanceof Error ? err.message : String(err)}`)
   }
-  const offsetX = (pageWidthPt - renderWidth) / 2
-  const offsetY = (pageHeightPt - renderHeight) / 2
-
-  const pdf = new jsPDF({ unit: 'pt', format: 'letter' })
-  const img = canvas.toDataURL('image/jpeg', 0.95)
-  pdf.addImage(img, 'JPEG', offsetX, offsetY, renderWidth, renderHeight)
-
-  const blob = pdf.output('blob')
-  await savePdfWithPicker(blob, fileName)
 }
