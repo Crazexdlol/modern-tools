@@ -18,6 +18,51 @@ Read `CLAUDE.md` first if you haven't. Then read the top entry here before touch
 
 ---
 
+## 2026-08-26 (evening) — Post-Messages UX pass + Assignment Sheet feature
+
+**Worked on:** A long tail of UI polish, workflow cleanup, and one new small feature (Assignment Sheet PDF) that grew out of using the just-shipped role-based-access + Messages rollouts. All small-medium iterations, no schema changes, no new tables.
+
+**Changed — Dashboard + claim tables (bulk reassign, confirm modals, layout):**
+- Bulk reassign in the claims table: per-row checkboxes + a top action bar that appears when 1+ selected ("N selected · Reassign to [dropdown] [Confirm]"). Confirm fires parallel assign API calls then reloads the page. Replaced the per-row inline assign dropdown entirely.
+- Delete claim is admin-only in the UI (RLS was already blocking the server call). Trash column hidden for appraisers.
+- New `src/components/ui/confirm-dialog.tsx` — replaces every `confirm()` browser popup. Used for delete (danger variant), Submit / Approve / Send Back / Reopen (primary), and Reassign. ESC / click-outside cancels; busy state shows "Working…".
+- Completed Assignments moved off the dashboard into its own `/completed-assignments` page. Dashboard header shows a "Completed Assignments (N)" button next to the new "Messages" button and "New Claim".
+- Claim search now also matches the assigned appraiser's name/email (in addition to MA #, VIN, claim #, vehicle, insured, insurance co.).
+- Row single-click no longer opens claims (was interfering with checkbox selection). Two ways to open now: click the MA # cell (styled as hover-underlined link) OR double-click anywhere on the row. Applied to Dashboard, All Claims, Completed Assignments, and the Messages queue table.
+- Messages: sender never gets an unread badge for a message they sent (server-side `.neq('sender_id', user.id)` on the queue query + client-side reply-defaults now use "last message's sender + recipients MINUS current user" instead of just "last message's recipients").
+
+**Changed — claim workspace visual polish:**
+- Centered underline tabs for **Claim Info / Documents / Messages** on the top row (was rounded-pill bubbles; Henry didn't like them). Larger text (`text-lg font-bold`), centered with `justify-center gap-12`, full-width bottom border. Same centered-underline treatment applied to the tools row (ACV Report / DV / Award / Notes / Summary / Estimate / Invoice).
+- Removed the tools-row horizontal scroll arrow (was appearing next to the Invoice tab from `overflow-x-auto`). Now uses `flex-wrap` — tabs wrap if they don't fit, no scroll indicator.
+- Removed the top-left green/gray Open/Closed status pill (admin-only) plus its `toggleStatus` handler and `setClaimStatus` import — Submit/Approve/Reopen fully cover status changes now.
+- Added a **Reassign button** to the claim's workflow-button cluster (admin only). Click → popover of appraisers (current assignee marked) → in-app confirm modal → save without a full page reload.
+- Header stats card (MA# / CL# / Vehicle / Client / Owner) no longer has a visible border. Responsive grid layout (2 cols small / 3 medium / 5 wide) with values that wrap in-cell instead of being truncated with an ellipsis. Font dropped from text-lg to text-base to keep wrapped values from feeling oversized. Divider bars between stats removed.
+- Removed the old inline "Assigned to:" dropdown from the header — Reassign button replaces it.
+
+**Changed — Assignment Sheet (NEW feature):**
+- New **`src/components/claim/assignment-sheet.tsx`** — a single-page printable summary of the claim: Modern Appraisers logo top-left, then Claim / Insured-Owner / Vehicle / Insurance / Appraisers / Valuations / Status sections. Every field always present; missing money = `$0.00`, missing text = `—`. Times New Roman font, ~7.7in wide, tight vertical rhythm to always fit one Letter page.
+- Print button top-left of the workspace, next to the Dashboard back button (anyone with claim access, any existing claim).
+- **Print pipeline:** captures the off-screen assignment-sheet portal with `html2canvas-pro` (drop-in fork of html2canvas that supports Tailwind v4's `oklch()`/`lab()` color functions — stock html2canvas throws on those), composes a single Letter-size PDF via `jspdf`, and OPENS THE PDF IN A NEW BROWSER TAB for preview (via `window.open(blobUrl)`). User previews, then saves to any folder or prints from the PDF viewer. Popup-blocked fallback: prompts the OS Save-As dialog.
+- Logo displays black via `filter: brightness(0)` (the source asset is white, would be invisible on white paper).
+- Portal renders via `createPortal(document.body)` with `position: absolute; left: -99999px` so it's off-screen but fully rendered (`display: none` broke image loading + html2canvas capture).
+- New dep: `html2canvas-pro` (Tailwind v4 compat fix). Stock `html2canvas` stays for the Summary page (works for now — same fix if it ever breaks).
+
+**Deploy status: LIVE.** `modern-tools-rho.vercel.app` → `dpl_9RrBoWqw4tNGWzWcWMQssDLkfW9T` (`modern-tools-4mulg9dy7`). Alias verified.
+
+**Rollback if anything's broken:**
+- Code: `npx vercel promote modern-tools-aw4ony2ps-henry-as-projects-88caed67.vercel.app --scope henry-as-projects-88caed67 --yes` (this is the assignment-sheet-with-Save-As build; pre-preview-tab).
+- Or roll all the way back to pre-Messages: `npx vercel promote modern-tools-r74hffh9g-henry-as-projects-88caed67.vercel.app --scope henry-as-projects-88caed67 --yes` (the "fix header truncation" build before Messages went out).
+
+**In progress / broken / unknowns:**
+- **Assignment sheet: preview-in-new-tab depends on popups being allowed.** Henry's browser hasn't reported issues. If any user hits a popup blocker, the fallback fires the OS Save-As dialog instead — feature still works, just no preview.
+- **Summary page still uses stock html2canvas.** Fine today because the DOM it captures doesn't trigger the lab-color path. If we ever add Tailwind v4 accent colors to the summary print doc, same drop-in swap fixes it.
+- **All the earlier known limitations still apply.** Messages: no push (polling only), no email, no attachments, no edit/delete. Role-based access: no invite-email flow, session cache staleness on role change is cosmetic.
+
+**Next:**
+- **Add guidelines for each insurance company.** Reference material per insurer (Sedgwick, Nationwide, Allstate, etc.) that appraisers can consult while working a claim. Details TBD — will scope out with Henry at start of next session (where the content lives, what fields per insurer, how it surfaces in the app).
+
+---
+
 ## 2026-08-26 (later) — Messages feature shipped
 
 **Worked on:** New team-communication feature on claims. **Messages tab** joins Claim Info + Documents on the top row of the claim workspace. Chat-app layout — chronological thread, composer fixed at the bottom, recipient chip picker searchable over all profiles. Every message persists on the claim permanently (reassignment cannot touch messages — verified structurally, no assignment-linked columns in the schema). Per-user unread tracking via a high-water-mark timestamp table. New Dashboard header button "**Messages (N)**" shows the caller's total unread count and links to `/messages` — a page listing every claim with unread messages for that user. Opening a claim's Messages tab marks that claim's thread as read for the caller and clears it from their queue.
