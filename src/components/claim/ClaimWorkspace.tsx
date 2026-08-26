@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useCallback, useMemo, useRef, Fragment } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import {
@@ -2267,9 +2267,9 @@ function stepForTab(tab: string | null): number | null {
 // weighted stats rather than one big title + small subtitle.
 function ClaimHeaderStat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="min-w-0 flex-1 basis-36">
+    <div className="min-w-0">
       <div className="text-xs font-semibold uppercase tracking-wide text-gray-400 mb-0.5">{label}</div>
-      <div className="text-lg font-bold text-gray-900 truncate">{value || '—'}</div>
+      <div className="text-base font-bold text-gray-900 break-words">{value || '—'}</div>
     </div>
   )
 }
@@ -3112,18 +3112,18 @@ function ClaimWorkspaceInner({ claimId }: { claimId: string }) {
           <h1 className="text-3xl font-extrabold text-gray-900 tracking-tight mb-6">New Claim</h1>
         ) : (
           <div className="mb-6 bg-white rounded-xl shadow-sm px-6 py-4">
-            <div className="flex flex-wrap items-center gap-y-4">
+            {/* Responsive grid: 2 cols on small screens, 3 on medium, 5 on wide.
+                Long values (Vehicle, Client, Owner) wrap within their cell
+                instead of being truncated with an ellipsis. */}
+            <div className="grid gap-x-8 gap-y-4 grid-cols-2 md:grid-cols-3 xl:grid-cols-5">
               {[
                 { label: 'MA #', value: claim.maNumber },
                 { label: 'CL #', value: claim.claimNumber },
                 { label: 'Vehicle', value: claimVehicle },
                 { label: 'Client', value: claim.clientName },
                 { label: 'Owner', value: claim.insuredName },
-              ].map((stat, i) => (
-                <Fragment key={stat.label}>
-                  {i > 0 && <span className="hidden sm:block w-px self-stretch bg-gray-200 mx-6" />}
-                  <ClaimHeaderStat label={stat.label} value={stat.value} />
-                </Fragment>
+              ].map((stat) => (
+                <ClaimHeaderStat key={stat.label} label={stat.label} value={stat.value} />
               ))}
             </div>
           </div>
@@ -3162,7 +3162,7 @@ function ClaimWorkspaceInner({ claimId }: { claimId: string }) {
               )
             })}
           </div>
-          <div className="flex items-center justify-center gap-8 border-b border-gray-200 overflow-x-auto">
+          <div className="flex items-center justify-center flex-wrap gap-x-8 gap-y-1 border-b border-gray-200">
             {TOOL_TABS.map((tab) => {
               const active = tabForStep(step) === tab.id
               return (
