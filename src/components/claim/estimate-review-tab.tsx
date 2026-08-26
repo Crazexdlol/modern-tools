@@ -6,8 +6,105 @@ import { AlertCircle, FileText, Loader2, Trash2, Upload, X } from "lucide-react"
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { ClaimInfo } from "@/lib/acv/types";
-import type { EstimateReview } from "@/lib/estimate-review/types";
+import { CATEGORY_LABEL } from "@/lib/estimate-review/types";
+import type { EstimateReview, Flag, FlagCategory } from "@/lib/estimate-review/types";
 import type { ClaimEstimate } from "./estimate-tab";
+
+const CATEGORY_STYLE: Record<FlagCategory, string> = {
+  not_included: "bg-red-100 text-red-800",
+  overlap: "bg-blue-100 text-blue-800",
+  excess_labor: "bg-amber-100 text-amber-800",
+  duplicate: "bg-purple-100 text-purple-800",
+};
+
+function fmtMoney(n: number): string {
+  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(n);
+}
+
+function fmtBilled(a: { laborHours?: number; laborRate?: number; partPrice?: number; total: number }): string {
+  const bits: string[] = [];
+  if (a.laborHours) {
+    bits.push(`${a.laborHours.toFixed(1)} hrs${a.laborRate ? ` @ ${fmtMoney(a.laborRate)}/hr` : ""}`);
+  }
+  if (a.partPrice) bits.push(`part ${fmtMoney(a.partPrice)}`);
+  if (a.total && !a.laborHours && !a.partPrice) bits.push(fmtMoney(a.total));
+  return bits.join(" · ") || fmtMoney(a.total);
+}
+
+function fmtSuggested(s: Flag["suggested"]): string {
+  if (s.action === "remove") return "Remove";
+  return fmtBilled(s);
+}
+
+function FlagTable({ flags }: { flags: Flag[] }) {
+  return (
+    <div className="overflow-x-auto -mx-4 sm:mx-0 mt-3">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="bg-gray-50 border-y border-gray-200">
+            <th className="text-left px-4 py-2 text-xs text-gray-500 font-semibold uppercase tracking-wider">
+              Line
+            </th>
+            <th className="text-left px-4 py-2 text-xs text-gray-500 font-semibold uppercase tracking-wider">
+              IA Billed
+            </th>
+            <th className="text-left px-4 py-2 text-xs text-gray-500 font-semibold uppercase tracking-wider">
+              Rule
+            </th>
+            <th className="text-left px-4 py-2 text-xs text-gray-500 font-semibold uppercase tracking-wider">
+              Suggested
+            </th>
+            <th className="text-right px-4 py-2 text-xs text-gray-500 font-semibold uppercase tracking-wider">
+              Impact
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {flags.map((flag, i) => (
+            <tr key={i} className="border-b border-gray-100 align-top">
+              <td className="px-4 py-3">
+                <div className="font-semibold text-gray-900">{flag.lineDescription}</div>
+                {flag.panelOrArea && (
+                  <div className="text-xs text-gray-400 mt-0.5">{flag.panelOrArea}</div>
+                )}
+                <span
+                  className={cn(
+                    "inline-block mt-1.5 text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded",
+                    CATEGORY_STYLE[flag.category],
+                  )}
+                >
+                  {CATEGORY_LABEL[flag.category]}
+                </span>
+              </td>
+              <td className="px-4 py-3 text-gray-700 text-xs">
+                {fmtBilled(flag.iaBilled)}
+                {flag.iaBilled.total !== 0 && (
+                  <div className="text-gray-500 mt-0.5">= {fmtMoney(flag.iaBilled.total)}</div>
+                )}
+              </td>
+              <td className="px-4 py-3 text-xs text-gray-700 max-w-xs">
+                <div className="text-gray-500 font-semibold mb-0.5">{flag.ruleReference}</div>
+                <div className="italic text-gray-600 line-clamp-3" title={flag.ruleQuote}>
+                  &ldquo;{flag.ruleQuote}&rdquo;
+                </div>
+              </td>
+              <td className="px-4 py-3 text-gray-700 text-xs">
+                {fmtSuggested(flag.suggested)}
+                {flag.suggested.action !== "remove" && flag.suggested.total !== 0 && (
+                  <div className="text-gray-500 mt-0.5">= {fmtMoney(flag.suggested.total)}</div>
+                )}
+              </td>
+              <td className="px-4 py-3 text-right font-bold text-amber-700 tabular-nums">
+                {flag.impact < 0 ? "-" : "+"}
+                {fmtMoney(Math.abs(flag.impact))}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
 
 const MAX_PHOTOS = 10;
 
@@ -279,15 +376,20 @@ export function EstimateReviewTab({
                   No P-Pages violations found. Estimate looks clean.
                 </div>
               ) : (
-                <div className="mt-3 text-sm text-gray-600">
-                  {review.flags.length} flag{review.flags.length === 1 ? "" : "s"} · total impact{" "}
-                  <span className="font-bold text-amber-700">
-                    -${review.flags.reduce((sum, f) => sum + Math.abs(f.impact), 0).toFixed(2)}
-                  </span>
-                  <div className="mt-2 text-xs text-gray-400 italic">
-                    (Detailed table renders in the next commit.)
+                <>
+                  <div className="mt-2 text-sm text-gray-600">
+                    {review.flags.length} flag{review.flags.length === 1 ? "" : "s"} · total impact{" "}
+                    <span className="font-bold text-amber-700">
+                      -{fmtMoney(review.flags.reduce((sum, f) => sum + Math.abs(f.impact), 0))}
+                    </span>
+                    {review.grandTotalBilled > 0 && (
+                      <span className="text-gray-400">
+                        {" · IA billed "}{fmtMoney(review.grandTotalBilled)}
+                      </span>
+                    )}
                   </div>
-                </div>
+                  <FlagTable flags={review.flags} />
+                </>
               )}
             </div>
           ))}
