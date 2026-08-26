@@ -4,18 +4,25 @@ import { useState, useEffect } from 'react'
 import { AppHeader } from "@/components/app-header";
 import { ClaimsTable } from "@/components/claims-table";
 import { fetchACVHistory, type ACVHistoryEntry } from '@/lib/supabase/history'
+import { useCurrentProfile, fetchAllProfilesBrowser, type Profile } from '@/lib/supabase/profiles'
 
 // All Claims — every claim regardless of status, with an Open/Closed column.
 export default function AllClaimsPage() {
   const [entries, setEntries] = useState<ACVHistoryEntry[]>([])
+  const [profiles, setProfiles] = useState<Profile[]>([])
   const [fetchError, setFetchError] = useState(false)
+  const { profile } = useCurrentProfile()
+  const isAdmin = profile?.role === 'admin'
 
-  useEffect(() => {
+  const load = () => {
     fetchACVHistory().then(result => {
       if (result === null) setFetchError(true)
       else setEntries(result)
     })
-  }, [])
+    fetchAllProfilesBrowser().then(setProfiles)
+  }
+
+  useEffect(() => { load() }, [])
 
   const openCount = entries.filter(e => e.status !== 'closed').length
   const closedCount = entries.length - openCount
@@ -42,6 +49,9 @@ export default function AllClaimsPage() {
           onDeleted={(id) => setEntries(prev => prev.filter(e => e.id !== id))}
           emptyText="No claims yet."
           showStatus
+          adminView={isAdmin}
+          profiles={profiles}
+          onAssignmentChanged={load}
         />
       </main>
     </div>

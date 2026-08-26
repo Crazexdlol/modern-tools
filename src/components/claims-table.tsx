@@ -4,6 +4,7 @@ import { useState, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { Search, Trash2 } from 'lucide-react'
 import { deleteACVHistory, type ACVHistoryEntry } from '@/lib/supabase/history'
+import type { Profile } from '@/lib/supabase/profiles'
 
 function fmtDate(iso: string): string {
   return new Date(iso).toLocaleDateString("en-US", {
@@ -16,11 +17,19 @@ export function ClaimsTable({
   onDeleted,
   emptyText,
   showStatus = false,
+  adminView = false,
+  profiles = [],
+  showSubmittedColumn = false,
+  onAssignmentChanged,
 }: {
   entries: ACVHistoryEntry[]
   onDeleted: (id: string) => void
   emptyText: string
   showStatus?: boolean
+  adminView?: boolean
+  profiles?: Profile[]
+  showSubmittedColumn?: boolean
+  onAssignmentChanged?: () => void
 }) {
   const router = useRouter()
   const [searchQuery, setSearchQuery] = useState('')
@@ -44,6 +53,27 @@ export function ClaimsTable({
     onDeleted(id)
     await deleteACVHistory(id)
   }
+
+  const handleAssignChange = async (
+    e: React.ChangeEvent<HTMLSelectElement>,
+    id: string,
+  ) => {
+    e.stopPropagation()
+    const value = e.target.value || null
+    const res = await fetch(`/api/claims/${id}/assign`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ assignedTo: value }),
+    })
+    if (res.ok) onAssignmentChanged?.()
+  }
+
+  const colCount =
+    6 + // MA, Insured, Vehicle, VIN, Date, Ins. Co.
+    (adminView ? 1 : 0) +
+    (showStatus ? 1 : 0) +
+    (showSubmittedColumn ? 1 : 0) +
+    1 // Delete
 
   return (
     <div>
@@ -70,8 +100,14 @@ export function ClaimsTable({
               <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">VIN</th>
               <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Date</th>
               <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Ins. Co.</th>
+              {adminView && (
+                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Assigned To</th>
+              )}
               {showStatus && (
                 <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
+              )}
+              {showSubmittedColumn && (
+                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Submitted</th>
               )}
               <th className="text-right px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Delete</th>
             </tr>
@@ -79,7 +115,7 @@ export function ClaimsTable({
           <tbody>
             {filtered.length === 0 ? (
               <tr>
-                <td colSpan={showStatus ? 8 : 7} className="text-center py-16 text-gray-400">
+                <td colSpan={colCount} className="text-center py-16 text-gray-400">
                   {searchQuery ? 'No claims match your search.' : emptyText}
                 </td>
               </tr>
@@ -96,6 +132,21 @@ export function ClaimsTable({
                   <td className="px-4 py-3 text-gray-500 font-mono text-xs">{entry.vin || '—'}</td>
                   <td className="px-4 py-3 text-gray-500">{fmtDate(entry.date)}</td>
                   <td className="px-4 py-3 text-gray-700">{entry.claim?.insuranceCompany || '—'}</td>
+                  {adminView && (
+                    <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                      <select
+                        value={entry.assignedTo ?? ''}
+                        onChange={(e) => handleAssignChange(e, entry.id)}
+                        onClick={(e) => e.stopPropagation()}
+                        className="bg-white border border-gray-200 rounded px-2 py-1 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      >
+                        <option value="">Unassigned</option>
+                        {profiles.map(p => (
+                          <option key={p.id} value={p.id}>{p.name}</option>
+                        ))}
+                      </select>
+                    </td>
+                  )}
                   {showStatus && (
                     <td className="px-4 py-3">
                       <span className={`text-xs font-semibold px-2 py-0.5 rounded-full border ${
@@ -105,6 +156,16 @@ export function ClaimsTable({
                       }`}>
                         {entry.status === 'closed' ? 'Closed' : 'Open'}
                       </span>
+                    </td>
+                  )}
+                  {showSubmittedColumn && (
+                    <td className="px-4 py-3">
+                      {entry.submittedAt ? (
+                        <div>
+                          <div className="text-sm text-gray-700">{fmtDate(entry.submittedAt)}</div>
+                          <div className="text-xs text-gray-500">{profiles?.find(p => p.id === entry.submittedBy)?.name || 'Unknown'}</div>
+                        </div>
+                      ) : <span className="text-gray-300">—</span>}
                     </td>
                   )}
                   <td className="px-4 py-3 text-right">
