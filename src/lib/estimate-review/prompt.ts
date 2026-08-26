@@ -67,30 +67,43 @@ export function buildSystemBlocks() {
   ]
 }
 
-// Build the user message: estimate text + optional photo image blocks.
-// Photos are passed in as base64.
+// Build the user message: estimate text + optional attachments (photos as
+// images, or PDFs as document blocks per Anthropic's native PDF support).
 export type PhotoMediaType = 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp'
+
+export type ReferenceAttachment =
+  | { kind: 'image'; media_type: PhotoMediaType; data: string; fileName?: string }
+  | { kind: 'pdf'; data: string; fileName?: string }
 
 export function buildUserMessage(
   estimateText: string,
-  photos: Array<{ media_type: PhotoMediaType; data: string }>,
+  attachments: ReferenceAttachment[],
   fileName: string,
 ) {
   const content: Array<
     | { type: 'text'; text: string }
     | { type: 'image'; source: { type: 'base64'; media_type: PhotoMediaType; data: string } }
+    | { type: 'document'; source: { type: 'base64'; media_type: 'application/pdf'; data: string }; title?: string | null }
   > = []
 
-  if (photos.length > 0) {
+  if (attachments.length > 0) {
     content.push({
       type: 'text',
-      text: `Reference photos (${photos.length}) of the vehicle for context:`,
+      text: `Reference materials (${attachments.length}) — vehicle photos and/or supporting documents:`,
     })
-    for (const p of photos) {
-      content.push({
-        type: 'image',
-        source: { type: 'base64', media_type: p.media_type, data: p.data },
-      })
+    for (const a of attachments) {
+      if (a.kind === 'image') {
+        content.push({
+          type: 'image',
+          source: { type: 'base64', media_type: a.media_type, data: a.data },
+        })
+      } else {
+        content.push({
+          type: 'document',
+          source: { type: 'base64', media_type: 'application/pdf', data: a.data },
+          title: a.fileName ?? null,
+        })
+      }
     }
   }
 
@@ -109,9 +122,35 @@ export interface ParsedReviewPayload {
   flags: Flag[]
 }
 
+// Extract the first balanced-brace JSON object from a raw model response.
+// The model is instructed to return JSON only, but sometimes emits a preamble,
+// trailing prose, or wraps the object in markdown fences. We tolerate all three
+// by walking brace depth and ignoring anything outside the first complete object.
+function extractFirstJsonObject(raw: string): string {
+  const stripped = raw.replace(/```json\n?/g, '').replace(/```\n?/g, '')
+  const start = stripped.indexOf('{')
+  if (start === -1) throw new Error('No JSON object found in model response')
+  let depth = 0
+  let inString = false
+  let escape = false
+  for (let i = start; i < stripped.length; i++) {
+    const ch = stripped[i]
+    if (escape) { escape = false; continue }
+    if (ch === '\\') { escape = true; continue }
+    if (ch === '"') { inString = !inString; continue }
+    if (inString) continue
+    if (ch === '{') depth++
+    else if (ch === '}') {
+      depth--
+      if (depth === 0) return stripped.slice(start, i + 1)
+    }
+  }
+  throw new Error('Unbalanced JSON in model response')
+}
+
 export function parseReviewResponse(raw: string): ParsedReviewPayload {
-  const cleaned = raw.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim()
-  const parsed = JSON.parse(cleaned) as ParsedReviewPayload
+  const jsonText = extractFirstJsonObject(raw)
+  const parsed = JSON.parse(jsonText) as ParsedReviewPayload
   if (!Array.isArray(parsed.flags)) throw new Error('Response missing flags array')
   parsed.flags.sort((a, b) => Math.abs(b.impact) - Math.abs(a.impact))
   return parsed

@@ -13,6 +13,7 @@ import {
   buildReview,
   parseReviewResponse,
   type PhotoMediaType,
+  type ReferenceAttachment,
 } from '@/lib/estimate-review/prompt'
 import type { EstimateReview } from '@/lib/estimate-review/types'
 
@@ -43,14 +44,22 @@ function normalizePhotoMediaType(t: string): PhotoMediaType {
   return 'image/jpeg' // safe default; Anthropic will reject truly bad bytes
 }
 
-async function encodePhoto(file: File): Promise<{ media_type: PhotoMediaType; data: string }> {
+// Encodes an uploaded reference file as either an image block or a document block.
+// PDF-typed uploads use Anthropic's native document block; everything else is treated as an image.
+async function encodeAttachment(file: File): Promise<ReferenceAttachment> {
   const buffer = Buffer.from(await file.arrayBuffer())
-  return { media_type: normalizePhotoMediaType(file.type), data: buffer.toString('base64') }
+  const data = buffer.toString('base64')
+  const type = file.type.toLowerCase()
+  const isPdf = type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')
+  if (isPdf) {
+    return { kind: 'pdf', data, fileName: file.name }
+  }
+  return { kind: 'image', media_type: normalizePhotoMediaType(file.type), data, fileName: file.name }
 }
 
 async function reviewOne(
   estimate: File,
-  photos: Array<{ media_type: PhotoMediaType; data: string }>,
+  attachments: ReferenceAttachment[],
   reviewNumber: number,
 ): Promise<EstimateReview> {
   try {
@@ -60,7 +69,7 @@ async function reviewOne(
       max_tokens: 16000,
       betas: ['output-128k-2025-02-19'],
       system: buildSystemBlocks(),
-      messages: [{ role: 'user', content: buildUserMessage(text, photos, estimate.name) }],
+      messages: [{ role: 'user', content: buildUserMessage(text, attachments, estimate.name) }],
     })
     const finalMessage = await stream.finalMessage()
     const first = finalMessage.content[0]
@@ -69,7 +78,7 @@ async function reviewOne(
     return buildReview({
       parsed,
       fileName: estimate.name,
-      photoCount: photos.length,
+      photoCount: attachments.length,
       reviewNumber,
     })
   } catch (err) {
@@ -81,7 +90,7 @@ async function reviewOne(
       fileName: estimate.name,
       software: 'Unknown',
       grandTotalBilled: 0,
-      photoCount: photos.length,
+      photoCount: attachments.length,
       flags: [],
       error: err instanceof Error ? err.message : String(err),
     }
@@ -127,10 +136,10 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const encodedPhotos = await Promise.all(photos.map(encodePhoto))
+    const encodedAttachments = await Promise.all(photos.map(encodeAttachment))
 
     const reviews = await processInBatches(estimates, MAX_CONCURRENT, (file, i) =>
-      reviewOne(file, encodedPhotos, nextNumber + i),
+      reviewOne(file, encodedAttachments, nextNumber + i),
     )
 
     return NextResponse.json({ reviews })

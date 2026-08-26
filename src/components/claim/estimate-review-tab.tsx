@@ -320,12 +320,15 @@ export function EstimateReviewTab({
             hint="Drop PDFs or images, or click to browse (drop multiple at once)"
           />
           <MultiDropZone
-            label="Reference photos (optional)"
+            label="Reference photos & documents (optional)"
             files={photos}
             onAdd={(files) => setPhotos((prev) => [...prev, ...files])}
             onRemove={(i) => setPhotos((prev) => prev.filter((_, idx) => idx !== i))}
-            accept={{ "image/*": [".jpg", ".jpeg", ".png", ".webp"] }}
-            hint="Drop up to 10 vehicle photos for cross-checking"
+            accept={{
+              "image/*": [".jpg", ".jpeg", ".png", ".webp"],
+              "application/pdf": [".pdf"],
+            }}
+            hint="Drop up to 10 vehicle photos or PDFs (multi-page PDFs are fine)"
             max={MAX_PHOTOS}
           />
           {error && (
