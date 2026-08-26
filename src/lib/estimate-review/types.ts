@@ -1,6 +1,6 @@
 // Shape of a single flagged line item in an Estimate Review.
 // See docs/superpowers/specs/2026-08-25-estimate-review-design.md §3.
-export type FlagCategory = 'not_included' | 'overlap' | 'excess_labor' | 'duplicate'
+export type FlagCategory = 'not_included' | 'overlap' | 'excess_labor' | 'duplicate' | 'manual_entry'
 export type FlagSeverity = 'low' | 'medium' | 'high'
 export type SuggestedAction = 'reduce' | 'remove'
 
@@ -23,6 +23,18 @@ export interface Flag {
   impact: number            // negative dollars (reduction)
 }
 
+// Manual entry (typed in by the appraiser instead of pulled from the CCC/Mitchell
+// database). These bypass the guide's automated line items and are a common
+// vehicle for padding. The AI lists them here so Henry can eyeball each one —
+// no computed $ impact. Clearly-inflated manual entries also appear in flags[]
+// under the 'manual_entry' category, with an impact.
+export interface ManualEntry {
+  lineDescription: string
+  panelOrArea: string
+  iaBilled: FlagAmount
+  note?: string          // short AI observation, e.g. "no CCC equivalent found; labor time appears high"
+}
+
 // One completed review. A claim can have many.
 export interface EstimateReview {
   id: string                // uuid, generated server-side
@@ -33,6 +45,7 @@ export interface EstimateReview {
   grandTotalBilled: number  // parsed from the estimate
   photoCount: number        // 0–10
   flags: Flag[]
+  manualEntries?: ManualEntry[]  // review-worthy manual entries not caught by flags[]
   documentId?: string       // set after auto-filing to Documents tab
   error?: string            // set if this file's review failed (empty flags[])
 }
@@ -43,4 +56,5 @@ export const CATEGORY_LABEL: Record<FlagCategory, string> = {
   overlap: 'Overlap Not Deducted',
   excess_labor: 'Excess Labor',
   duplicate: 'Duplicate Charge',
+  manual_entry: 'Inflated Manual Entry',
 }

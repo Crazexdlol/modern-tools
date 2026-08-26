@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { ClaimInfo } from "@/lib/acv/types";
 import { CATEGORY_LABEL } from "@/lib/estimate-review/types";
-import type { EstimateReview, Flag, FlagCategory } from "@/lib/estimate-review/types";
+import type { EstimateReview, Flag, FlagCategory, ManualEntry } from "@/lib/estimate-review/types";
 import { captureReviewPdf, reviewPdfFileName } from "@/lib/estimate-review/pdf";
 import type { ClaimDocument } from "@/lib/supabase/documents";
 import type { ClaimEstimate } from "./estimate-tab";
@@ -17,6 +17,7 @@ const CATEGORY_STYLE: Record<FlagCategory, string> = {
   overlap: "bg-blue-100 text-blue-800",
   excess_labor: "bg-amber-100 text-amber-800",
   duplicate: "bg-purple-100 text-purple-800",
+  manual_entry: "bg-slate-200 text-slate-800",
 };
 
 function fmtMoney(n: number): string {
@@ -36,6 +37,54 @@ function fmtBilled(a: { laborHours?: number; laborRate?: number; partPrice?: num
 function fmtSuggested(s: Flag["suggested"]): string {
   if (s.action === "remove") return "Remove";
   return fmtBilled(s);
+}
+
+function ManualEntriesTable({ entries }: { entries: ManualEntry[] }) {
+  return (
+    <div className="mt-6">
+      <div className="flex items-center gap-2 mb-2 px-4">
+        <span className="text-[10px] font-bold uppercase tracking-wider bg-slate-200 text-slate-800 px-1.5 py-0.5 rounded">
+          Manual Entries
+        </span>
+        <span className="text-xs text-gray-500">
+          {entries.length} entr{entries.length === 1 ? "y" : "ies"} — typed in by the appraiser (not from CCC database). Review each carefully.
+        </span>
+      </div>
+      <div className="overflow-x-auto -mx-4 sm:mx-0">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="bg-gray-50 border-y border-gray-200">
+              <th className="text-left px-4 py-2 text-xs text-gray-500 font-semibold uppercase tracking-wider">Line</th>
+              <th className="text-left px-4 py-2 text-xs text-gray-500 font-semibold uppercase tracking-wider">IA Billed</th>
+              <th className="text-left px-4 py-2 text-xs text-gray-500 font-semibold uppercase tracking-wider">Note</th>
+              <th className="text-right px-4 py-2 text-xs text-gray-500 font-semibold uppercase tracking-wider">Amount</th>
+            </tr>
+          </thead>
+          <tbody>
+            {entries.map((entry, i) => (
+              <tr key={i} className="border-b border-gray-100 align-top">
+                <td className="px-4 py-3">
+                  <div className="font-semibold text-gray-900">{entry.lineDescription}</div>
+                  {entry.panelOrArea && (
+                    <div className="text-xs text-gray-400 mt-0.5">{entry.panelOrArea}</div>
+                  )}
+                </td>
+                <td className="px-4 py-3 text-gray-700 text-xs">
+                  {fmtBilled(entry.iaBilled)}
+                </td>
+                <td className="px-4 py-3 text-xs text-gray-600 italic max-w-md">
+                  {entry.note || <span className="text-gray-400 not-italic">—</span>}
+                </td>
+                <td className="px-4 py-3 text-right font-semibold text-gray-800 tabular-nums text-sm">
+                  {fmtMoney(entry.iaBilled.total)}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
 }
 
 function FlagTable({ flags }: { flags: Flag[] }) {
@@ -399,24 +448,38 @@ export function EstimateReviewTab({
                 <div className="mt-3 p-3 rounded bg-red-50 border border-red-200 text-red-600 text-sm">
                   Review failed: {review.error}
                 </div>
-              ) : review.flags.length === 0 ? (
+              ) : review.flags.length === 0 && (review.manualEntries?.length ?? 0) === 0 ? (
                 <div className="mt-3 p-3 rounded bg-green-50 border border-green-200 text-green-700 text-sm">
-                  No P-Pages violations found. Estimate looks clean.
+                  No P-Pages violations or manual entries found. Estimate looks clean.
                 </div>
               ) : (
                 <>
                   <div className="mt-2 text-sm text-gray-600">
-                    {review.flags.length} flag{review.flags.length === 1 ? "" : "s"} · total impact{" "}
-                    <span className="font-bold text-amber-700">
-                      -{fmtMoney(review.flags.reduce((sum, f) => sum + Math.abs(f.impact), 0))}
-                    </span>
+                    {review.flags.length > 0 ? (
+                      <>
+                        {review.flags.length} flag{review.flags.length === 1 ? "" : "s"} · total impact{" "}
+                        <span className="font-bold text-amber-700">
+                          -{fmtMoney(review.flags.reduce((sum, f) => sum + Math.abs(f.impact), 0))}
+                        </span>
+                      </>
+                    ) : (
+                      <span className="text-gray-500">No rulebook violations flagged.</span>
+                    )}
+                    {(review.manualEntries?.length ?? 0) > 0 && (
+                      <span className="text-slate-600">
+                        {" · "}{review.manualEntries!.length} manual entr{review.manualEntries!.length === 1 ? "y" : "ies"} to review
+                      </span>
+                    )}
                     {review.grandTotalBilled > 0 && (
                       <span className="text-gray-400">
                         {" · IA billed "}{fmtMoney(review.grandTotalBilled)}
                       </span>
                     )}
                   </div>
-                  <FlagTable flags={review.flags} />
+                  {review.flags.length > 0 && <FlagTable flags={review.flags} />}
+                  {(review.manualEntries?.length ?? 0) > 0 && (
+                    <ManualEntriesTable entries={review.manualEntries!} />
+                  )}
                 </>
               )}
             </div>

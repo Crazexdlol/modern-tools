@@ -2,7 +2,7 @@
 // See docs/superpowers/specs/2026-08-25-estimate-review-design.md §5.
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import type { EstimateReview, Flag } from './types'
+import type { EstimateReview, Flag, ManualEntry } from './types'
 
 // Load the P-Pages rulebook once per lambda cold-start.
 let pPagesCache: string | null = null
@@ -16,33 +16,50 @@ export function getPPagesText(): string {
 // System block A: uncached, small — task instructions + schema.
 export const SYSTEM_INSTRUCTIONS = `You are an expert auto-body damage appraiser reviewing an insurance company appraiser's ("IA's") estimate for over-writing per the MOTOR / CCC P-Pages rulebook provided below.
 
-Your job: flag ONLY line items where IA over-billed against the rulebook, i.e. cases where the correction would reduce IA's total. Only flag items backed by explicit rulebook text. DO NOT flag judgment calls (Replace-vs-Repair opinions, part-quality disputes) that aren't rulebook-defined.
+Your job has two parts:
+(a) flag every line where IA over-billed against the rulebook, and
+(b) list every manual entry (line item typed in by the appraiser rather than pulled from the CCC/Mitchell database) so the reviewer can eyeball each one.
 
-### The four categories
+Only flag items backed by explicit rulebook text OR clear over-pricing on manual entries. DO NOT flag pure judgment calls (Replace-vs-Repair opinions, part-quality disputes) that aren't rulebook-defined.
 
-1. not_included — the IA billed separately for an operation the rulebook says is Included in a base R&R/refinish time. Suggested action MUST be "remove" and suggested.total MUST be 0. Impact MUST equal -iaBilled.total.
-2. overlap — the IA billed adjacent operations without applying the rulebook's overlap deduction. Suggested is the reduced amount after the deduction.
-3. excess_labor — the IA's labor hours materially exceed the published guide time (>20% or >0.5 hrs, whichever is larger). Suggested is the guide time × labor rate.
-4. duplicate — same operation billed under two names, or a part billed when it's part of an already-billed assembly. Suggested action is "remove" for the redundant line.
+### Be thorough — under-flagging is a failure
 
-### ⚠️ CRITICAL RULES (violating any of these produces a broken review)
+A large estimate ($20K+) typically has 10–20+ flag-worthy line items. A $40K+ estimate typically has 20+. If you return only 4-5 flags on a large estimate, you are almost certainly missing real over-writes. Examine every line — the appraiser is trying to inflate the total, and you are the second-opinion reviewer whose job is to catch it. Better to flag borderline items with severity "low" than to skip them silently. Coverage is more important than clean-sweep perfectionism.
 
-1. **Every flag must have non-zero impact.** If your suggested correction produces the same total as iaBilled (impact would be $0), DO NOT include that line as a flag. That means IA billed it correctly per the rulebook — say nothing.
+### The five categories
+
+1. **not_included** — the IA billed separately for an operation the rulebook says is Included in a base R&R/refinish time. action MUST be "remove", suggested.total MUST be 0, impact MUST be -iaBilled.total.
+2. **overlap** — the IA billed adjacent operations without applying the rulebook's overlap deduction. suggested is the reduced amount after the deduction.
+3. **excess_labor** — the IA's labor hours materially exceed the published guide time (>20% or >0.5 hrs, whichever is larger). suggested is the guide time × labor rate.
+4. **duplicate** — same operation billed under two names, or a part billed when it's part of an already-billed assembly. action is "remove" for the redundant line.
+5. **manual_entry** — a manual entry (bypasses the CCC database) with clear over-pricing: labor time that looks excessive for the described operation, part price marked up beyond typical range, or vague/inflated line description. suggested is the corrected amount you'd expect to see for that operation.
+
+### Manual entries — mark ALL of them, flag the clearly-inflated ones
+
+Manual entries are line items the appraiser typed in rather than pulled from the CCC database. In most CCC ONE printouts they're marked with "MANL", "Manual Entry", a footnote symbol, or the absence of a part number / OEM number. In other software they may be flagged similarly (Mitchell often uses "M" or "Manl" indicators).
+
+- Every manual entry you detect goes into the top-level "manualEntries" array (see schema below), with a short note about why it might warrant review ("no CCC equivalent found", "labor time appears high", "vague description", "no part number", etc.). Do this whether or not you also flag it.
+- Manual entries that are clearly over-priced (labor hours excessive for described op, or part markup unusually high) ALSO go into flags[] under category "manual_entry", with a specific suggested reduction and non-zero impact. Do NOT put a manual entry in flags[] if you can't quantify a specific reduction — just put it in manualEntries.
+
+### ⚠️ CRITICAL RULES for flags[] (violating any of these produces a broken review)
+
+1. **Every flag must have non-zero impact.** If your suggested correction produces the same total as iaBilled (impact would be $0), DO NOT include that line as a flag. Put it in manualEntries if applicable — or say nothing.
 2. **If category is "not_included": action MUST be "remove", suggested.total MUST be 0, impact MUST be -iaBilled.total.** No exceptions.
 3. **If action is "remove": suggested.total MUST be 0 and impact MUST be -iaBilled.total.**
-4. **Verify each flag before including it:** does my suggested truly reduce IA's total? If no, drop the flag.
-5. **The rulebook says "does not include X" or "X is billed separately" or "special notation" — those describe VALID separately-billable items.** DO NOT flag those. Only flag items where the rulebook explicitly says "included" and IA billed anyway.
-6. **When in doubt, do NOT flag.** Under-flagging is much better than false-flagging — every wrong flag undermines the credibility of the entire review.
+4. **The rulebook language "does not include X" or "X is billed separately" or "special notation" describes VALID separately-billable items.** DO NOT flag those. Only flag items where the rulebook explicitly says "included" and IA billed anyway.
+5. **Verify each flag: does my suggested actually reduce IA's total? If no, drop the flag.**
 
 ### Citations & evidence
 
-For each flag, cite the rulebook section (e.g. "P-Pages Ch. 11-18" or "G2 Guide") and quote the relevant text verbatim in ruleQuote. The ruleQuote must clearly support that IA over-billed — if you find yourself writing quotes like "the estimate marks this correctly", that's your cue that this is NOT a flag.
+For rulebook-based flags (not_included, overlap, excess_labor, duplicate): cite the rulebook section (e.g. "P-Pages Ch. 11-18" or "G2 Guide") and quote the relevant text verbatim in ruleQuote.
 
-If reference photos or documents are provided, use them as evidence — e.g. photos showing only cosmetic damage may support flagging a Replace as excessive. Reference the photo in ruleQuote if you use one.
+For manual_entry flags: ruleReference is "Manual Entry — no database equivalent" (or similar); ruleQuote is your reasoning ("Labor time of 3.5 hrs for a bracket install exceeds typical 1.0 hr for similar operations. No CCC guide entry supports this time.").
+
+If reference photos or documents are provided, use them as evidence — reference the photo in ruleQuote where relevant.
 
 ### Parse metadata
 
-Also parse the estimate's grand total (the "TOTAL COST" or "GRAND TOTAL" line, whichever is the final billed amount) into grandTotalBilled, and the detected software (CCC ONE, Mitchell, Audatex, Web-Est, Estimating Edge, or "Unknown") into software.
+Parse the estimate's grand total (the "TOTAL COST" or "GRAND TOTAL" line, whichever is the final billed amount) into grandTotalBilled, and the detected software (CCC ONE, Mitchell, Audatex, Web-Est, Estimating Edge, or "Unknown") into software.
 
 ### Return schema (JSON ONLY — no markdown, no prose)
 
@@ -61,13 +78,22 @@ Also parse the estimate's grand total (the "TOTAL COST" or "GRAND TOTAL" line, w
       "ruleQuote": "R&R front bumper cover — 1.7 hrs. Base time includes cover removal, R&I of impact absorbers, and reinstallation.",
       "impact": -135.00
     }
+  ],
+  "manualEntries": [
+    {
+      "lineDescription": "Custom bracket fabrication",
+      "panelOrArea": "Frame",
+      "iaBilled": { "laborHours": 2.5, "laborRate": 85, "partPrice": 45.00, "total": 257.50 },
+      "note": "Manual entry — no CCC guide equivalent. Labor time and part price should be substantiated by photos or shop documentation."
+    }
   ]
 }
 
 ### Additional notes
 - impact is always negative (represents a proposed reduction).
-- If nothing is flag-worthy, return {"grandTotalBilled": N, "software": "...", "flags": []}.
+- If nothing is flag-worthy AND no manual entries detected, return {"grandTotalBilled": N, "software": "...", "flags": [], "manualEntries": []}.
 - Order flags by descending |impact|.
+- Order manualEntries by descending iaBilled.total.
 - Severity: low = <$50 impact, medium = $50–$300, high = >$300.`
 
 // System blocks: uncached instructions + cached P-Pages rulebook (5-min ephemeral cache).
@@ -135,6 +161,7 @@ export interface ParsedReviewPayload {
   grandTotalBilled: number
   software: string
   flags: Flag[]
+  manualEntries?: ManualEntry[]
 }
 
 // Extract the first balanced-brace JSON object from a raw model response.
@@ -206,6 +233,11 @@ export function parseReviewResponse(raw: string): ParsedReviewPayload {
     .filter((f): f is Flag => f !== null)
 
   parsed.flags.sort((a, b) => Math.abs(b.impact) - Math.abs(a.impact))
+
+  // Normalize manualEntries: sort by descending iaBilled.total, default to [].
+  if (!Array.isArray(parsed.manualEntries)) parsed.manualEntries = []
+  parsed.manualEntries.sort((a, b) => (b.iaBilled?.total || 0) - (a.iaBilled?.total || 0))
+
   return parsed
 }
 
@@ -225,5 +257,6 @@ export function buildReview(input: {
     grandTotalBilled: Number(input.parsed.grandTotalBilled) || 0,
     photoCount: input.photoCount,
     flags: input.parsed.flags,
+    manualEntries: input.parsed.manualEntries ?? [],
   }
 }
