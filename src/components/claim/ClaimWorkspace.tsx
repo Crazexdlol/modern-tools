@@ -9,7 +9,6 @@ import {
   Check,
   ChevronLeft,
   ChevronRight,
-  Download,
   Loader2,
   RotateCcw,
   Search,
@@ -45,6 +44,7 @@ import { DocumentsTab } from '@/components/claim/documents-tab'
 import { DVTab, type DVState } from '@/components/claim/dv-tab'
 import { ReportsTab, type InvoiceReportState } from '@/components/claim/reports-tab'
 import { uploadClaimDocument, type ClaimDocument } from '@/lib/supabase/documents'
+import { savePdfWithPicker } from '@/lib/save-pdf'
 import { captureSummaryPdf } from '@/lib/summary-pdf'
 import { saveSummary, getSummary, genId, newEmptyForm, type SavedSummary } from '@/app/summary-page/lib'
 import { SummaryFields } from '@/app/summary-page/SummaryFields'
@@ -977,18 +977,13 @@ function ReviewStep({
       }
       const blob = await res.blob()
       const name = `${claim.maNumber || 'report'}-acv.pdf`
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = name
-      a.click()
-      URL.revokeObjectURL(url)
-      // Re-save via the workspace (keeps reportsState/status/etc. intact) and
-      // file a copy into the Documents tab.
+      // Auto-file to Documents FIRST (canonical claim record), then let the
+      // user choose where to save a local copy via the OS save-as dialog.
       onSave()
       onDocumentSaved?.(blob, name)
+      await savePdfWithPicker(blob, name)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Download failed')
+      setError(err instanceof Error ? err.message : 'Print failed')
     } finally {
       setDownloading(false)
     }
@@ -1145,8 +1140,8 @@ function ReviewStep({
         </Button>
         <div className="flex items-center gap-3 ml-auto">
           <Button onClick={downloadPdf} disabled={downloading} className="bg-blue-600 hover:bg-blue-500 text-white">
-            {downloading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Download className="w-4 h-4 mr-2" />}
-            Download PDF
+            {downloading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Printer className="w-4 h-4 mr-2" />}
+            Print
           </Button>
         </div>
       </div>
@@ -1416,15 +1411,11 @@ function ReportsStep({
       }
       const blob = await res.blob()
       const name = `${claim.maNumber || 'report'}-notes.pdf`
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = name
-      a.click()
-      URL.revokeObjectURL(url)
+      // Auto-file to Documents first, then prompt for local save location.
       onDocumentSaved?.(blob, name, 'closing-notes')
+      await savePdfWithPicker(blob, name)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Download failed')
+      setError(err instanceof Error ? err.message : 'Print failed')
     } finally {
       setDownloading(false)
     }
@@ -1479,15 +1470,11 @@ function ReportsStep({
       }
       const blob = await res.blob()
       const name = `${claim.maNumber || 'report'}-award.pdf`
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = name
-      a.click()
-      URL.revokeObjectURL(url)
+      // Auto-file to Documents first, then prompt for local save location.
       onDocumentSaved?.(blob, name, 'award')
+      await savePdfWithPicker(blob, name)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Download failed')
+      setError(err instanceof Error ? err.message : 'Print failed')
     } finally {
       setDownloading(false)
     }
@@ -1873,8 +1860,8 @@ function ReportsStep({
             </Button>
           )}
           <Button onClick={downloadAwardPdf} disabled={downloading} className="bg-blue-600 hover:bg-blue-500 text-white">
-            {downloading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Download className="w-4 h-4 mr-2" />}
-            Download Award PDF
+            {downloading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Printer className="w-4 h-4 mr-2" />}
+            Print Award
           </Button>
         </div>
       </div>
@@ -2072,8 +2059,8 @@ function ReportsStep({
             </Button>
           )}
           <Button onClick={downloadNotesPdf} disabled={downloading} className="bg-blue-600 hover:bg-blue-500 text-white">
-            {downloading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Download className="w-4 h-4 mr-2" />}
-            Download Closing Notes
+            {downloading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Printer className="w-4 h-4 mr-2" />}
+            Print Closing Notes
           </Button>
         </div>
       </div>

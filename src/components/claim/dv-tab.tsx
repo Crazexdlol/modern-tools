@@ -1,13 +1,14 @@
 "use client"
 
 import { useState } from 'react'
-import { Download, Loader2, AlertCircle } from 'lucide-react'
+import { Loader2, Printer, AlertCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { cn } from '@/lib/utils'
 import type { ClaimInfo } from '@/lib/acv/types'
 import { formatCurrency } from '@/lib/acv/calculations'
 import type { DVVariant } from '@/lib/acv/dv-pdf-filler'
+import { savePdfWithPicker } from '@/lib/save-pdf'
 
 // Damage severity rubric — straight from the Modern Appraisers DV reports.
 export const DAMAGE_SEVERITY_SCALE = [
@@ -215,15 +216,11 @@ export function DVTab({
       }
       const blob = await res.blob()
       const name = `${claim.maNumber || 'claim'}-DV-${state.reportType}${state.withPriorLoss ? '-wLoss' : ''}.pdf`
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = name
-      a.click()
-      URL.revokeObjectURL(url)
+      // Auto-file to Documents first, then prompt for local save location.
       onGenerated?.(blob, name)
+      await savePdfWithPicker(blob, name)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Download failed')
+      setError(err instanceof Error ? err.message : 'Print failed')
     } finally {
       setDownloading(false)
     }
@@ -398,8 +395,8 @@ export function DVTab({
       )}
 
       <Button onClick={downloadPdf} disabled={downloading} className="bg-blue-600 hover:bg-blue-500 text-white font-bold">
-        {downloading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Download className="w-4 h-4 mr-2" />}
-        Download DV Report ({state.reportType === 'attorney' ? 'Attorney' : 'Insurance'}{state.withPriorLoss ? ', w/ Prior Loss' : ''})
+        {downloading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Printer className="w-4 h-4 mr-2" />}
+        Print DV Report ({state.reportType === 'attorney' ? 'Attorney' : 'Insurance'}{state.withPriorLoss ? ', w/ Prior Loss' : ''})
       </Button>
     </div>
   )

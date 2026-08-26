@@ -122,5 +122,14 @@ export async function fillInvoicePdf(variant: InvoiceVariant, data: InvoicePdfDa
   })
   form.acroForm.dict.delete(PDFName.of('CO'))
 
+  // Ensure every field has a proper appearance stream before flattening; we
+  // cleared the AP dicts above and pdf-lib's flatten() bakes what's there.
+  form.getFields().forEach(f => {
+    try { form.getTextField(f.getName()).defaultUpdateAppearances(timesRoman) } catch { /* not a text field */ }
+  })
+
+  // Flatten so the printed invoice is clean static text — no editable fields.
+  form.flatten()
+
   return doc.save()
 }

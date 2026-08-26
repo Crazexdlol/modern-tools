@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
-import { ArrowLeft, Download, Loader2, AlertCircle } from 'lucide-react'
+import { ArrowLeft, Loader2, Printer, AlertCircle } from 'lucide-react'
 import { AppHeader } from '@/components/app-header'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -14,6 +14,7 @@ import {
   pickInvoiceVariant,
 } from '@/lib/invoice/types'
 import { InvoiceFormFields, InvoiceLineItemsEditor, InvoiceSummary } from '@/components/invoice/invoice-fields'
+import { savePdfWithPicker } from '@/lib/save-pdf'
 
 export default function StandaloneInvoicePage() {
   const [data, setData] = useState(emptyInvoiceFormData)
@@ -41,14 +42,9 @@ export default function StandaloneInvoicePage() {
       }
       const blob = await res.blob()
       const name = `invoice${data.invoiceNumber ? `-${data.invoiceNumber}` : ''}.pdf`
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = name
-      a.click()
-      URL.revokeObjectURL(url)
+      await savePdfWithPicker(blob, name)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Download failed')
+      setError(err instanceof Error ? err.message : 'Print failed')
     } finally {
       setDownloading(false)
     }
@@ -86,8 +82,8 @@ export default function StandaloneInvoicePage() {
           )}
 
           <Button onClick={downloadPdf} disabled={downloading} className="bg-blue-600 hover:bg-blue-500 text-white font-bold">
-            {downloading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Download className="w-4 h-4 mr-2" />}
-            Download Invoice
+            {downloading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Printer className="w-4 h-4 mr-2" />}
+            Print Invoice
           </Button>
         </div>
       </main>
