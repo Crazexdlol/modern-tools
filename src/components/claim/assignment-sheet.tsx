@@ -1,9 +1,12 @@
 "use client"
 
 // Assignment Sheet — a single-page printable summary of the claim.
-// Rendered as a hidden portal on the workspace; print CSS gates so only this
-// portal shows in the print dialog (see triggerAssignmentSheetPrint below).
+// Rendered via a React portal directly into <body> so print CSS can hide
+// every OTHER body child without also hiding this sheet (which would happen
+// if it were nested deep in the app tree). See triggerAssignmentSheetPrint.
 import Image from 'next/image'
+import { useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 import type { ClaimInfo } from '@/lib/acv/types'
 import { formatCurrency } from '@/lib/acv/calculations'
 import { mileageModifierFor, type DVState } from '@/components/claim/dv-tab'
@@ -58,6 +61,12 @@ export function AssignmentSheet({ data }: { data: AssignmentSheetData }) {
     agreementAmount, umpireAmount, ourAcv, dv,
   } = data
 
+  // Mount into <body> via a portal so print CSS can hide every OTHER body
+  // child without also hiding this sheet.
+  const [mounted, setMounted] = useState(false)
+  useEffect(() => { setMounted(true) }, [])
+  if (!mounted) return null
+
   const printedOn = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
   const vehicle = [claim.year || '', claim.make, claim.model, claim.trim].filter(Boolean).join(' ')
   const handling = claim.handlingAppraiser || assignedToName || 'Unassigned'
@@ -69,7 +78,7 @@ export function AssignmentSheet({ data }: { data: AssignmentSheetData }) {
     ? new Date(submittedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
     : '—'
 
-  return (
+  return createPortal(
     <div className="assignment-print-portal">
       <div className="assignment-sheet">
         {/* Header */}
@@ -160,11 +169,11 @@ export function AssignmentSheet({ data }: { data: AssignmentSheetData }) {
         </section>
       </div>
 
-      <style jsx>{`
+      <style jsx global>{`
         .assignment-print-portal { display: none; }
         @media print {
-          :global(body.printing-assignment-sheet > *:not(.assignment-print-portal)) { display: none !important; }
-          .assignment-print-portal { display: block !important; }
+          body.printing-assignment-sheet > *:not(.assignment-print-portal) { display: none !important; }
+          body.printing-assignment-sheet .assignment-print-portal { display: block !important; }
           @page { margin: 0.5in; }
         }
         .assignment-sheet {
@@ -212,7 +221,8 @@ export function AssignmentSheet({ data }: { data: AssignmentSheetData }) {
           max-width: 420px;
         }
       `}</style>
-    </div>
+    </div>,
+    document.body,
   )
 }
 
