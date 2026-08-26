@@ -18,6 +18,50 @@ Read `CLAUDE.md` first if you haven't. Then read the top entry here before touch
 
 ---
 
+## 2026-08-26 (later) — Messages feature shipped
+
+**Worked on:** New team-communication feature on claims. **Messages tab** joins Claim Info + Documents on the top row of the claim workspace. Chat-app layout — chronological thread, composer fixed at the bottom, recipient chip picker searchable over all profiles. Every message persists on the claim permanently (reassignment cannot touch messages — verified structurally, no assignment-linked columns in the schema). Per-user unread tracking via a high-water-mark timestamp table. New Dashboard header button "**Messages (N)**" shows the caller's total unread count and links to `/messages` — a page listing every claim with unread messages for that user. Opening a claim's Messages tab marks that claim's thread as read for the caller and clears it from their queue.
+
+Full design at `docs/superpowers/specs/2026-08-26-messages-design.md`; implementation plan at `docs/superpowers/plans/2026-08-26-messages.md`. Built via subagent-driven-development.
+
+**Changed (new files):**
+- `supabase-migration-messages.sql` + `supabase-migration-messages-rollback.sql` — two new tables (`messages` + `message_reads`), their RLS policies + indexes.
+- `src/lib/auth/require-claim-access.ts` — server helper for the four API routes (auth + admin-or-assignee check).
+- `src/lib/supabase/messages.ts` — `Message`, `UnreadClaim`, `SendMessagePayload` types + fetch/send/mark-read/queue/count helpers.
+- `src/app/api/claims/[id]/messages/route.ts` — GET list + POST send. Body validation (max 4000 chars, non-empty recipients, all recipient ids must be real profiles). Server captures sender_name + recipient_names at send time so history renders sensibly after any user rename/delete.
+- `src/app/api/claims/[id]/messages/read/route.ts` — POST mark-as-read (upserts `message_reads`).
+- `src/app/api/messages/queue/route.ts` — GET per-user unread queue. Buckets messages by claim, joins with acv_history, sorts by recency.
+- `src/components/claim/messages-tab.tsx` — the tab component. Auto-scroll to bottom. Composer defaults to previous message's recipients (reply-style). URL auto-linkifier (regex-based, no library). Ctrl/Cmd+Enter to send. Soft warn at 20+ recipients.
+- `src/app/messages/page.tsx` + `messages-queue-client.tsx` — `/messages` queue page with claim rows, unread badges, last-message metadata, click-to-open.
+
+**Changed (modified files):**
+- `src/components/claim/ClaimWorkspace.tsx` — imported MessagesTab, added `{ id: 'messages', label: 'Messages', step: 13 }` to `CLAIM_TABS`, extended `tabForStep` with step 13, rendered the tab OUTSIDE the `<fieldset disabled={readOnly}>` wrapper so messaging stays active on submitted/closed claims (per design §7.2 — meta-conversation about the work).
+- `src/app/page.tsx` — added `MessageSquare` icon import + `fetchUnreadCount` import + `unreadMessages` state, extended `load()`'s Promise.all to include the unread count, added the Messages Link as the first header button (visible to both admins AND appraisers, unlike Completed Assignments which is admin-only).
+
+**Deploy status: LIVE.** `modern-tools-rho.vercel.app` → `dpl_HHCAt3rYrEcAvWBVJPHVu9SPMtdi` (`modern-tools-fcefct4lp`). Alias verified. Prod sanity check: `GET /api/messages/queue` without a session returns HTTP 401 `Not authenticated` (guard active).
+
+Prerequisite step Henry completed before deploy:
+- `supabase-migration-messages.sql` executed in Supabase SQL Editor. Verification query confirmed 2 tables + 3 policies + all constraints.
+
+**Rollback:**
+- Code: `npx vercel promote modern-tools-rlwwzav2o-henry-as-projects-88caed67.vercel.app --scope henry-as-projects-88caed67 --yes` (prior good build from earlier this session — post-header-truncation-fix, pre-Messages).
+- Schema: run `supabase-migration-messages-rollback.sql` in Supabase SQL editor (drops both tables + policies; no other data touched).
+
+**In progress / broken / unknowns:**
+- **Real end-to-end validation is on Henry.** Individual tasks each verified via tsc + build + lint at baseline. Real flow (send between two accounts, badges track correctly, reassignment preserves thread) needs a live second account.
+- **No push updates yet.** Unread counts refresh only when the Dashboard loads or you navigate. If someone sends a message while you're staring at another page, you won't see it until you reload. Realtime subscription is a v2 add.
+- **No email notifications.** In-app only per design.
+- **No file attachments in v1.** Use Documents tab and reference in message body (URL auto-linkifier catches app-relative paths like `/claims/abc`).
+- **No message editing or deleting.** Append-only per design. Enforced at RLS level (no UPDATE/DELETE policies).
+- **User rename** — captured names in message history stay at the send-time snapshot. New messages show the current name. Documented; not a bug.
+- **Recipient dropdown shows all profiles**, not filtered to "users who could plausibly access this claim". Simplifies the picker; server-side no harm since recipients without claim access simply can't SELECT the message. Could tighten later.
+
+**Next:**
+- Henry validates the flow — send a message from admin to himself, verify badge/queue, then create a second test account and walk the two-way flow.
+- Whatever Henry surfaces after real-world usage.
+
+---
+
 ## 2026-08-26 — Role-based access shipped (admin + appraiser roles, claim assignment, submit workflow)
 
 **Worked on:** Split Modern Tools' single-shared-login model into two roles. **Admin** sees everything, creates users, assigns claims, and approves/reopens; **appraiser** sees only claims assigned to them and can only submit a claim for admin review, not close or reassign. Includes admin user-management page, personal profile page (name + password change for everyone), an admin-controlled site setting that gates whether appraisers can create claims (default ON), a Completed Assignments queue on the admin dashboard, and full server-side enforcement via RLS + triggers + service-role-guarded API routes. Existing ~487 claims stayed untouched; all start unassigned. Bootstrap admin is the single pre-existing account (xsfabot@gmail.com).
