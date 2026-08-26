@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextResponse } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 
@@ -25,7 +25,7 @@ interface ReadRow {
 
 // GET /api/messages/queue — list of claims with unread messages for the caller.
 // Response: { claims: [{ claimId, maNumber, insuredName, vehicle, unreadCount, lastMessageAt, lastMessageFrom }] }
-export async function GET(_req: NextRequest) {
+export async function GET() {
   const cookieStore = await cookies()
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
