@@ -6,6 +6,7 @@ import { ArrowLeft, Upload, FileText, X, Loader2, AlertCircle, Printer, Trash2, 
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { ClaimInfo } from "@/lib/acv/types";
+import type { EstimateReview } from "@/lib/estimate-review/types";
 
 // ─── Vehicle area sort order (front to back) ───────────────────────────────
 const VEHICLE_AREA_ORDER: string[] = [
@@ -77,6 +78,8 @@ export interface ClaimEstimate {
   grandTotalB: number;
   totalDifference: number;
   result: ComparisonResult;
+  // Estimate Review results. Optional — undefined on claims that predate this feature.
+  reviews?: EstimateReview[];
 }
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
