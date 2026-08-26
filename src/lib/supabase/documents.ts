@@ -7,7 +7,7 @@ export interface ClaimDocument {
   id: string
   name: string
   // What produced it: a generated report or a manual upload.
-  source: 'acv-report' | 'award' | 'closing-notes' | 'summary' | 'dv-report' | 'estimate' | 'invoice' | 'upload'
+  source: 'acv-report' | 'award' | 'closing-notes' | 'summary' | 'dv-report' | 'estimate' | 'estimate-review' | 'invoice' | 'upload'
   path: string
   size: number
   createdAt: string

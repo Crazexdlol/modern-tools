@@ -3527,6 +3527,7 @@ function ClaimWorkspaceInner({ claimId }: { claimId: string }) {
               claim={claim}
               estimate={estimate}
               onChange={setEstimate}
+              onDocumentSaved={(blob, name, source) => addDocument(blob, name, source)}
             />
           </div>
         )}

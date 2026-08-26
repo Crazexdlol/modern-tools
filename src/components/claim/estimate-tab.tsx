@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { ClaimInfo } from "@/lib/acv/types";
 import type { EstimateReview } from "@/lib/estimate-review/types";
+import type { ClaimDocument } from "@/lib/supabase/documents";
 import { EstimateReviewTab } from "./estimate-review-tab";
 
 // ─── Vehicle area sort order (front to back) ───────────────────────────────
@@ -878,10 +879,12 @@ export function EstimateTab({
   claim,
   estimate,
   onChange,
+  onDocumentSaved,
 }: {
   claim: ClaimInfo;
   estimate: ClaimEstimate | null;
   onChange: (next: ClaimEstimate) => void;
+  onDocumentSaved?: (blob: Blob, name: string, source: ClaimDocument["source"]) => void;
 }) {
   const [subTab, setSubTab] = useState<SubTab>(() => defaultSubTab(estimate));
 
@@ -912,7 +915,12 @@ export function EstimateTab({
       {subTab === "compare" ? (
         <CompareEstimates claim={claim} estimate={estimate} onChange={onChange} />
       ) : (
-        <EstimateReviewTab claim={claim} estimate={estimate} onChange={onChange} />
+        <EstimateReviewTab
+          claim={claim}
+          estimate={estimate}
+          onChange={onChange}
+          onDocumentSaved={onDocumentSaved}
+        />
       )}
     </div>
   );

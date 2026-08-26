@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { useDropzone } from "react-dropzone";
 import { AlertCircle, FileText, Loader2, Trash2, Upload, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -8,6 +8,8 @@ import { cn } from "@/lib/utils";
 import type { ClaimInfo } from "@/lib/acv/types";
 import { CATEGORY_LABEL } from "@/lib/estimate-review/types";
 import type { EstimateReview, Flag, FlagCategory } from "@/lib/estimate-review/types";
+import { captureReviewPdf, reviewPdfFileName } from "@/lib/estimate-review/pdf";
+import type { ClaimDocument } from "@/lib/supabase/documents";
 import type { ClaimEstimate } from "./estimate-tab";
 
 const CATEGORY_STYLE: Record<FlagCategory, string> = {
@@ -212,10 +214,12 @@ export function EstimateReviewTab({
   claim,
   estimate,
   onChange,
+  onDocumentSaved,
 }: {
   claim: ClaimInfo;
   estimate: ClaimEstimate | null;
   onChange: (next: ClaimEstimate) => void;
+  onDocumentSaved?: (blob: Blob, name: string, source: ClaimDocument["source"]) => void;
 }) {
   const reviews = estimate?.reviews ?? [];
   const [estimates, setEstimates] = useState<File[]>([]);
@@ -223,6 +227,7 @@ export function EstimateReviewTab({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showUpload, setShowUpload] = useState(reviews.length === 0);
+  const cardRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
   const vehicleLabel = [claim.year || "", claim.make, claim.model].filter(Boolean).join(" ");
 
@@ -248,6 +253,25 @@ export function EstimateReviewTab({
       setEstimates([]);
       setPhotos([]);
       setShowUpload(false);
+
+      // Auto-file successful reviews to Documents. Refs won't exist until React
+      // renders the new cards, so defer one tick.
+      if (onDocumentSaved) {
+        setTimeout(async () => {
+          for (const review of newReviews) {
+            if (review.error || review.flags.length === 0) continue;
+            const el = cardRefs.current[review.id];
+            if (!el) continue;
+            try {
+              const blob = await captureReviewPdf(el);
+              if (!blob) continue;
+              onDocumentSaved(blob, reviewPdfFileName(review.reviewNumber, review.fileName), "estimate-review");
+            } catch (err) {
+              console.error("Failed to auto-file review PDF:", review.fileName, err);
+            }
+          }
+        }, 150);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Review failed");
     } finally {
@@ -344,6 +368,7 @@ export function EstimateReviewTab({
           {reviews.map((review) => (
             <div
               key={review.id}
+              ref={(el) => { cardRefs.current[review.id] = el; }}
               className="bg-white border border-gray-200 rounded-lg shadow-sm p-4"
             >
               <div className="flex items-start justify-between gap-4">

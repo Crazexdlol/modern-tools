@@ -17,6 +17,7 @@ const SOURCE_LABELS: Record<ClaimDocument['source'], string> = {
   'summary': 'Summary',
   'dv-report': 'DV Report',
   'estimate': 'Estimate',
+  'estimate-review': 'Estimate Review',
   'invoice': 'Invoice',
   'upload': 'Uploaded',
 }
