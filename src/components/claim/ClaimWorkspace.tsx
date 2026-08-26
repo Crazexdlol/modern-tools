@@ -43,6 +43,7 @@ import { useCurrentProfile, fetchAllProfilesBrowser, type Profile } from '@/lib/
 import { LossSearchTab, type LossListing } from '@/components/claim/loss-search-tab'
 import { EstimateTab } from '@/components/claim/estimate-tab'
 import { DocumentsTab } from '@/components/claim/documents-tab'
+import { MessagesTab } from '@/components/claim/messages-tab'
 import { DVTab, type DVState } from '@/components/claim/dv-tab'
 import { ReportsTab, type InvoiceReportState } from '@/components/claim/reports-tab'
 import { uploadClaimDocument, type ClaimDocument } from '@/lib/supabase/documents'
@@ -2231,6 +2232,7 @@ function getCompFinderDraft(): { step: number; claim: ClaimInfo; listings: Marke
 const CLAIM_TABS = [
   { id: 'info', label: 'Claim Info', step: 1 },
   { id: 'documents', label: 'Documents', step: 10 },
+  { id: 'messages', label: 'Messages', step: 13 },
 ] as const
 
 const TOOL_TABS = [
@@ -2252,6 +2254,7 @@ function tabForStep(step: number): string {
   if (step === 7) return 'estimate'
   if (step === 11) return 'dv'
   if (step === 12) return 'reports'
+  if (step === 13) return 'messages'
   return 'acv' // 2-4 stepper + 6 (Loss Search lives inside the ACV tab)
 }
 
@@ -3854,6 +3857,13 @@ function ClaimWorkspaceInner({ claimId }: { claimId: string }) {
           </div>
         )}
         </fieldset>
+
+        {/* Step 13: Messages — rendered OUTSIDE the fieldset so messaging
+            stays active even on submitted/closed/read-only claims (spec §7.2:
+            meta-conversation about the work is always allowed). */}
+        {step === 13 && editingId && (
+          <MessagesTab claimId={editingId} />
+        )}
       </main>
 
     </div>
