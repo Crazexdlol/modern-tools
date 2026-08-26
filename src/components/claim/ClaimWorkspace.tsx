@@ -38,7 +38,7 @@ import {
   defaultAdjustments,
   formatCurrency,
 } from '@/lib/acv/calculations'
-import { saveACVHistory, fetchACVEntry, setClaimStatus, type ClaimStatus } from '@/lib/supabase/history'
+import { saveACVHistory, fetchACVEntry, type ClaimStatus } from '@/lib/supabase/history'
 import { useCurrentProfile, fetchAllProfilesBrowser, type Profile } from '@/lib/supabase/profiles'
 import { LossSearchTab, type LossListing } from '@/components/claim/loss-search-tab'
 import { EstimateTab } from '@/components/claim/estimate-tab'
@@ -2849,8 +2849,8 @@ function ClaimWorkspaceInner({ claimId }: { claimId: string }) {
     variant: 'primary',
   })
 
-  // Admin needs the list of users for the inline assign dropdown; skip the
-  // fetch for non-admins to avoid the extra roundtrip on every workspace load.
+  // Admin needs the list of users for the Reassign popover; skip the fetch for
+  // non-admins to avoid the extra roundtrip on every workspace load.
   useEffect(() => {
     if (!isAdmin) return
     let cancelled = false
@@ -2858,18 +2858,55 @@ function ClaimWorkspaceInner({ claimId }: { claimId: string }) {
     return () => { cancelled = true }
   }, [isAdmin])
 
+  // Reassign flow (admin-only): the toolbar button opens a popover of
+  // appraisers. Selecting one arms a ConfirmDialog. Confirming POSTs to the
+  // assign API, refetches, and updates local state (no full page reload).
+  const [reassignOpen, setReassignOpen] = useState(false)
+  const [reassignBusy, setReassignBusy] = useState(false)
+  const [pendingReassign, setPendingReassign] = useState<{ id: string | null; label: string } | null>(null)
+  const reassignRef = useRef<HTMLDivElement | null>(null)
+
+  useEffect(() => {
+    if (!reassignOpen) return
+    const onDocClick = (e: MouseEvent) => {
+      if (reassignRef.current && !reassignRef.current.contains(e.target as Node)) {
+        setReassignOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', onDocClick)
+    return () => document.removeEventListener('mousedown', onDocClick)
+  }, [reassignOpen])
+
+  const pickReassignee = (id: string | null, label: string) => {
+    setReassignOpen(false)
+    setPendingReassign({ id, label })
+  }
+
+  const runReassign = async () => {
+    if (!pendingReassign || !editingId) { setPendingReassign(null); return }
+    setReassignBusy(true)
+    const res = await fetch(`/api/claims/${editingId}/assign`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ assignedTo: pendingReassign.id }),
+    })
+    setReassignBusy(false)
+    setPendingReassign(null)
+    if (!res.ok) {
+      const b = await res.json().catch(() => ({} as { error?: string }))
+      alert((b as { error?: string }).error ?? 'Reassign failed')
+      return
+    }
+    const fresh = await fetchACVEntry(editingId)
+    if (fresh) setAssignedTo(fresh.assignedTo ?? null)
+  }
+
   const handleVinDecoded = async (updatedClaim: ClaimInfo) => {
     // Save with the CURRENT comps/result — previously this saved an empty
     // comps array, wiping the claim's saved comps whenever a VIN was re-decoded.
     const savedId = await saveToHistory(updatedClaim, builtComps, adjustments, result, modeRef.current, editingId, mileageRate, reportsState, saveExtras)
     if (!editingId) setEditingId(savedId)
     editingIdRef.current = savedId
-  }
-
-  const toggleStatus = async () => {
-    const next: ClaimStatus = status === 'open' ? 'closed' : 'open'
-    setStatus(next)
-    if (editingIdRef.current) await setClaimStatus(editingIdRef.current, next)
   }
 
   // Explicit creation from /claims/new: save the claim row now and swap to its
@@ -2940,20 +2977,6 @@ function ClaimWorkspaceInner({ claimId }: { claimId: string }) {
             <ArrowLeft className="w-4 h-4" />
             Dashboard
           </Link>
-          {!isNew && isAdmin && (
-            <button
-              onClick={toggleStatus}
-              className={cn(
-                'text-xs font-semibold px-2.5 py-1 rounded-full border transition-colors',
-                status === 'open'
-                  ? 'text-emerald-700 bg-emerald-50 border-emerald-200 hover:bg-emerald-100'
-                  : 'text-gray-600 bg-gray-100 border-gray-300 hover:bg-gray-200'
-              )}
-              title={status === 'open' ? 'Click to close this claim' : 'Click to reopen this claim'}
-            >
-              {status === 'open' ? 'Open' : 'Closed'}
-            </button>
-          )}
           {!readOnly && hasUnsavedChanges && (
             <div className="flex items-center gap-2 ml-auto">
               <span className="text-xs text-amber-600 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full font-medium">Unsaved changes</span>
@@ -3011,6 +3034,51 @@ function ClaimWorkspaceInner({ claimId }: { claimId: string }) {
                   Reopen
                 </Button>
               )}
+              {isAdmin && (
+                <div className="relative" ref={reassignRef}>
+                  <Button
+                    onClick={() => setReassignOpen(o => !o)}
+                    disabled={workflowBusy || reassignBusy}
+                    size="sm"
+                    variant="outline"
+                  >
+                    Reassign
+                  </Button>
+                  {reassignOpen && (
+                    <div className="absolute right-0 top-full mt-1 w-56 bg-white border border-gray-200 rounded-lg shadow-lg z-30 max-h-72 overflow-y-auto">
+                      {allProfiles.length === 0 ? (
+                        <div className="px-3 py-2 text-sm text-gray-400 italic">
+                          No appraisers available
+                        </div>
+                      ) : (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => pickReassignee(null, 'Unassigned')}
+                            className="w-full text-left px-3 py-2 text-sm text-gray-500 hover:bg-gray-100 italic"
+                          >
+                            — Unassigned —
+                          </button>
+                          <div className="border-t border-gray-100" />
+                          {allProfiles.map(p => (
+                            <button
+                              key={p.id}
+                              type="button"
+                              onClick={() => pickReassignee(p.id, p.name || p.email)}
+                              className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center justify-between gap-2"
+                            >
+                              <span className="truncate">{p.name || p.email}</span>
+                              {p.id === assignedTo && (
+                                <span className="text-xs text-gray-400 shrink-0">current</span>
+                              )}
+                            </button>
+                          ))}
+                        </>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -3026,10 +3094,24 @@ function ClaimWorkspaceInner({ claimId }: { claimId: string }) {
           onCancel={() => setPendingWorkflow(null)}
         />
 
+        <ConfirmDialog
+          open={!!pendingReassign}
+          title="Reassign this claim?"
+          message={
+            pendingReassign ? (
+              <>This claim will be assigned to <b>{pendingReassign.label}</b>.</>
+            ) : ''
+          }
+          confirmLabel="Reassign"
+          busy={reassignBusy}
+          onConfirm={runReassign}
+          onCancel={() => setPendingReassign(null)}
+        />
+
         {isNew ? (
           <h1 className="text-3xl font-extrabold text-gray-900 tracking-tight mb-6">New Claim</h1>
         ) : (
-          <div className="mb-6 bg-white border border-gray-200 rounded-xl shadow-sm px-6 py-4">
+          <div className="mb-6 bg-white rounded-xl shadow-sm px-6 py-4">
             <div className="flex flex-wrap items-center gap-y-4">
               {[
                 { label: 'MA #', value: claim.maNumber },
@@ -3044,38 +3126,6 @@ function ClaimWorkspaceInner({ claimId }: { claimId: string }) {
                 </Fragment>
               ))}
             </div>
-            {/* Task 11: admin-only inline assignee picker. Uses the assign API
-                so the DB stays the source of truth; local state mirrors it. */}
-            {isAdmin && editingId && (
-              <div className="flex items-center gap-2 text-xs text-gray-500 mt-4 pt-4 border-t border-gray-100">
-                <span>Assigned to:</span>
-                <select
-                  value={assignedTo ?? ''}
-                  onChange={async (e) => {
-                    const val = e.target.value || null
-                    setAssignedTo(val)
-                    const res = await fetch(`/api/claims/${editingId}/assign`, {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ assignedTo: val }),
-                    })
-                    if (!res.ok) {
-                      const b = await res.json().catch(() => ({} as { error?: string }))
-                      alert((b as { error?: string }).error ?? 'Assign failed')
-                      // Rehydrate from server so a failed change doesn't leave the UI stale.
-                      const fresh = await fetchACVEntry(editingId)
-                      if (fresh) setAssignedTo(fresh.assignedTo ?? null)
-                    }
-                  }}
-                  className="bg-white border border-gray-200 rounded px-2 py-1 text-sm"
-                >
-                  <option value="">Unassigned</option>
-                  {allProfiles.map(p => (
-                    <option key={p.id} value={p.id}>{p.name || p.email}</option>
-                  ))}
-                </select>
-              </div>
-            )}
           </div>
         )}
 
@@ -3112,25 +3162,23 @@ function ClaimWorkspaceInner({ claimId }: { claimId: string }) {
               )
             })}
           </div>
-          <div className="flex items-center border-b border-gray-200 overflow-x-auto bg-gray-50/60 rounded-b-lg px-1">
-            {TOOL_TABS.map((tab, i) => {
+          <div className="flex items-center justify-center gap-8 border-b border-gray-200 overflow-x-auto">
+            {TOOL_TABS.map((tab) => {
               const active = tabForStep(step) === tab.id
               return (
-                <Fragment key={tab.id}>
-                  {i > 0 && <span className="w-px self-stretch my-2.5 bg-gray-200 shrink-0" />}
-                  <button
-                    type="button"
-                    onClick={() => setStep(tab.step)}
-                    className={cn(
-                      'px-3.5 py-3 text-base font-bold whitespace-nowrap border-b-2 -mb-px transition-colors',
-                      active
-                        ? 'border-blue-600 text-blue-600'
-                        : 'border-transparent text-gray-500 hover:text-gray-900 hover:border-gray-300'
-                    )}
-                  >
-                    {tab.label}
-                  </button>
-                </Fragment>
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setStep(tab.step)}
+                  className={cn(
+                    'pb-3 text-base font-bold whitespace-nowrap border-b-2 -mb-px transition-colors',
+                    active
+                      ? 'border-blue-600 text-blue-600'
+                      : 'border-transparent text-gray-500 hover:text-gray-900 hover:border-gray-300'
+                  )}
+                >
+                  {tab.label}
+                </button>
               )
             })}
           </div>
