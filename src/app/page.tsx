@@ -41,7 +41,9 @@ export default function DashboardPage() {
   const isAdmin = profile?.role === 'admin'
   const openClaims = entries.filter(e => e.status !== 'closed' && !e.submittedAt)
   const submittedClaims = entries.filter(e => e.status !== 'closed' && !!e.submittedAt)
-  const canCreate = isAdmin || allowCreate
+  // Master + grant: admins always; non-admins need BOTH the site-wide master
+  // (allowCreate) and their per-user grant (profile.canCreateClaims).
+  const canCreate = isAdmin || (allowCreate && profile?.canCreateClaims === true)
 
   const startNewClaim = () => {
     localStorage.removeItem('modern-tools-comp-finder-draft')
