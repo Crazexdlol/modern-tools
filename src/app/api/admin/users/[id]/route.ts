@@ -12,18 +12,44 @@ export async function PATCH(
   if (errorResponse) return errorResponse
 
   const { id } = await params
-  const body = await request.json().catch(() => null) as { name?: string; role?: 'admin' | 'appraiser' } | null
-  if (!body || (body.name === undefined && body.role === undefined)) {
-    return NextResponse.json({ error: 'name and/or role is required' }, { status: 400 })
+  const body = await request.json().catch(() => null) as {
+    name?: string
+    role?: 'admin' | 'appraiser'
+    canReassignClaims?: boolean
+    canEditClaimInfo?: boolean
+    canCreateClaims?: boolean
+    autoStatusRequestsOverride?: boolean | null
+  } | null
+  if (
+    !body ||
+    (body.name === undefined &&
+      body.role === undefined &&
+      body.canReassignClaims === undefined &&
+      body.canEditClaimInfo === undefined &&
+      body.canCreateClaims === undefined &&
+      body.autoStatusRequestsOverride === undefined)
+  ) {
+    return NextResponse.json({ error: 'no fields to update' }, { status: 400 })
   }
   if (body.role !== undefined && !['admin', 'appraiser'].includes(body.role)) {
     return NextResponse.json({ error: 'role must be admin or appraiser' }, { status: 400 })
+  }
+  if (
+    body.autoStatusRequestsOverride !== undefined &&
+    body.autoStatusRequestsOverride !== null &&
+    typeof body.autoStatusRequestsOverride !== 'boolean'
+  ) {
+    return NextResponse.json({ error: 'autoStatusRequestsOverride must be boolean or null' }, { status: 400 })
   }
 
   const service = createServiceClient()
   const patch: Record<string, unknown> = { updated_at: new Date().toISOString() }
   if (body.name !== undefined) patch.name = body.name
   if (body.role !== undefined) patch.role = body.role
+  if (body.canReassignClaims !== undefined) patch.can_reassign_claims = body.canReassignClaims
+  if (body.canEditClaimInfo !== undefined) patch.can_edit_claim_info = body.canEditClaimInfo
+  if (body.canCreateClaims !== undefined) patch.can_create_claims = body.canCreateClaims
+  if (body.autoStatusRequestsOverride !== undefined) patch.auto_status_requests_override = body.autoStatusRequestsOverride
 
   const { error } = await service.from('profiles').update(patch).eq('id', id)
   if (error) return NextResponse.json({ error: error.message }, { status: 400 })
