@@ -1,9 +1,12 @@
 "use client"
 
 import { useEffect, useMemo, useState } from 'react'
+import { Check, ChevronsUpDown } from 'lucide-react'
 import { fetchSiteSetting } from '@/lib/supabase/site-settings'
 import { fetchAllProfilesBrowser, type Profile } from '@/lib/supabase/profiles'
 import { SectionCard, ToggleRow } from '../_shared'
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 
 type PermField = 'canCreateClaims' | 'canReassignClaims' | 'canEditClaimInfo'
 
@@ -12,7 +15,7 @@ export function AccessClient() {
   const [profiles, setProfiles] = useState<Profile[]>([])
   const [loading, setLoading] = useState(true)
   const [selectedId, setSelectedId] = useState<string | null>(null)
-  const [pickerText, setPickerText] = useState('')
+  const [pickerOpen, setPickerOpen] = useState(false)
   const [busyField, setBusyField] = useState<PermField | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
@@ -72,15 +75,6 @@ export function AccessClient() {
     setSaved(true)
   }
 
-  // When the user types a name/email into the picker and it matches exactly
-  // one appraiser's "Name (email)" label, select them. This lets the datalist
-  // dropdown act like a single-select combobox without extra chrome.
-  const applyPickerText = (text: string) => {
-    setPickerText(text)
-    const match = appraisers.find(p => `${p.name || p.email} (${p.email})` === text)
-    setSelectedId(match?.id ?? null)
-  }
-
   return (
     <div className="space-y-6">
       <SectionCard
@@ -108,20 +102,50 @@ export function AccessClient() {
             <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">
               Select appraiser
             </label>
-            <input
-              type="text"
-              list="access-appraiser-options"
-              value={pickerText}
-              onChange={(e) => applyPickerText(e.target.value)}
-              placeholder="Type a name or email…"
-              disabled={loading}
-              className="w-full max-w-md bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent shadow-sm disabled:opacity-50"
-            />
-            <datalist id="access-appraiser-options">
-              {appraisers.map(p => (
-                <option key={p.id} value={`${p.name || p.email} (${p.email})`} />
-              ))}
-            </datalist>
+            <Popover open={pickerOpen} onOpenChange={setPickerOpen}>
+              <PopoverTrigger
+                aria-label="Select appraiser"
+                disabled={loading}
+                className="w-full max-w-md flex items-center justify-between bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent shadow-sm disabled:opacity-50 hover:border-gray-300 transition-colors"
+              >
+                <span className={selected ? 'text-gray-900' : 'text-gray-400'}>
+                  {loading
+                    ? 'Loading users…'
+                    : selected
+                      ? `${selected.name || selected.email}${selected.name ? ` (${selected.email})` : ''}`
+                      : 'Select an appraiser…'}
+                </span>
+                <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+              </PopoverTrigger>
+              <PopoverContent className="p-0 w-96 max-w-[calc(100vw-2rem)]" align="start">
+                <Command>
+                  <CommandInput placeholder="Search by name or email…" />
+                  <CommandList>
+                    <CommandEmpty>No appraiser found.</CommandEmpty>
+                    <CommandGroup>
+                      {appraisers.map(p => (
+                        <CommandItem
+                          key={p.id}
+                          value={`${p.name} ${p.email}`}
+                          onSelect={() => {
+                            setSelectedId(p.id)
+                            setPickerOpen(false)
+                          }}
+                        >
+                          <div className="flex-1 min-w-0">
+                            <div className="text-sm font-medium truncate">
+                              {p.name || <span className="text-gray-400 italic">No name</span>}
+                            </div>
+                            <div className="text-xs text-gray-500 truncate">{p.email}</div>
+                          </div>
+                          {selectedId === p.id && <Check className="ml-2 h-4 w-4 shrink-0" />}
+                        </CommandItem>
+                      ))}
+                    </CommandGroup>
+                  </CommandList>
+                </Command>
+              </PopoverContent>
+            </Popover>
           </div>
 
           {selected ? (
@@ -167,9 +191,7 @@ export function AccessClient() {
                 ? 'Loading users…'
                 : appraisers.length === 0
                   ? 'No appraisers yet.'
-                  : pickerText
-                    ? 'No appraiser matches that entry. Pick one from the dropdown.'
-                    : 'Select an appraiser to view or edit their permissions.'}
+                  : 'Select an appraiser to view or edit their permissions.'}
             </div>
           )}
         </div>
