@@ -131,14 +131,14 @@ Tab components in `src/components/claim/`:
 
 ### Data model (Supabase, ~390 real claims)
 
-Schema is `supabase-schema.sql`. Migrations are dated files at repo root — **Henry runs them manually in the Supabase SQL editor**:
+Schema is `supabase/schema.sql`. Migrations live in `supabase/` (previously at repo root, moved 2026-08-27). Each `migration-*.sql` has a matching `migration-*-rollback.sql` next to it. **Henry runs them manually in the Supabase SQL editor**:
 
 | File | Adds | Status |
 |---|---|---|
-| `supabase-migration-claims.sql` | `status`, `estimate`, `auction_listings` columns + team-wide RLS | RUN (confirmed 2026-07-18) |
-| `supabase-migration-documents.sql` | `documents` column + `claim-documents` storage bucket | RUN (confirmed 2026-07-18) |
-| `supabase-migration-invoice.sql` | `invoice` column | **STATUS UNKNOWN as of 2026-08-25 — confirm with Henry before assuming Invoice-tab data will persist** |
-| `supabase-seed-test-claims.sql` | 15 optional `demo-*` test claims | Not run (delete with `delete from acv_history where id like 'demo-%';`) |
+| `supabase/migration-claims.sql` | `status`, `estimate`, `auction_listings` columns + team-wide RLS | RUN (confirmed 2026-07-18) |
+| `supabase/migration-documents.sql` | `documents` column + `claim-documents` storage bucket | RUN (confirmed 2026-07-18) |
+| `supabase/migration-invoice.sql` | `invoice` column | **STATUS UNKNOWN as of 2026-08-25 — confirm with Henry before assuming Invoice-tab data will persist** |
+| `supabase/seed-test-claims.sql` | 15 optional `demo-*` test claims | Not run (delete with `delete from acv_history where id like 'demo-%';`) |
 
 Tables:
 - `acv_history` — **the claim record**, shared team-wide (any authenticated user reads/writes; insert stamps own `user_id`). One row per claim. All tool state is columns on this row: `claim`, `comps`, `adjustments`, `result`, `mileage_rate`, `reports_state` (Award/Notes/Summary state + `summaryId`), `status` (`open`/`closed`), `estimate`, `auction_listings`, `documents`, `dv`, `invoice` — mostly jsonb. `mode` is vestigial (legacy `auto-acv`/`auction` rows open fine; preserve their `mode` on save).

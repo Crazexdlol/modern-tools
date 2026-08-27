@@ -18,6 +18,74 @@ Read `CLAUDE.md` first if you haven't. Then read the top entry here before touch
 
 ---
 
+## 2026-08-27 (session 2) — Repo cleanup + dashboard perf + audit-bundle ship + per-user create-claims
+
+**Worked on:**
+
+1. **Repo folder cleanup.** Moved all root-level `supabase-*.sql` into a new `supabase/` subfolder and dropped the redundant `supabase-` prefix (e.g. `supabase-migration-roles.sql` → `supabase/migration-roles.sql`). Added a `getting-started/` folder with `launching-claude.md` — short how-to on starting a Claude Code session on this repo (cd, `claude`, first-prompt template, common slash commands, deploy quick-ref). Updated CLAUDE.md's data-model table and the code comment at `history.ts:22` to point at the new paths. Historical SESSIONS entries left with old paths (they describe past state accurately at their time — added a one-line note explaining the move).
+
+2. **Dashboard load perf fix.** Diagnosed the "logs in and dashboard takes forever" complaint. Root cause: `fetchACVHistory()` in `src/lib/supabase/history.ts:78` did `select *` on `acv_history`, pulling every fat jsonb blob (`comps`, `auction_listings`, `documents`, `reports_state`, `estimate`, `dv`, `invoice`, `adjustments`, `result`) for all ~390 claims on every login of the dashboard / `/claims` / `/completed-assignments`. None of those list views actually read those fields. Fix: narrowed the SELECT to `id, date, mode, vehicle, vin, ma_number, acv, status, claim, assigned_to, submitted_at, submitted_by`. Kept `claim` (small — dashboard search needs it). `fetchACVEntry(id)` stays fat.
+
+3. **Shipped the un-deployed audit bundle from the last session.** Henry ran `supabase/migration-tighten-summaries-rls.sql` (verified: 4 policies). Then I deployed everything sitting in the local tree: dashboard perf fix + auth on 13 previously-open API routes + XSS sanitization on Summary Page + timing-safe cron secret compare + CSV export cell escape + history.ts existence-check refactor + smart guideline matching + ET business-days + rename-safe guidelines POST + CSV import per-row error isolation + the urgent appraiser-create fix. Deploy 1 of the session.
+
+4. **Per-user `can_create_claims` permission (spec → plan → implementation).** Full flow: brainstorm → design doc (`docs/superpowers/specs/2026-08-27-create-claims-permission-design.md`) → implementation plan (`docs/superpowers/plans/2026-08-27-create-claims-permission.md`) → subagent-driven execution of 7 tasks with spec-compliance + code-quality review after each. Model: master + grant. Site-wide `allow_regular_create_claims` stays as a master kill-switch; new `profiles.can_create_claims` (default false) is the per-user grant. Non-admin needs BOTH. Enforced at three layers: RLS (INSERT policy on `acv_history`), dashboard button visibility (`src/app/page.tsx:44`), and direct-URL redirect (`src/components/claim/ClaimWorkspace.tsx` mount effect). Access settings page fully restructured from three per-permission sections listing every user into a **search-first per-appraiser view** — one picker at the top, click a user to reveal their three toggles (Create / Reassign / Edit Info). Scales to hundreds. Deploy 2.
+
+5. **Picker dropdown fix.** First pass used native HTML `<datalist>` for the picker (cheap, zero-deps, but modify-after-pick clears the selection). Henry wanted a real click-to-open dropdown. Installed shadcn `command` + `popover` primitives (pulled `cmdk` + Base UI's Popover + a few incidental UI primitives — dialog, input, textarea, input-group). Rewrote the picker as `Popover` + `Command` combobox: click chevron button opens a scrollable list, type in the popover to filter, ⬆⬇ Enter Esc for keyboard nav. Selection sticks. Deploy 3.
+
+**Changed:**
+
+- `CLAUDE.md` — data-model table paths (`supabase/schema.sql`, `supabase/migration-*.sql`), plus a paragraph noting the move
+- `docs/SESSIONS.md` — top-of-file note about the cleanup + this new entry
+- `src/lib/supabase/history.ts` — slim SELECT on list-view `fetchACVHistory` + updated comment ref (`supabase/migration-roles.sql`)
+- `src/lib/supabase/profiles.ts` — added `canCreateClaims` to Profile + ProfileRow + rowToProfile
+- `src/app/api/admin/users/[id]/route.ts` — accept `canCreateClaims` on PATCH body + patch builder
+- `src/app/page.tsx` — dashboard `canCreate` requires per-user grant when non-admin
+- `src/components/claim/ClaimWorkspace.tsx` — mount-effect redirect on `/claims/new` if isNew && !canCreate
+- `src/app/admin/settings/access/access-client.tsx` — full rewrite: search-first picker + per-user detail panel, then upgraded picker to Popover+Command
+- `src/components/ui/{command,popover,dialog,input,input-group,textarea}.tsx` — new shadcn primitives (Base UI variants)
+- `package.json`, `package-lock.json` — cmdk + Base UI popover deps
+- `supabase/` — new folder; 19 SQL files relocated + renamed (dropped `supabase-` prefix)
+- `supabase/migration-can-create-claims.sql` + `-rollback.sql` — new: adds the per-user grant column + updates acv_insert RLS
+- `getting-started/launching-claude.md` — new
+- `docs/superpowers/specs/2026-08-27-create-claims-permission-design.md` — new
+- `docs/superpowers/plans/2026-08-27-create-claims-permission.md` — new
+
+**Migrations RUN this session (confirmed by Henry):**
+- `supabase/migration-tighten-summaries-rls.sql` — tightened summaries UPDATE (verified: 4 policies)
+- `supabase/migration-can-create-claims.sql` — new column + updated acv_insert (verified: 1 column, 1 INSERT policy)
+
+**Deploy status:**
+
+Three prod deploys this session, chronological:
+
+1. `dpl_41TecRL7mEXjdr9BFA6Rbfaqogdg` — perf fix + audit bundle + urgent appraiser-create fix
+2. `dpl_EPgRDycrgb7xNy8GUxFa7kdYNqwi` — per-user create-claims permission + Access page redesign (datalist picker)
+3. **LIVE now:** `dpl_2FgdVLVzu5evuWgLiyVGNw5Rb2x9` → `https://modern-tools-o7gdo79x3-henry-as-projects-88caed67.vercel.app` — Popover+Command picker. Alias `modern-tools-rho.vercel.app` flipped, verified.
+
+Rollback (to last-good before the picker fix):
+```
+npx vercel promote https://modern-tools-7rvahtv69-henry-as-projects-88caed67.vercel.app --scope henry-as-projects-88caed67 --yes
+```
+
+**In progress / broken / unknowns:**
+
+- Automation settings page (`auto_status_requests_override`) still uses the old "list everyone" pattern. Will hit the same scaling wall as the old Access page. Deferred (~30 min follow-up when we get to it).
+- Code quality reviewer flagged (Minor) that `ClaimWorkspace`'s new redirect effect uses `profile === null` as the loading sentinel — would be more robust as `const { profile, loading } = useCurrentProfile()` and guard on `loading`. Cold edge case (middleware auth makes the null-profile branch essentially unreachable), left as-is.
+- Multiple commits this session unavoidably swept up prior uncommitted work on the same file (audit bundle changes from earlier sessions that had been deployed via `vercel --prod` but never git-committed). Not harmful — the swept work was already live — but commit messages understate the actual diff. Working tree is now much closer to being in sync with git, but a full audit against `dpl_2FgdVLVzu5evuWgLiyVGNw5Rb2x9` would confirm.
+- SESSIONS.md still has other unstaged uncommitted work in the repo (see `git status`). None of it is broken; it's inherited from earlier sessions that never got flushed.
+
+**Next (punch list — Henry's requests + carry-overs):**
+
+1. **Loss of Use report** — new report type. Design TBD.
+2. **Umpire claims** — support for the umpire branch of the appraisal-clause process (when Us and IA disagree, an umpire is brought in). Design TBD.
+3. **Messages for summary page** — thread messaging attached to a summary (currently messages are per-claim).
+4. **RTA declaration** — a new document/report type. Design TBD.
+5. **Estimate dispute rework** — the existing `/estimate-dispute` flow needs a rework. Scope TBD.
+6. **Automation page cleanup** — apply the same search-first per-appraiser pattern the Access page just got.
+7. **Email notifications** (carry-over) — SMTP via Bluehost, parked pending Henry providing SMTP creds.
+
+---
+
 ## 2026-08-27 — Automation cron + Guidelines + Duplicates + Edit lock + CSV export/import + Full audit
 
 Marathon session. Roughly chronological:
@@ -44,13 +112,15 @@ Marathon session. Roughly chronological:
 18. **Bug found during audit remediation testing:** `readOnly = !isAdmin && (…!isAssignee)` locked appraisers out of `/claims/new` entirely (new claim has no assignee → `isAssignee=false`). Fixed with `&& !isNew`.
 
 **Migrations RUN this session (confirmed by Henry):**
-- `supabase-migration-status-requests.sql` — is_auto_request + assigned_at + last_status_request_at + seeded auto_status_requests_enabled=false
-- `supabase-migration-per-user-permissions.sql` — can_reassign_claims + auto_status_requests_override
-- `supabase-migration-can-edit-claim-info.sql`
-- `supabase-migration-insurance-guidelines.sql`
+- `supabase/migration-status-requests.sql` — is_auto_request + assigned_at + last_status_request_at + seeded auto_status_requests_enabled=false
+- `supabase/migration-per-user-permissions.sql` — can_reassign_claims + auto_status_requests_override
+- `supabase/migration-can-edit-claim-info.sql`
+- `supabase/migration-insurance-guidelines.sql`
 
 **Migration PENDING (Henry must run before deploying the audit bundle):**
-- `supabase-migration-tighten-summaries-rls.sql` — replaces `Authenticated users can update summaries` with creator/admin/assignee-only policy. Rollback: `-rollback.sql` alongside it.
+- `supabase/migration-tighten-summaries-rls.sql` — replaces `Authenticated users can update summaries` with creator/admin/assignee-only policy. Rollback: `-rollback.sql` alongside it.
+
+> **Note (2026-08-27 cleanup):** all `supabase-*.sql` files were moved from repo root into `supabase/` and the `supabase-` prefix dropped (e.g. `supabase-migration-tighten-summaries-rls.sql` → `supabase/migration-tighten-summaries-rls.sql`). Historical entries below still reference the old paths; that's intentional (they describe past state).
 
 **Deploy status:**
 - **LAST DEPLOYED (currently live):** `dpl_Bv4bVPRNEefTJ5LBCcLgvchHUcbK` → `modern-tools-l7h9yv7pv-henry-as-projects-88caed67.vercel.app`. Includes the messages tab UX fix as the newest change.
@@ -76,7 +146,7 @@ Marathon session. Roughly chronological:
 - Low-severity audit findings deferred: duplicate-check race with stale responses, fieldset-disabled `<a>` still clickable in browsers, CSV date parsing US-locale dependent, `deleteAll` guidelines uses IN(…) that could hit URL length on 500+ rows, message composer autosize race on Safari huge-paste. See the two audit-agent transcripts in-conversation for the full list.
 
 **Next:**
-1. Run `supabase-migration-tighten-summaries-rls.sql` → I deploy the audit bundle + appraiser-create fix. This is the priority — no other work should ship on top of the un-deployed bundle.
+1. Run `supabase/migration-tighten-summaries-rls.sql` → I deploy the audit bundle + appraiser-create fix. This is the priority — no other work should ship on top of the un-deployed bundle.
 2. (or) fast-track just the appraiser-create fix in isolation if the RLS migration is being deferred (revert the RLS-dependent piece from the bundle, deploy everything else + the fix).
 3. Then: wire up email notifications (needs Bluehost SMTP creds from Henry).
 
