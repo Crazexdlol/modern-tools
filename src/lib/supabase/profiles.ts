@@ -8,6 +8,10 @@ export interface Profile {
   email: string
   name: string
   role: Role
+  canReassignClaims: boolean
+  canEditClaimInfo: boolean
+  canCreateClaims: boolean
+  autoStatusRequestsOverride: boolean | null  // null = follow global setting
   createdAt: string
   updatedAt: string
 }
@@ -17,6 +21,10 @@ interface ProfileRow {
   email: string
   name: string
   role: Role
+  can_reassign_claims?: boolean | null
+  can_edit_claim_info?: boolean | null
+  can_create_claims?: boolean | null
+  auto_status_requests_override?: boolean | null
   created_at: string
   updated_at: string
 }
@@ -27,6 +35,15 @@ function rowToProfile(row: ProfileRow): Profile {
     email: row.email,
     name: row.name,
     role: row.role,
+    canReassignClaims: row.can_reassign_claims === true,
+    canEditClaimInfo: row.can_edit_claim_info === true,
+    canCreateClaims: row.can_create_claims === true,
+    autoStatusRequestsOverride:
+      row.auto_status_requests_override === true
+        ? true
+        : row.auto_status_requests_override === false
+          ? false
+          : null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   }
