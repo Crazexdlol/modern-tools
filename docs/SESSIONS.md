@@ -18,6 +18,70 @@ Read `CLAUDE.md` first if you haven't. Then read the top entry here before touch
 
 ---
 
+## 2026-08-27 — Automation cron + Guidelines + Duplicates + Edit lock + CSV export/import + Full audit
+
+Marathon session. Roughly chronological:
+
+**Worked on:**
+
+1. **Auto 48-hour status request cron** — daily Vercel Cron (`0 14 * * *`) hits `/api/cron/status-requests`. For every open+assigned claim, computes business-days since the last appraiser message (or `assigned_at` if none), fires an in-app "AUTO"-tagged message if ≥48 business hours have passed. Repeat cadence: first at 48h, then every 24h business hours until the appraiser replies. Admin messages don't reset the timer.
+2. **Per-user permissions** — added `profiles.can_reassign_claims`, `profiles.auto_status_requests_override` (nullable tri-state), `profiles.can_edit_claim_info`. Wired into the assign API, cron, and the new Access settings page. Handling Appraiser is deliberately never locked (feeds Award / Closing Notes).
+3. **Settings page redesign** — collapsed the flat page into a left-sidebar shell at `/admin/settings/*` with pages for Users / Access / Automation / Guidelines / Data. Users moved out of `/admin/users` into `/admin/settings/users`. Header dropdown collapsed to one "Settings" entry.
+4. **CSV export for claims** — `/api/admin/export/claims` with filters (Status, From, To). 14 columns, Excel-safe (UTF-8 BOM, CRLF).
+5. **CSV import for claims** — template + upload + dry-run preview + confirm. Handles Henry's real external-source CSV: `assignment_id`, `insured_name`, `v_year/v_make/v_model` composite Vehicle, `owner_first_name/owner_last_name` composite Owner, phone-priority mobile→home→work, plus adjuster/mileage/deductible/policy/damage/dateOfLoss into the claim jsonb. Duplicate MA# skipped case-insensitively.
+6. **Insurance Guidelines feature** — new `insurance_guidelines` table (name + guidelines text + audit cols), Guidelines tab in every claim workspace (matched by insurance-company name), Settings → Guidelines management (list/search/add/inline-edit/delete + CSV import with template + preview + Overwrite toggle). Read-only for all authed; admin can write.
+7. **Insurance Company autocomplete** on the Claim Info form — datalist sourced from `insurance_guidelines.name` so typing "Allstate" surfaces "Allstate Ins. Co." and picks the canonical name for a clean guideline match.
+8. **Delete-empty + Delete-all guideline buttons** on the manage page; import route now skips empty-guideline rows.
+9. **Guidelines reformatter script** (`scripts/transform-guidelines.mjs`) — one-off tool that read Henry's 364-row `Insurance_Companies_2026-08-26.csv`, decoded HTML entities, added structure (headings/paragraphs/bullets/numbered lists) via known-section whitelist + Title Case matcher. Kept 60 with content, skipped 304 blanks. Output at `C:\Users\Owner\Downloads\Insurance_Companies_reformatted.csv`.
+10. **Structured guidelines rendering** — Guidelines tab now scrollable with pinned header/footer; mini formatter for blank-line paragraphs, `# / ##` headings, `- / * / •` bullets, `1.` numbered lists, `**bold**`, URL auto-links. Admin editor got syntax hints.
+11. **Claim type selector + tool gating** — `ClaimInfo.claimTypes[]` (`acv | dv | estimate | other`), chip UI in Claim Info, filters TOOL_TABS. Always-on: Award / Notes / Summary / Invoice. Backward compat: empty types = show all.
+12. **Duplicate VIN + CL# detection** — `/api/claims/duplicates` (service-role for cross-team visibility), live warnings under VIN + Claim# with 500ms debounce, persistent amber banner at top of any saved claim with duplicates.
+13. **Auto-save block on new claims** — `if (!editingIdRef.current) return` in the debounced save effect; user must click Create Claim explicitly. localStorage draft still preserves in-progress work.
+14. **Claim Info edit lock** — form locked by default on existing claims; Edit button unlocks for admins + users with `can_edit_claim_info`. Handling Appraiser stays editable regardless. PDF Upload only shows on new-claim creation. Removed the "Pick one or more…" helper text from Claim Type.
+15. **Per-row Reassign** on Completed Assignments queue — native select per row + confirm modal + assign API + reload.
+16. **Messages tab UX** — recipient picker `max-h` 56 → 96 (~4 → ~9 visible), composer autosize via ref+useEffect (grows to fit any draft up to 50vh).
+17. **Full security + correctness audit** — spawned two parallel review agents. Findings prioritized as Critical / Medium and fixes built (see bundle below).
+18. **Bug found during audit remediation testing:** `readOnly = !isAdmin && (…!isAssignee)` locked appraisers out of `/claims/new` entirely (new claim has no assignee → `isAssignee=false`). Fixed with `&& !isNew`.
+
+**Migrations RUN this session (confirmed by Henry):**
+- `supabase-migration-status-requests.sql` — is_auto_request + assigned_at + last_status_request_at + seeded auto_status_requests_enabled=false
+- `supabase-migration-per-user-permissions.sql` — can_reassign_claims + auto_status_requests_override
+- `supabase-migration-can-edit-claim-info.sql`
+- `supabase-migration-insurance-guidelines.sql`
+
+**Migration PENDING (Henry must run before deploying the audit bundle):**
+- `supabase-migration-tighten-summaries-rls.sql` — replaces `Authenticated users can update summaries` with creator/admin/assignee-only policy. Rollback: `-rollback.sql` alongside it.
+
+**Deploy status:**
+- **LAST DEPLOYED (currently live):** `dpl_Bv4bVPRNEefTJ5LBCcLgvchHUcbK` → `modern-tools-l7h9yv7pv-henry-as-projects-88caed67.vercel.app`. Includes the messages tab UX fix as the newest change.
+- **BUILT but NOT DEPLOYED:** the full audit bundle + appraiser-create fix. Sits in local working tree, builds clean (`npx tsc --noEmit` + `npm run build` both pass). Blocked on Henry running the summaries RLS migration.
+- **Rollback for the eventual audit deploy:** `npx vercel promote https://modern-tools-l7h9yv7pv-henry-as-projects-88caed67.vercel.app --scope henry-as-projects-88caed67 --yes`
+
+**Audit bundle contents (built, waiting to ship):**
+- **CRITICAL** — Auth added to 13 previously-open API routes (`compare-estimates`, `acv/review-estimate`, `acv/search-comps`, `acv/search-autodev`, `acv/search-auction`, `acv/decode-vin`, `acv/depreciation`, `acv/parse-claim`, `acv/generate-pdf`, `acv/generate-award-pdf`, `acv/generate-notes-pdf`, `acv/generate-dv-pdf`, `invoices/generate-pdf`). Anyone on the internet could drain Anthropic + MarketCheck credits.
+- **CRITICAL** — Summary Page XSS sanitization on render + save (installed `isomorphic-dompurify`)
+- **CRITICAL** — Summaries UPDATE RLS tightened (needs the pending migration)
+- **HIGH** — CSV export cell prefix escape (Excel formula injection guard)
+- **HIGH** — `history.ts` existence-check refactor (no more silent-fail-then-duplicate-insert)
+- **HIGH** — Timing-safe cron secret comparison via `crypto.timingSafeEqual`
+- **MEDIUM** — Smart guideline matching (strips legal suffixes/punctuation/digits; falls back to containment match with longest-name-wins). Real impact: most of the ~200 imported claims with names like `PROGRESSIVE INSURANCE TPAC 3250` will now match `Progressive` guidelines.
+- **MEDIUM** — `business-days.ts` computed in America/New_York, not UTC. Friday-PM ET assignments were firing nags on Monday instead of Tuesday.
+- **MEDIUM** — Rename-safe guidelines POST (SELECT by name_key first, then update or insert — old code could reassign IDs on collision)
+- **MEDIUM** — CSV import per-row error isolation (was blaming whole chunk of 100 for one bad row)
+- **URGENT BUG FIX** — Appraiser-create fix: added `&& !isNew` to the readOnly gate. Currently on live, appraisers who click "New Claim" get a fully-disabled form (can't type, can't upload PDF).
+
+**In progress / broken / unknowns:**
+- **URGENT:** appraisers currently cannot create claims on the live site. Fix is in the pending bundle.
+- Email notifications feature (SMTP via Bluehost) parked in task #51 pending Henry providing SMTP creds
+- Low-severity audit findings deferred: duplicate-check race with stale responses, fieldset-disabled `<a>` still clickable in browsers, CSV date parsing US-locale dependent, `deleteAll` guidelines uses IN(…) that could hit URL length on 500+ rows, message composer autosize race on Safari huge-paste. See the two audit-agent transcripts in-conversation for the full list.
+
+**Next:**
+1. Run `supabase-migration-tighten-summaries-rls.sql` → I deploy the audit bundle + appraiser-create fix. This is the priority — no other work should ship on top of the un-deployed bundle.
+2. (or) fast-track just the appraiser-create fix in isolation if the RLS migration is being deferred (revert the RLS-dependent piece from the bundle, deploy everything else + the fix).
+3. Then: wire up email notifications (needs Bluehost SMTP creds from Henry).
+
+---
+
 ## 2026-08-26 (evening) — Post-Messages UX pass + Assignment Sheet feature
 
 **Worked on:** A long tail of UI polish, workflow cleanup, and one new small feature (Assignment Sheet PDF) that grew out of using the just-shipped role-based-access + Messages rollouts. All small-medium iterations, no schema changes, no new tables.
