@@ -24,13 +24,15 @@ import {
   FileText,
   ClipboardList,
   Printer,
+  Lock,
+  Pencil,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
-import type { ClaimInfo, MarketComp, SelectedComp, ACVAdjustments, ACVResult } from '@/lib/acv/types'
+import type { ClaimInfo, ClaimType, MarketComp, SelectedComp, ACVAdjustments, ACVResult } from '@/lib/acv/types'
 import { parseClaimPDF } from '@/lib/parse-claim-pdf'
 import {
   calculateACV,
@@ -40,10 +42,14 @@ import {
 } from '@/lib/acv/calculations'
 import { saveACVHistory, fetchACVEntry, type ClaimStatus } from '@/lib/supabase/history'
 import { useCurrentProfile, fetchAllProfilesBrowser, type Profile } from '@/lib/supabase/profiles'
+import { fetchSiteSetting } from '@/lib/supabase/site-settings'
 import { LossSearchTab, type LossListing } from '@/components/claim/loss-search-tab'
 import { EstimateTab } from '@/components/claim/estimate-tab'
 import { DocumentsTab } from '@/components/claim/documents-tab'
 import { MessagesTab } from '@/components/claim/messages-tab'
+import { GuidelinesTab } from '@/components/claim/guidelines-tab'
+import { fetchGuidelineNamesBrowser } from '@/lib/supabase/insurance-guidelines'
+import { useDuplicateCheck, type DuplicateResult } from '@/lib/supabase/claim-duplicates'
 import { AssignmentSheet, triggerAssignmentSheetPrint } from '@/components/claim/assignment-sheet'
 import { DVTab, type DVState } from '@/components/claim/dv-tab'
 import { ReportsTab, type InvoiceReportState } from '@/components/claim/reports-tab'
@@ -159,14 +165,155 @@ function MileageRateInput({
   )
 }
 
+// ── Duplicate warning (inline under VIN / Claim # fields) ────────────────────
+function DuplicateWarning({
+  matches,
+  field,
+}: {
+  matches: Array<{ id: string; maNumber: string; insuredName: string; vehicle: string; date: string }>
+  field: string
+}) {
+  if (!matches || matches.length === 0) return null
+  const fmt = (iso: string) => {
+    if (!iso) return ''
+    const d = new Date(iso)
+    return isNaN(d.getTime()) ? '' : d.toLocaleDateString()
+  }
+  return (
+    <div className="mt-2 p-2 rounded border border-amber-200 bg-amber-50 text-xs text-amber-800">
+      <div className="font-semibold flex items-center gap-1 mb-1">
+        <AlertCircle className="w-3 h-3" />
+        Duplicate {field}: matches {matches.length} other claim{matches.length === 1 ? '' : 's'}
+      </div>
+      <ul className="pl-4 list-disc space-y-0.5">
+        {matches.slice(0, 5).map(m => (
+          <li key={m.id}>
+            <a
+              href={`/claims/${m.id}`}
+              target="_blank"
+              rel="noreferrer"
+              className="text-amber-900 underline hover:text-amber-950"
+            >
+              MA# {m.maNumber || m.id}
+            </a>
+            {m.insuredName && <> · {m.insuredName}</>}
+            {m.vehicle && <> · {m.vehicle}</>}
+            {m.date && <> · {fmt(m.date)}</>}
+          </li>
+        ))}
+        {matches.length > 5 && <li>and {matches.length - 5} more…</li>}
+      </ul>
+    </div>
+  )
+}
+
+// ── Persistent duplicate banner at top of saved-claim workspace ──────────────
+function DuplicateBanner({ duplicates }: { duplicates: DuplicateResult }) {
+  const { vinMatches, claimNumberMatches } = duplicates
+  const fmt = (iso: string) => {
+    if (!iso) return ''
+    const d = new Date(iso)
+    return isNaN(d.getTime()) ? '' : d.toLocaleDateString()
+  }
+  const renderList = (label: string, list: DuplicateResult['vinMatches']) => (
+    <div>
+      <span className="font-semibold">{label} matches:</span>{' '}
+      {list.slice(0, 5).map((m, i) => (
+        <span key={m.id}>
+          <a href={`/claims/${m.id}`} target="_blank" rel="noreferrer"
+             className="underline hover:no-underline">
+            MA# {m.maNumber || m.id}
+          </a>
+          {m.insuredName && ` (${m.insuredName})`}
+          {m.date && `, ${fmt(m.date)}`}
+          {i < Math.min(list.length, 5) - 1 && '; '}
+        </span>
+      ))}
+      {list.length > 5 && <> and {list.length - 5} more…</>}
+    </div>
+  )
+  return (
+    <div className="mb-4 p-3 rounded-lg bg-amber-50 border border-amber-300 text-amber-900 text-sm space-y-1">
+      <div className="font-bold flex items-center gap-2">
+        <AlertCircle className="w-4 h-4" />
+        Duplicate detected on this claim
+      </div>
+      {vinMatches.length > 0 && renderList('VIN', vinMatches)}
+      {claimNumberMatches.length > 0 && renderList('Claim #', claimNumberMatches)}
+    </div>
+  )
+}
+
+// ── Claim type chips (multi-select toggle) ───────────────────────────────────
+const CLAIM_TYPE_LABELS: Record<ClaimType, string> = {
+  acv:      'ACV',
+  dv:       'DV',
+  estimate: 'Est Dispute',
+  other:    'Other',
+}
+const CLAIM_TYPE_ORDER: ClaimType[] = ['acv', 'dv', 'estimate', 'other']
+
+function ClaimTypeChips({
+  selected,
+  onChange,
+}: {
+  selected: ClaimType[]
+  onChange: (next: ClaimType[]) => void
+}) {
+  const toggle = (t: ClaimType) => {
+    if (selected.includes(t)) {
+      onChange(selected.filter(x => x !== t))
+    } else {
+      onChange([...selected, t])
+    }
+  }
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      {CLAIM_TYPE_ORDER.map(t => {
+        const active = selected.includes(t)
+        return (
+          <button
+            key={t}
+            type="button"
+            onClick={() => toggle(t)}
+            className={cn(
+              'px-4 py-2 rounded-full text-sm font-semibold border transition-colors',
+              active
+                ? 'bg-blue-600 text-white border-blue-600 hover:bg-blue-500'
+                : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50',
+            )}
+          >
+            {CLAIM_TYPE_LABELS[t]}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
 // ── Claim form (NO vehicle fields — those are on step 2) ─────────────────────
 function ClaimInfoForm({
   claim,
   onChange,
+  insuranceCompanyOptions,
+  duplicates,
+  isNew,
+  canEdit,
 }: {
   claim: ClaimInfo
   onChange: (updated: ClaimInfo) => void
+  insuranceCompanyOptions: string[]
+  duplicates: DuplicateResult
+  isNew: boolean
+  canEdit: boolean
 }) {
+  // Edit mode: on for brand-new claims (nothing to protect yet), off by
+  // default for existing claims. The Edit button flips it. If the user
+  // doesn't have permission (`canEdit` false) the Edit button is hidden
+  // and the form stays locked — Handling Appraiser stays editable regardless
+  // since it feeds Award / Closing Notes downstream.
+  const [editMode, setEditMode] = useState<boolean>(isNew)
+  const locked = !editMode && !isNew
   const [pdfUploading, setPdfUploading] = useState(false)
   const [pdfError, setPdfError] = useState<string | null>(null)
   const [pdfSuccess, setPdfSuccess] = useState(false)
@@ -220,45 +367,79 @@ function ClaimInfoForm({
 
   return (
     <div className="space-y-8">
-      {/* PDF Upload */}
-      <div className="flex items-center gap-3">
-        <input
-          ref={pdfInputRef}
-          type="file"
-          accept=".pdf"
-          className="hidden"
-          onChange={(e) => {
-            const file = e.target.files?.[0]
-            if (file) handlePdfUpload(file)
-          }}
-        />
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          className={`gap-2 border-dashed ${pdfSuccess ? 'border-emerald-500 text-emerald-600' : ''}`}
-          disabled={pdfUploading}
-          onClick={() => pdfInputRef.current?.click()}
-        >
-          {pdfUploading ? (
-            <Loader2 className="w-4 h-4 animate-spin" />
-          ) : pdfSuccess ? (
-            <CheckCircle2 className="w-4 h-4" />
-          ) : (
-            <Upload className="w-4 h-4" />
+      {/* PDF Upload — only surfaced during initial claim creation. Once
+          the claim exists there's nothing to auto-fill into. */}
+      {isNew && (
+        <div className="flex items-center gap-3">
+          <input
+            ref={pdfInputRef}
+            type="file"
+            accept=".pdf"
+            className="hidden"
+            onChange={(e) => {
+              const file = e.target.files?.[0]
+              if (file) handlePdfUpload(file)
+            }}
+          />
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className={`gap-2 border-dashed ${pdfSuccess ? 'border-emerald-500 text-emerald-600' : ''}`}
+            disabled={pdfUploading}
+            onClick={() => pdfInputRef.current?.click()}
+          >
+            {pdfUploading ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : pdfSuccess ? (
+              <CheckCircle2 className="w-4 h-4" />
+            ) : (
+              <Upload className="w-4 h-4" />
+            )}
+            {pdfUploading ? 'Parsing...' : pdfSuccess ? 'Filled!' : 'Upload Claim PDF'}
+          </Button>
+          <span className="text-xs text-gray-400">Auto-fill from a claim assignment PDF</span>
+          {pdfError && (
+            <p className="text-xs text-red-500 flex items-center gap-1">
+              <AlertCircle className="w-3 h-3" />
+              {pdfError}
+            </p>
           )}
-          {pdfUploading ? 'Parsing...' : pdfSuccess ? 'Filled!' : 'Upload Claim PDF'}
-        </Button>
-        <span className="text-xs text-gray-400">Auto-fill from a claim assignment PDF</span>
-        {pdfError && (
-          <p className="text-xs text-red-500 flex items-center gap-1">
-            <AlertCircle className="w-3 h-3" />
-            {pdfError}
-          </p>
-        )}
-      </div>
+        </div>
+      )}
 
-      {/* Handling Appraiser */}
+      {/* Lock / Edit toggle — only on existing claims. Admins and users with
+          the can_edit_claim_info permission can flip to Edit mode; everyone
+          else sees a passive locked notice. */}
+      {!isNew && (
+        <div className="flex items-center gap-3 p-3 rounded-lg border border-gray-200 bg-gray-50">
+          {locked ? (
+            <>
+              <Lock className="w-4 h-4 text-gray-500" />
+              <div className="text-sm text-gray-700 flex-1">
+                Claim Info is locked.
+                {!canEdit && ' Only admins or users granted edit permission can unlock it.'}
+                {' '}Handling Appraiser can still be edited by anyone.
+              </div>
+              {canEdit && (
+                <Button size="sm" variant="outline" onClick={() => setEditMode(true)}>
+                  <Pencil className="w-3.5 h-3.5 mr-1" /> Edit
+                </Button>
+              )}
+            </>
+          ) : (
+            <>
+              <Pencil className="w-4 h-4 text-blue-600" />
+              <div className="text-sm text-gray-700 flex-1">Editing enabled. Changes save automatically.</div>
+              <Button size="sm" variant="outline" onClick={() => setEditMode(false)}>
+                <Lock className="w-3.5 h-3.5 mr-1" /> Done
+              </Button>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* Handling Appraiser — always editable (feeds Award / Closing Notes). */}
       <div>
         <h3 className="text-sm font-bold text-gray-900 mb-4">Handling Appraiser</h3>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -267,6 +448,21 @@ function ClaimInfoForm({
             <input className={inputCls} placeholder="Henry Aleksanyan" value={claim.handlingAppraiser ?? ''} onChange={(e) => set('handlingAppraiser', e.target.value)} />
           </div>
         </div>
+      </div>
+
+      {/* Everything below is subject to the edit lock. A native fieldset with
+          disabled disables every descendant input in one shot and dims via
+          the styles below. */}
+      <fieldset disabled={locked} className={cn('space-y-8 m-0 p-0 border-0', locked && 'opacity-70')}>
+
+      {/* Claim Type — drives which tool tabs appear. Multi-select. "Other"
+          unlocks every tool. Empty = show all (backward compat). */}
+      <div>
+        <h3 className="text-sm font-bold text-gray-900 mb-4">Claim Type</h3>
+        <ClaimTypeChips
+          selected={claim.claimTypes ?? []}
+          onChange={(next) => onChange({ ...claim, claimTypes: next })}
+        />
       </div>
 
       {/* Report Info */}
@@ -280,6 +476,7 @@ function ClaimInfoForm({
           <div>
             <label className={labelCls}>Insurance Claim #</label>
             <input className={inputCls} placeholder="CLM-00001" value={claim.claimNumber} onChange={(e) => set('claimNumber', e.target.value)} />
+            <DuplicateWarning matches={duplicates.claimNumberMatches} field="claim #" />
           </div>
           <div>
             <label className={labelCls}>Date of Loss</label>
@@ -328,7 +525,19 @@ function ClaimInfoForm({
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <label className={labelCls}>Insurance Company</label>
-            <input className={inputCls} placeholder="State Farm" value={claim.insuranceCompany} onChange={(e) => set('insuranceCompany', e.target.value)} />
+            <input
+              className={inputCls}
+              placeholder="State Farm"
+              value={claim.insuranceCompany}
+              onChange={(e) => set('insuranceCompany', e.target.value)}
+              list="insurance-company-options"
+              autoComplete="off"
+            />
+            <datalist id="insurance-company-options">
+              {insuranceCompanyOptions.map(name => (
+                <option key={name} value={name} />
+              ))}
+            </datalist>
           </div>
           <div>
             <label className={labelCls}>Adjuster Name</label>
@@ -344,6 +553,8 @@ function ClaimInfoForm({
           </div>
         </div>
       </div>
+
+      </fieldset>
     </div>
   )
 }
@@ -355,12 +566,14 @@ function SearchParametersPanel({
   onSearch,
   onVinDecoded,
   loading,
+  duplicates,
 }: {
   claim: ClaimInfo
   onChange: (updated: ClaimInfo) => void
   onSearch: () => void
   onVinDecoded?: (updatedClaim: ClaimInfo) => void
   loading: boolean
+  duplicates: DuplicateResult
 }) {
   const [decoding, setDecoding] = useState(false)
   const [decodeError, setDecodeError] = useState<string | null>(null)
@@ -438,6 +651,7 @@ function SearchParametersPanel({
             {decodeError}
           </p>
         )}
+        <DuplicateWarning matches={duplicates.vinMatches} field="VIN" />
       </div>
 
       {/* Vehicle fields grid */}
@@ -2103,6 +2317,7 @@ function defaultClaim(): ClaimInfo {
     mileage: 0,
     zip: '',
     radius: 200,
+    claimTypes: [],
   }
 }
 
@@ -2234,6 +2449,7 @@ const CLAIM_TABS = [
   { id: 'info', label: 'Claim Info', step: 1 },
   { id: 'documents', label: 'Documents', step: 10 },
   { id: 'messages', label: 'Messages', step: 13 },
+  { id: 'guidelines', label: 'Guidelines', step: 14 },
 ] as const
 
 const TOOL_TABS = [
@@ -2256,6 +2472,7 @@ function tabForStep(step: number): string {
   if (step === 11) return 'dv'
   if (step === 12) return 'reports'
   if (step === 13) return 'messages'
+  if (step === 14) return 'guidelines'
   return 'acv' // 2-4 stepper + 6 (Loss Search lives inside the ACV tab)
 }
 
@@ -2336,14 +2553,39 @@ function ClaimWorkspaceInner({ claimId }: { claimId: string }) {
   const [submittedBy, setSubmittedBy] = useState<string | null>(null)
   const [workflowBusy, setWorkflowBusy] = useState(false)
   const [allProfiles, setAllProfiles] = useState<Profile[]>([])
+  // Insurance company names from the guidelines directory — fuels the
+  // Insurance Company autocomplete so typed values match a guideline exactly.
+  const [insuranceCompanyOptions, setInsuranceCompanyOptions] = useState<string[]>([])
   const { profile } = useCurrentProfile()
+  const [allowCreateGlobal, setAllowCreateGlobal] = useState<boolean | null>(null)
+  useEffect(() => {
+    fetchSiteSetting<boolean>('allow_regular_create_claims').then(v => setAllowCreateGlobal(v ?? true))
+  }, [])
+  // Direct-URL guard: if a non-admin without the create grant lands on
+  // /claims/new (e.g. bookmark, address-bar), silently bounce to the
+  // dashboard. RLS blocks the insert anyway; this just prevents a
+  // confusing dead-end form. Waits until profile + master flag are both
+  // loaded to avoid a flash-redirect on slow connections.
+  useEffect(() => {
+    if (!isNew) return
+    if (profile === null) return          // still loading
+    if (allowCreateGlobal === null) return
+    const canCreate =
+      profile.role === 'admin' ||
+      (allowCreateGlobal && profile.canCreateClaims === true)
+    if (!canCreate) router.replace('/')
+  }, [isNew, profile, allowCreateGlobal, router])
   const role = profile?.role
   const isAdmin = role === 'admin'
   const userId = profile?.id
   const isAssignee = !!userId && assignedTo === userId
   const isSubmitted = !!submittedAt
   const isClosed = status === 'closed'
-  const readOnly = !isAdmin && (isSubmitted || isClosed || (!!userId && !isAssignee))
+  // NOTE: `!isNew` is critical — a brand-new claim has no assignee yet, so
+  // without this an appraiser creating a claim would flunk the `isAssignee`
+  // check and get a fully-disabled form (couldn't type, couldn't upload the
+  // assignment PDF, couldn't do anything).
+  const readOnly = !isAdmin && !isNew && (isSubmitted || isClosed || (!!userId && !isAssignee))
   const [auctionListings, setAuctionListings] = useState<LossListing[]>([])
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [estimate, setEstimate] = useState<any>(undefined)
@@ -2457,6 +2699,12 @@ function ClaimWorkspaceInner({ claimId }: { claimId: string }) {
     // Read-only viewers (non-admin, and not the assignee, or claim is
     // submitted/closed) must not trigger writes — the server would reject.
     if (readOnly) return
+    // For a BRAND-NEW claim (never saved), require an explicit "Create
+    // Claim" click before auto-save kicks in. Prevents accidental creation
+    // while the user is mid-typing / uploading the assignment PDF.
+    // Once editingId is set (either loaded from URL or promoted after
+    // Create Claim), auto-save runs normally.
+    if (!editingIdRef.current) return
     setHasUnsavedChanges(true)
     if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current)
     autoSaveTimer.current = setTimeout(() => {
@@ -2489,6 +2737,29 @@ function ClaimWorkspaceInner({ claimId }: { claimId: string }) {
     url.searchParams.set('tab', tabForStep(step))
     window.history.replaceState(null, '', url.toString())
   }, [step])
+
+  // Live duplicate check on VIN + Claim # against every other claim in the
+  // system (uses service-role backend so appraisers see cross-team dupes,
+  // not just their own). Debounced 500ms. Excludes the current claim's own
+  // id when editing an existing one so it doesn't self-match.
+  const duplicates = useDuplicateCheck(claim.vin, claim.claimNumber, editingId)
+
+  // Filter which tool tabs to show based on claim.claimTypes. Award / Notes /
+  // Summary / Invoice are always visible (they finalize any claim type).
+  // ACV / DV / Estimate Dispute are gated by type. Empty claimTypes = show
+  // all tools (backward compat for pre-existing claims).
+  const visibleToolTabs = useMemo(() => {
+    const types = claim.claimTypes ?? []
+    if (types.length === 0) return TOOL_TABS
+    const other = types.includes('other')
+    return TOOL_TABS.filter(t => {
+      if (t.id === 'award' || t.id === 'notes' || t.id === 'summary' || t.id === 'reports') return true
+      if (t.id === 'acv')      return other || types.includes('acv')
+      if (t.id === 'dv')       return other || types.includes('dv')
+      if (t.id === 'estimate') return other || types.includes('estimate')
+      return true
+    })
+  }, [claim.claimTypes])
 
   const sortedListings = useMemo(() => {
     const filtered = listings.filter((comp) => {
@@ -2861,6 +3132,7 @@ function ClaimWorkspaceInner({ claimId }: { claimId: string }) {
     // Assignment Sheet's "Handling (Us)" line.
     let cancelled = false
     fetchAllProfilesBrowser().then(list => { if (!cancelled) setAllProfiles(list) })
+    fetchGuidelineNamesBrowser().then(names => { if (!cancelled) setInsuranceCompanyOptions(names) })
     return () => { cancelled = true }
   }, [])
 
@@ -3051,7 +3323,7 @@ function ClaimWorkspaceInner({ claimId }: { claimId: string }) {
                   Reopen
                 </Button>
               )}
-              {isAdmin && (
+              {(isAdmin || (profile?.canReassignClaims && isAssignee)) && (
                 <div className="relative" ref={reassignRef}>
                   <Button
                     onClick={() => setReassignOpen(o => !o)}
@@ -3155,6 +3427,12 @@ function ClaimWorkspaceInner({ claimId }: { claimId: string }) {
           </div>
         )}
 
+        {/* Duplicate banner — visible on any saved claim whose VIN or Claim #
+            matches another claim in the system. */}
+        {!isNew && (duplicates.vinMatches.length > 0 || duplicates.claimNumberMatches.length > 0) && (
+          <DuplicateBanner duplicates={duplicates} />
+        )}
+
         {/* Tabs — hidden until the claim exists. Two rows: claim information
             (Claim Info / Documents) on top, the tools below. */}
         {!isNew && (
@@ -3180,7 +3458,7 @@ function ClaimWorkspaceInner({ claimId }: { claimId: string }) {
             })}
           </div>
           <div className="flex items-center justify-center flex-wrap gap-x-8 gap-y-1 border-b border-gray-200">
-            {TOOL_TABS.map((tab) => {
+            {visibleToolTabs.map((tab) => {
               const active = tabForStep(step) === tab.id
               return (
                 <button
@@ -3273,7 +3551,14 @@ function ClaimWorkspaceInner({ claimId }: { claimId: string }) {
                 <CardTitle className="text-gray-900">Claim Information</CardTitle>
               </CardHeader>
               <CardContent className="space-y-8">
-                <ClaimInfoForm claim={claim} onChange={setClaim} />
+                <ClaimInfoForm
+                  claim={claim}
+                  onChange={setClaim}
+                  insuranceCompanyOptions={insuranceCompanyOptions}
+                  duplicates={duplicates}
+                  isNew={isNew}
+                  canEdit={isAdmin || profile?.canEditClaimInfo === true}
+                />
                 <div className="border-t border-gray-100 pt-8">
                   <h3 className="text-sm font-bold text-gray-900 mb-4">Opposing Appraiser</h3>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -3340,6 +3625,7 @@ function ClaimWorkspaceInner({ claimId }: { claimId: string }) {
               onSearch={searchComps}
               onVinDecoded={handleVinDecoded}
               loading={loadingComps}
+              duplicates={duplicates}
             />
 
             {/* Manual comp entry */}
@@ -3877,6 +4163,12 @@ function ClaimWorkspaceInner({ claimId }: { claimId: string }) {
             meta-conversation about the work is always allowed). */}
         {step === 13 && editingId && (
           <MessagesTab claimId={editingId} />
+        )}
+
+        {/* Step 14: Guidelines — reference material for the claim's insurance
+            company. Always viewable (any state), fully read-only in the tab. */}
+        {step === 14 && (
+          <GuidelinesTab insuranceCompany={claim.insuranceCompany} />
         )}
       </main>
 
