@@ -18,6 +18,32 @@ Read `CLAUDE.md` first if you haven't. Then read the top entry here before touch
 
 ---
 
+## 2026-08-29 (session 4) — Status phase feature: phase configs, dashboard pill+filter, workspace selector+delete
+
+**Worked on:** Full status phase feature. Claims can now be tagged with a status phase (pending_payment / rush / umpire, admin-configurable). Phases show as colored pills on the dashboard. Admin can filter the dashboard to phased claims. Phase changes from inside the claim workspace post an auto-message. Elapsed time since phase was set is shown. Delete button moved from the dashboard row into the claim workspace toolbar (admin only).
+
+**Changed (4 commits, on top of state-licensing work):**
+
+- `src/lib/supabase/status-phase-configs.ts` — NEW: `fetchStatusPhaseConfigs`, `formatPhaseAge`, `phaseColorClasses` helpers.
+- `src/lib/supabase/history.ts` — extended `ACVHistoryEntry` with `statusPhase` / `statusPhaseSetAt` fields; updated `rowToEntry` + `fetchACVHistory` SELECT to include both new columns.
+- `src/app/api/claims/[id]/phase/route.ts` — NEW: POST endpoint to set/clear phase; validates code against `status_phase_configs`, patches `acv_history`, posts auto-message.
+- `src/components/claim/phase-selector.tsx` — NEW: compact dropdown component for the claim workspace toolbar; fetches configs on mount, shows pill + age when active, POSTs phase changes.
+- `src/components/claims-table.tsx` — add `statusPhaseConfigs` + `phaseFilter` props; Phase column at far right with colored pill + age; phaseFilter applied in `filtered` useMemo; delete column, delete state, and delete ConfirmDialog removed (`onDeleted` made optional).
+- `src/app/page.tsx` — fetch `statusPhaseConfigs` on mount; `phaseFilter` state; compact phase filter buttons below Messages link (toggle/clear, colored-active).
+- `src/components/claim/ClaimWorkspace.tsx` — `statusPhase` / `statusPhaseSetAt` state hydrated from load; `PhaseSelector` mounted in toolbar after Print; admin-only Delete button in workflow group; `runDeleteClaim` handler; `ConfirmDialog` for delete; imports `Trash2` + `deleteACVHistory`.
+
+**Deploy status:** NOT deployed. tsc and build both pass clean (0 errors). Requires Henry to run `supabase/migration-status-phases.sql` (committed at c10c6d8) first, then deploy.
+
+**In progress / broken / unknowns:**
+
+- **Migration not yet run.** The `status_phase` + `status_phase_set_at` columns on `acv_history` and the `status_phase_configs` table must be created first. Until then: `fetchStatusPhaseConfigs` returns `[]` (no filter buttons rendered, no Phase column rendered), `PhaseSelector` renders nothing, and the phase API route will 400 on every call.
+- **Admin settings for phase CRUD not built.** The migration seeds 3 phases (Pending Payment / Rush / Umpire). Adding/editing/archiving phases requires direct SQL or a future admin UI page.
+- State licensing feature from session 3 also still pending migration + deploy.
+
+**Next:** Henry runs both pending migrations (state-licensing + status-phases), then deploy. Smoke test: (1) phase filter buttons appear on dashboard, (2) opening a claim shows Phase dropdown, (3) selecting a phase shows pill on dashboard row with age, (4) messages tab shows auto-message, (5) Delete button visible on claim workspace (admin only), confirm dialog works, redirects to dashboard.
+
+---
+
 ## 2026-08-29 (session 3) — State licensing feature: licensed-states admin, dashboard badge, claim workspace panel
 
 **Worked on:** Full state licensing feature. Admins can mark which US states require an appraiser license (`Admin > Settings > Licensed States`). The dashboard claims table shows a "State" column with a colored badge (green Licensed / red Not Licensed / amber Unassigned) and a filter dropdown. The Claim Info tab shows a "State Licensing" panel with appraiser's license details. The admin Licenses tab and My Profile now show `status` (active/pending/expired) and issued date.
