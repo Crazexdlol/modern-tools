@@ -21,14 +21,28 @@ export default function DashboardPage() {
   const [unreadMessages, setUnreadMessages] = useState(0)
 
   const load = async () => {
+    const t0 = performance.now()
+    const timings: Record<string, number> = {}
+    const timed = async <T,>(label: string, fn: () => Promise<T>): Promise<T> => {
+      const start = performance.now()
+      const result = await fn()
+      timings[label] = Math.round(performance.now() - start)
+      return result
+    }
     const [claims, profs, unread] = await Promise.all([
-      fetchACVHistory(),
-      fetchAllProfilesBrowser(),
-      fetchUnreadCount(),
+      timed('fetchACVHistory', fetchACVHistory),
+      timed('fetchAllProfilesBrowser', fetchAllProfilesBrowser),
+      timed('fetchUnreadCount', fetchUnreadCount),
     ])
     if (claims === null) setFetchError(true); else setEntries(claims)
     setProfiles(profs)
     setUnreadMessages(unread)
+    // Diagnostic — remove after slowness is fixed.
+    console.log('[dashboard perf]', {
+      ...timings,
+      totalMs: Math.round(performance.now() - t0),
+      claimCount: claims?.length ?? 0,
+    })
   }
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- mount-load pattern; setState fires only after the async fetch resolves

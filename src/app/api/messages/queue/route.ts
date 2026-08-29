@@ -26,6 +26,10 @@ interface ReadRow {
 // GET /api/messages/queue — list of claims with unread messages for the caller.
 // Response: { claims: [{ claimId, maNumber, insuredName, vehicle, unreadCount, lastMessageAt, lastMessageFrom }] }
 export async function GET() {
+  const timings: Record<string, number> = {}
+  const t0 = Date.now()
+  const mark = (label: string, from: number) => { timings[label] = Date.now() - from }
+
   const cookieStore = await cookies()
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -33,31 +37,41 @@ export async function GET() {
     { cookies: { getAll() { return cookieStore.getAll() }, setAll() {} } }
   )
 
+  const tAuth = Date.now()
   const { data: { user } } = await supabase.auth.getUser()
+  mark('authGetUser', tAuth)
   if (!user) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
 
   // Fetch every message where the caller is a recipient AND is not the
   // sender (self-messages should never show up in your own unread queue,
   // even if you accidentally add yourself to the recipient list). RLS still
   // narrows to claims the caller can see — belt + suspenders.
+  const tMsgs = Date.now()
   const { data: msgs, error: msgErr } = await supabase
     .from('messages')
     .select('id, claim_id, sender_name, created_at')
     .contains('recipient_ids', [user.id])
     .neq('sender_id', user.id)
     .order('created_at', { ascending: false })
+  mark('messagesQuery', tMsgs)
   if (msgErr) return NextResponse.json({ error: msgErr.message }, { status: 400 })
   const messages = (msgs as MessageQueueRow[]) ?? []
+  timings['messagesCount'] = messages.length
 
-  if (messages.length === 0) return NextResponse.json({ claims: [] })
+  if (messages.length === 0) {
+    console.log('[queue perf]', { ...timings, totalMs: Date.now() - t0 })
+    return NextResponse.json({ claims: [] })
+  }
 
   // Fetch caller's read timestamps for the relevant claims.
   const claimIds = Array.from(new Set(messages.map(m => m.claim_id)))
+  const tReads = Date.now()
   const { data: reads, error: readErr } = await supabase
     .from('message_reads')
     .select('claim_id, last_read_at')
     .eq('user_id', user.id)
     .in('claim_id', claimIds)
+  mark('readsQuery', tReads)
   if (readErr) return NextResponse.json({ error: readErr.message }, { status: 400 })
   const readAt = new Map<string, string>()
   for (const r of (reads as ReadRow[]) ?? []) readAt.set(r.claim_id, r.last_read_at)
@@ -80,10 +94,12 @@ export async function GET() {
 
   // Enrich each claim with display fields.
   const unreadClaimIds = Array.from(buckets.keys())
+  const tClaims = Date.now()
   const { data: claims, error: claimErr } = await supabase
     .from('acv_history')
     .select('id, ma_number, vehicle, claim')
     .in('id', unreadClaimIds)
+  mark('claimsEnrichQuery', tClaims)
   if (claimErr) return NextResponse.json({ error: claimErr.message }, { status: 400 })
 
   const claimMap = new Map<string, ClaimRow>()
@@ -107,5 +123,6 @@ export async function GET() {
     .filter((v): v is NonNullable<typeof v> => v !== null)
     .sort((a, b) => b.lastMessageAt.localeCompare(a.lastMessageAt))
 
+  console.log('[queue perf]', { ...timings, totalMs: Date.now() - t0 })
   return NextResponse.json({ claims: payload })
 }
