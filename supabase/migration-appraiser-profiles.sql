@@ -39,14 +39,16 @@ create table if not exists public.fee_catalog (
 
 alter table public.fee_catalog enable row level security;
 
+drop policy if exists "Authenticated read fee_catalog" on public.fee_catalog;
 create policy "Authenticated read fee_catalog"
   on public.fee_catalog for select
   using (auth.role() = 'authenticated');
 
+drop policy if exists "Admin write fee_catalog" on public.fee_catalog;
 create policy "Admin write fee_catalog"
   on public.fee_catalog for all
-  using (exists (select 1 from public.profiles p where p.id = auth.uid() and p.role = 'admin'))
-  with check (exists (select 1 from public.profiles p where p.id = auth.uid() and p.role = 'admin'));
+  using (public.is_admin())
+  with check (public.is_admin());
 
 -- Seed the 43 fee types. sort_order = display order.
 insert into public.fee_catalog (code, label, unit, sort_order) values
@@ -106,17 +108,19 @@ create table if not exists public.appraiser_fees (
 
 alter table public.appraiser_fees enable row level security;
 
+drop policy if exists "Read own fees or admin all" on public.appraiser_fees;
 create policy "Read own fees or admin all"
   on public.appraiser_fees for select
   using (
     auth.uid() = user_id
-    or exists (select 1 from public.profiles p where p.id = auth.uid() and p.role = 'admin')
+    or public.is_admin()
   );
 
+drop policy if exists "Admin write appraiser_fees" on public.appraiser_fees;
 create policy "Admin write appraiser_fees"
   on public.appraiser_fees for all
-  using (exists (select 1 from public.profiles p where p.id = auth.uid() and p.role = 'admin'))
-  with check (exists (select 1 from public.profiles p where p.id = auth.uid() and p.role = 'admin'));
+  using (public.is_admin())
+  with check (public.is_admin());
 
 -- 4. appraiser_licenses
 create table if not exists public.appraiser_licenses (
@@ -135,17 +139,19 @@ create index if not exists appraiser_licenses_user_idx on public.appraiser_licen
 
 alter table public.appraiser_licenses enable row level security;
 
+drop policy if exists "Read own licenses or admin all" on public.appraiser_licenses;
 create policy "Read own licenses or admin all"
   on public.appraiser_licenses for select
   using (
     auth.uid() = user_id
-    or exists (select 1 from public.profiles p where p.id = auth.uid() and p.role = 'admin')
+    or public.is_admin()
   );
 
+drop policy if exists "Admin write appraiser_licenses" on public.appraiser_licenses;
 create policy "Admin write appraiser_licenses"
   on public.appraiser_licenses for all
-  using (exists (select 1 from public.profiles p where p.id = auth.uid() and p.role = 'admin'))
-  with check (exists (select 1 from public.profiles p where p.id = auth.uid() and p.role = 'admin'));
+  using (public.is_admin())
+  with check (public.is_admin());
 
 -- 5. appraiser_documents
 create table if not exists public.appraiser_documents (
@@ -164,17 +170,19 @@ create index if not exists appraiser_documents_user_idx on public.appraiser_docu
 
 alter table public.appraiser_documents enable row level security;
 
+drop policy if exists "Read own docs or admin all" on public.appraiser_documents;
 create policy "Read own docs or admin all"
   on public.appraiser_documents for select
   using (
     auth.uid() = user_id
-    or exists (select 1 from public.profiles p where p.id = auth.uid() and p.role = 'admin')
+    or public.is_admin()
   );
 
+drop policy if exists "Admin write appraiser_documents" on public.appraiser_documents;
 create policy "Admin write appraiser_documents"
   on public.appraiser_documents for all
-  using (exists (select 1 from public.profiles p where p.id = auth.uid() and p.role = 'admin'))
-  with check (exists (select 1 from public.profiles p where p.id = auth.uid() and p.role = 'admin'));
+  using (public.is_admin())
+  with check (public.is_admin());
 
 -- 6. Backfill per-user permissions from site-wide toggles.
 --    After this backfill runs, per-user columns are the only source of truth.
@@ -197,7 +205,8 @@ begin
   if global_allow_create is not null then
     update public.profiles
        set can_create_claims = global_allow_create
-     where role = 'appraiser';
+     where role = 'appraiser'
+       and can_create_claims = false;
   end if;
 
   -- auto_status_requests_override is nullable today (null = follow global).
