@@ -190,7 +190,9 @@ export function parseEagleView(text: string): ParsedClaim {
     dateOfLoss,
     dateReceived: '',
     clientType,
-    clientName: '',
+    // Eagle View is Sedgwick's assignment platform — every PDF from it is
+    // a Sedgwick sub-assignment regardless of the underlying insurer.
+    clientName: 'Sedgwick',
     insuredName,
     ownerPhone: insured.phone,
     ownerEmail: insured.email,
