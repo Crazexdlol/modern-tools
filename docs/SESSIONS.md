@@ -18,6 +18,41 @@ Read `CLAUDE.md` first if you haven't. Then read the top entry here before touch
 
 ---
 
+## 2026-08-29 (session 3) — State licensing feature: licensed-states admin, dashboard badge, claim workspace panel
+
+**Worked on:** Full state licensing feature. Admins can mark which US states require an appraiser license (`Admin > Settings > Licensed States`). The dashboard claims table shows a "State" column with a colored badge (green Licensed / red Not Licensed / amber Unassigned) and a filter dropdown. The Claim Info tab shows a "State Licensing" panel with appraiser's license details. The admin Licenses tab and My Profile now show `status` (active/pending/expired) and issued date.
+
+**Changed (6 commits, on top of ba18f33 migration):**
+
+- `src/lib/claim-state.ts` — NEW: `extractLossState()` regex helper (ZIP-before primary, comma-trail fallback)
+- `src/lib/us-states.ts` — NEW: all 50 states + DC constant array
+- `src/lib/supabase/licensed-states.ts` — NEW: `fetchLicensedStates()` + `isLicensedState()` helpers
+- `src/lib/supabase/appraiser-licenses.ts` — extended `AppraiserLicense` + `AppraiserLicenseRow` with `status`/`issuedDate`; added `isLicenseValid()` helper
+- `src/app/api/admin/licensed-states/route.ts` — NEW: POST to create licensed state entry
+- `src/app/api/admin/licensed-states/[state]/route.ts` — NEW: PATCH + DELETE for licensed state entries
+- `src/app/api/admin/appraiser-licenses/route.ts` — accept `status` + `issuedDate` on POST (default status='active')
+- `src/app/api/admin/appraiser-licenses/[id]/route.ts` — accept `status` + `issuedDate` on PATCH
+- `src/app/admin/settings/licensed-states/page.tsx` + `licensed-states-client.tsx` — NEW: admin table with add/edit/delete for state licensing requirements
+- `src/app/admin/settings/_settings-nav.tsx` — added Licensed States nav item (ShieldCheck icon)
+- `src/app/admin/settings/users/[id]/_tabs/licenses-tab.tsx` — added status dropdown + issued_date input to add/edit form; `StatusPill` component in read view
+- `src/app/my-profile/my-profile-client.tsx` — `SmallStatusPill` shows pending/expired badge next to expiration alert
+- `src/components/claims-table.tsx` — new State column with `StateCell` badge; license filter dropdown; accepts `licensedStates` + `licensesByUser` props
+- `src/app/page.tsx` — fetch `licensedStates` on mount; fetch licenses (all for admin, own for appraiser) after profile resolves; pass to `ClaimsTable`
+- `src/components/claim/state-licensing-panel.tsx` — NEW: panel showing loss state + licensing status (neutral/amber/green/red); admin roster of licensed appraisers
+- `src/components/claim/ClaimWorkspace.tsx` — mount `StateLicensingPanel` in Claim Info tab (existing claims only)
+
+**Deploy status:** NOT deployed yet — tsc and build both pass clean. Requires Henry to run `supabase/migration-state-licensing.sql` (ba18f33) first, then deploy.
+
+**In progress / broken / unknowns:**
+
+- **Migration not yet run.** The `licensed_states` table and `status`/`issued_date` columns on `appraiser_licenses` must be created first. Migration SQL is in ba18f33 (`supabase/migration-state-licensing.sql`). Until the migration runs, any page that touches those tables will get a 42703 error (harmless — licensed-states fetch returns `[]`, panel stays hidden).
+- **StateLicensingPanel fetches independently** — two Supabase calls on every Claim Info tab view. Fine for now; if perf is a concern later, lift these fetches to ClaimWorkspace state.
+- `isLicenseValid()` logic: `status === 'active' AND expirationDate > today`. The existing `getLicenseAlertLevel()` expiration-based alert badges still work independently of status — they show time-to-expiration regardless. This is intentional: a license can be `status=active` but alerting, or `status=pending` and not shown as valid.
+
+**Next:** Run migration + deploy, then smoke test: (1) add a licensed state in admin, (2) open a claim with a matching owner address state, verify panel shows, (3) add a valid license for the assigned appraiser in that state, verify green badge appears on dashboard and in panel.
+
+---
+
 ## 2026-08-29 (session 2) — Appraiser Profiles: 5-tab admin page, fee catalog, license expiration alerts, permissions consolidation
 
 **Worked on:** Full appraiser profile system. Every user (appraiser + admin) now has a dedicated profile page at `Settings > Users > [click name]` with 5 tabs — **Information** (name/phone/address/active), **Permissions** (Create claims / Reassign / Edit Info / Auto status requests), **Fees** (per-user amounts across a 43-item shared catalog), **Licenses** (multi-state with expiration tracking), and **Documents** (private storage bucket for W9s, license scans, etc.). Every user also gets a read-only `/my-profile` page (4 tabs, no permissions). Added `/admin/settings/fee-catalog` for editing the shared catalog. License expirations trigger in-app alerts at 90/30/7/expired thresholds on the dashboard for the current user (admins see all users' alerts). **Consolidated all per-user permission toggles into the profile** — deleted the Access + Automation admin pages and their site-wide master toggles entirely. Migration backfills every user's per-user column from the current global value. Inactive users are filtered out of assignment + messages recipient pickers but keep their historical assignments visible.
