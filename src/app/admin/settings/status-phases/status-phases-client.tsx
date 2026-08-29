@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { Plus, Archive, Undo2, Trash2, Save, X } from 'lucide-react'
-import { fetchStatusPhaseConfigs, phaseColorClasses, type StatusPhaseConfig } from '@/lib/supabase/status-phase-configs'
+import { fetchStatusPhaseConfigs, invalidateStatusPhaseConfigsCache, phaseColorClasses, type StatusPhaseConfig } from '@/lib/supabase/status-phase-configs'
 
 const COLORS = ['green', 'red', 'amber', 'blue', 'gray'] as const
 type Color = typeof COLORS[number]
@@ -29,6 +29,8 @@ export function StatusPhasesClient() {
   const [error, setError] = useState<string | null>(null)
 
   const load = async () => {
+    // Bust the 60s cache before reloading so admin edits appear immediately.
+    invalidateStatusPhaseConfigsCache()
     setRows(await fetchStatusPhaseConfigs({ includeArchived: showArchived }))
     setLoading(false)
   }
