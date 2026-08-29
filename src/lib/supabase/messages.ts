@@ -7,6 +7,7 @@ export interface Message {
   recipientNames: string[]
   body: string
   createdAt: string  // ISO
+  isAutoRequest: boolean
 }
 
 export interface UnreadClaim {
@@ -58,8 +59,22 @@ export async function fetchUnreadQueue(): Promise<UnreadClaim[]> {
 }
 
 // Just the total unread count (sum of unreadCount across claims), for the
-// Dashboard header badge. Uses the same queue endpoint.
+// Dashboard header badge. Times out at 8s so a slow/cold /api/messages/queue
+// can't hang the caller. On timeout or error, returns 0 — the dashboard
+// still renders; the badge is just missing until the next successful fetch.
 export async function fetchUnreadCount(): Promise<number> {
-  const claims = await fetchUnreadQueue()
-  return claims.reduce((sum, c) => sum + c.unreadCount, 0)
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), 8000)
+  try {
+    const res = await fetch('/api/messages/queue', { signal: controller.signal })
+    if (!res.ok) return 0
+    const data = await res.json()
+    const claims = (data.claims ?? []) as UnreadClaim[]
+    return claims.reduce((sum, c) => sum + c.unreadCount, 0)
+  } catch (err) {
+    console.warn('[fetchUnreadCount] failed or timed out:', err)
+    return 0
+  } finally {
+    clearTimeout(timer)
+  }
 }

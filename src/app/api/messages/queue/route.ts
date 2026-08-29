@@ -47,12 +47,17 @@ export async function GET() {
   // even if you accidentally add yourself to the recipient list). RLS still
   // narrows to claims the caller can see — belt + suspenders.
   const tMsgs = Date.now()
+  // Cap the scan. If the user is on more than 500 recent recipient messages,
+  // the queue's "unread count" will be approximate — but the dashboard badge
+  // is a rough signal anyway, and an unbounded query on this table was the
+  // measured cause of dashboard hang on cold Vercel functions.
   const { data: msgs, error: msgErr } = await supabase
     .from('messages')
     .select('id, claim_id, sender_name, created_at')
     .contains('recipient_ids', [user.id])
     .neq('sender_id', user.id)
     .order('created_at', { ascending: false })
+    .limit(500)
   mark('messagesQuery', tMsgs)
   if (msgErr) return NextResponse.json({ error: msgErr.message }, { status: 400 })
   const messages = (msgs as MessageQueueRow[]) ?? []
