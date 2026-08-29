@@ -7,6 +7,7 @@ import { deleteACVHistory, type ACVHistoryEntry } from '@/lib/supabase/history'
 import type { Profile } from '@/lib/supabase/profiles'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { Button } from '@/components/ui/button'
+import { ClaimMessagePreview } from '@/components/claim-message-preview'
 
 function fmtDate(iso: string): string {
   return new Date(iso).toLocaleDateString("en-US", {
@@ -356,13 +357,16 @@ export function ClaimsTable({
                       </td>
                     )}
                     <td className="px-4 py-3">
-                      <button
-                        type="button"
-                        onClick={openClaim}
-                        className="text-gray-900 font-medium hover:text-blue-600 hover:underline text-left"
-                      >
-                        {entry.maNumber || '—'}
-                      </button>
+                      <div className="inline-flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={openClaim}
+                          className="text-gray-900 font-medium hover:text-blue-600 hover:underline text-left"
+                        >
+                          {entry.maNumber || '—'}
+                        </button>
+                        <ClaimMessagePreview claimId={entry.id} />
+                      </div>
                     </td>
                     <td className="px-4 py-3 text-gray-700">{entry.claim?.insuredName || '—'}</td>
                     <td className="px-4 py-3 text-gray-700">{entry.claim?.clientName || '—'}</td>
