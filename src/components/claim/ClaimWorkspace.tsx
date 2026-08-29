@@ -59,7 +59,8 @@ import { saveSummary, getSummary, genId, newEmptyForm, type SavedSummary } from 
 import { SummaryFields } from '@/app/summary-page/SummaryFields'
 import { SummaryPrintDoc } from '@/app/summary-page/SummaryPrintDoc'
 import { AppHeader } from '@/components/app-header'
-import { StateLicensingPanel } from '@/components/claim/state-licensing-panel'
+import { StateLicensingTopBadge } from '@/components/claim/state-licensing-top-badge'
+import { HandlingAppraiserLicenseSummary } from '@/components/claim/handling-appraiser-license-summary'
 
 async function saveToHistory(
   claim: ClaimInfo,
@@ -300,6 +301,7 @@ function ClaimInfoForm({
   isNew,
   canEdit,
   onParsedNotes,
+  allProfiles,
 }: {
   claim: ClaimInfo
   onChange: (updated: ClaimInfo) => void
@@ -308,6 +310,7 @@ function ClaimInfoForm({
   isNew: boolean
   canEdit: boolean
   onParsedNotes?: (notes: string) => void
+  allProfiles: Profile[]
 }) {
   // Edit mode: on for brand-new claims (nothing to protect yet), off by
   // default for existing claims. The Edit button flips it. If the user
@@ -452,10 +455,27 @@ function ClaimInfoForm({
       {/* Handling Appraiser — always editable (feeds Award / Closing Notes). */}
       <div>
         <h3 className="text-sm font-bold text-gray-900 mb-4">Handling Appraiser</h3>
+        <HandlingAppraiserLicenseSummary
+          claim={claim}
+          handlingAppraiserName={claim.handlingAppraiser ?? ''}
+          allProfiles={allProfiles}
+        />
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div>
             <label className={labelCls}>Handling Appraiser</label>
-            <input className={inputCls} placeholder="Henry Aleksanyan" value={claim.handlingAppraiser ?? ''} onChange={(e) => set('handlingAppraiser', e.target.value)} />
+            <select
+              className={inputCls}
+              value={claim.handlingAppraiser ?? ''}
+              onChange={(e) => set('handlingAppraiser', e.target.value)}
+            >
+              <option value="">— Select appraiser —</option>
+              {allProfiles
+                .filter(p => p.isActive)
+                .map(p => {
+                  const name = p.name || p.email
+                  return <option key={p.id} value={name}>{name}</option>
+                })}
+            </select>
           </div>
         </div>
       </div>
@@ -3329,6 +3349,13 @@ function ClaimWorkspaceInner({ claimId }: { claimId: string }) {
               Print
             </button>
           )}
+          {!isNew && editingId && (
+            <StateLicensingTopBadge
+              claim={claim}
+              assignedTo={assignedTo}
+              profile={profile ?? null}
+            />
+          )}
           {!readOnly && hasUnsavedChanges && (
             <div className="flex items-center gap-2 ml-auto">
               <span className="text-xs text-amber-600 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full font-medium">Unsaved changes</span>
@@ -3622,17 +3649,8 @@ function ClaimWorkspaceInner({ claimId }: { claimId: string }) {
                   isNew={isNew}
                   canEdit={isAdmin || profile?.canEditClaimInfo === true}
                   onParsedNotes={(notes) => { pendingAutoNoteRef.current = notes }}
+                  allProfiles={allProfiles}
                 />
-                {!isNew && (
-                  <div className="border-t border-gray-100 pt-6">
-                    <StateLicensingPanel
-                      claim={claim}
-                      assignedTo={assignedTo}
-                      profile={profile ?? null}
-                      allProfiles={allProfiles}
-                    />
-                  </div>
-                )}
                 <div className="border-t border-gray-100 pt-8">
                   <h3 className="text-sm font-bold text-gray-900 mb-4">Opposing Appraiser</h3>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
