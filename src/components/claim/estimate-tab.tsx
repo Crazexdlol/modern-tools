@@ -833,11 +833,6 @@ function CompareEstimates({
       <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-6 space-y-5">
         <div>
           <h3 className="text-base font-semibold text-gray-900">Compare Two Estimates</h3>
-          <p className="text-xs text-gray-400 mt-0.5">
-            {vehicleLabel
-              ? `Results save to this claim (${vehicleLabel}).`
-              : "Results save to this claim."}
-          </p>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <FileUploadZone label="Estimate A (Ours)" file={fileA} onDrop={setFileA} onRemove={() => setFileA(null)} />

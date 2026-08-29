@@ -46,15 +46,8 @@ const MAX_ROWS = INVOICE_MAX_ROWS['very-long']
 
 // Purely informational — which printed template a given line count will use.
 // Not a picker: the template is always chosen automatically from line count.
-export function InvoiceTemplateNote({ lineItemCount }: { lineItemCount: number }) {
-  const variant = pickInvoiceVariant(lineItemCount)
-  return (
-    <p className="text-xs text-gray-400">
-      {variant === 'long'
-        ? `Using the Long template (${lineItemCount}/${INVOICE_MAX_ROWS.long} lines) — includes the full Owner/Insurance/Vehicle block.`
-        : `Using the Very Long template (${lineItemCount}/${INVOICE_MAX_ROWS['very-long']} lines) — more lines fit, but no Owner/Insurance/Vehicle block.`}
-    </p>
-  )
+export function InvoiceTemplateNote({ lineItemCount: _ }: { lineItemCount: number }) {
+  return null
 }
 
 export function InvoiceLineItemsEditor({

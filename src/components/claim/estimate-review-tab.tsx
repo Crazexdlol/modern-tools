@@ -4,6 +4,7 @@ import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { useDropzone } from "react-dropzone";
 import { AlertCircle, FileText, Loader2, Trash2, Upload, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { cn } from "@/lib/utils";
 import type { ClaimInfo } from "@/lib/acv/types";
 import { CATEGORY_LABEL } from "@/lib/estimate-review/types";
@@ -310,6 +311,7 @@ export function EstimateReviewTab({
   const [runStartMs, setRunStartMs] = useState<number | null>(null);
   const [elapsedMs, setElapsedMs] = useState(0);
   const [estimatedTotalSec, setEstimatedTotalSec] = useState(0);
+  const [pendingDeleteReviewId, setPendingDeleteReviewId] = useState<string | null>(null);
   const cardRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
   // Tick the elapsed clock while a run is in flight.
@@ -374,11 +376,12 @@ export function EstimateReviewTab({
     }
   };
 
-  const handleDeleteReview = (id: string) => {
-    if (!confirm("Delete this review? This can't be undone.")) return;
+  const confirmDeleteReview = () => {
+    if (!pendingDeleteReviewId) return;
     const next = buildEmptyEstimate(estimate);
-    next.reviews = reviews.filter((r) => r.id !== id);
+    next.reviews = reviews.filter((r) => r.id !== pendingDeleteReviewId);
     onChange(next);
+    setPendingDeleteReviewId(null);
   };
 
   return (
@@ -398,10 +401,6 @@ export function EstimateReviewTab({
         <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-6 space-y-5 max-w-3xl">
           <div>
             <h3 className="text-base font-semibold text-gray-900">Estimate Review</h3>
-            <p className="text-xs text-gray-400 mt-0.5">
-              Upload one or more estimates. Each gets its own review against the P-Pages rulebook.
-              {vehicleLabel ? ` Results save to this claim (${vehicleLabel}).` : " Results save to this claim."}
-            </p>
           </div>
           <MultiDropZone
             label="Estimates to review"
@@ -494,7 +493,7 @@ export function EstimateReviewTab({
                 </div>
                 <button
                   type="button"
-                  onClick={() => handleDeleteReview(review.id)}
+                  onClick={() => setPendingDeleteReviewId(review.id)}
                   className="text-gray-300 hover:text-red-500 shrink-0"
                   aria-label="Delete review"
                 >
@@ -543,6 +542,16 @@ export function EstimateReviewTab({
           ))}
         </div>
       )}
+
+      <ConfirmDialog
+        open={pendingDeleteReviewId !== null}
+        title="Delete this review?"
+        message="This will remove the review and its flags. This can't be undone."
+        confirmLabel="Delete"
+        variant="danger"
+        onConfirm={confirmDeleteReview}
+        onCancel={() => setPendingDeleteReviewId(null)}
+      />
     </div>
   );
 }

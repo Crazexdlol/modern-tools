@@ -9,6 +9,7 @@ import {
   deleteClaimDocument,
   type ClaimDocument,
 } from '@/lib/supabase/documents'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 
 const SOURCE_LABELS: Record<ClaimDocument['source'], string> = {
   'acv-report': 'ACV Report',
@@ -45,6 +46,7 @@ export function DocumentsTab({
   const [uploading, setUploading] = useState(false)
   const [busyPath, setBusyPath] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [pendingDelete, setPendingDelete] = useState<ClaimDocument | null>(null)
 
   const handleDrop = useCallback(async (accepted: File[]) => {
     if (accepted.length === 0) return
@@ -70,8 +72,10 @@ export function DocumentsTab({
     else setError('Could not open the document. Try again.')
   }
 
-  const handleDelete = async (doc: ClaimDocument) => {
-    if (!confirm(`Delete "${doc.name}" from this claim's documents?`)) return
+  const confirmDelete = async () => {
+    if (!pendingDelete) return
+    const doc = pendingDelete
+    setPendingDelete(null)
     setBusyPath(doc.path)
     const ok = await deleteClaimDocument(doc.path)
     setBusyPath(null)
@@ -95,9 +99,6 @@ export function DocumentsTab({
           : <Upload className="w-7 h-7 text-gray-400 mx-auto mb-2" />}
         <p className="text-sm text-gray-500">
           {uploading ? 'Uploading...' : isDragActive ? 'Drop files here...' : 'Drop files here, or click to browse'}
-        </p>
-        <p className="text-xs text-gray-400 mt-1">
-          Generated report PDFs are saved here automatically when you download or print them.
         </p>
       </div>
 
@@ -148,7 +149,7 @@ export function DocumentsTab({
                           <button onClick={() => handleOpen(doc)} className="text-gray-400 hover:text-blue-600 transition-colors p-1" title="Open / download">
                             <Download className="w-4 h-4" />
                           </button>
-                          <button onClick={() => handleDelete(doc)} className="text-gray-300 hover:text-red-500 transition-colors p-1" title="Delete">
+                          <button onClick={() => setPendingDelete(doc)} className="text-gray-300 hover:text-red-500 transition-colors p-1" title="Delete">
                             <Trash2 className="w-4 h-4" />
                           </button>
                         </>
@@ -161,6 +162,20 @@ export function DocumentsTab({
           </tbody>
         </table>
       </div>
+
+      <ConfirmDialog
+        open={!!pendingDelete}
+        title="Delete this document?"
+        message={
+          pendingDelete ? (
+            <>Remove <b>{pendingDelete.name}</b> from this claim&apos;s documents? This cannot be undone.</>
+          ) : null
+        }
+        confirmLabel="Delete"
+        variant="danger"
+        onConfirm={confirmDelete}
+        onCancel={() => setPendingDelete(null)}
+      />
     </div>
   )
 }
