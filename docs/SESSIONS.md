@@ -18,6 +18,81 @@ Read `CLAUDE.md` first if you haven't. Then read the top entry here before touch
 
 ---
 
+## 2026-08-29 (session 2) — Appraiser Profiles: 5-tab admin page, fee catalog, license expiration alerts, permissions consolidation
+
+**Worked on:** Full appraiser profile system. Every user (appraiser + admin) now has a dedicated profile page at `Settings > Users > [click name]` with 5 tabs — **Information** (name/phone/address/active), **Permissions** (Create claims / Reassign / Edit Info / Auto status requests), **Fees** (per-user amounts across a 43-item shared catalog), **Licenses** (multi-state with expiration tracking), and **Documents** (private storage bucket for W9s, license scans, etc.). Every user also gets a read-only `/my-profile` page (4 tabs, no permissions). Added `/admin/settings/fee-catalog` for editing the shared catalog. License expirations trigger in-app alerts at 90/30/7/expired thresholds on the dashboard for the current user (admins see all users' alerts). **Consolidated all per-user permission toggles into the profile** — deleted the Access + Automation admin pages and their site-wide master toggles entirely. Migration backfills every user's per-user column from the current global value. Inactive users are filtered out of assignment + messages recipient pickers but keep their historical assignments visible.
+
+Full spec + plan committed with the change: `docs/superpowers/specs/2026-08-29-appraiser-profiles-design.md`, `docs/superpowers/plans/2026-08-29-appraiser-profiles.md`.
+
+**Changed (~27 commits):**
+
+- `supabase/migration-appraiser-profiles.sql` + `-rollback.sql` — NEW: extends `profiles` with phone/address/is_active, creates 4 tables (`fee_catalog` seeded with 43 rows, `appraiser_fees`, `appraiser_licenses`, `appraiser_documents`), creates the `appraiser-documents` private storage bucket + RLS inline (no Dashboard step required), backfills per-user permissions from the old site-wide toggles then deletes those two `site_settings` rows. Uses `public.is_admin()` helper and `drop policy if exists` guards for idempotency.
+- `src/lib/supabase/profiles.ts` — added phone/addressStreet/City/State/Zip + isActive to Profile type + row conversion
+- `src/lib/supabase/fee-catalog.ts` — NEW: browser fetch helper
+- `src/lib/supabase/appraiser-fees.ts` — NEW: per-user fee amount map
+- `src/lib/supabase/appraiser-licenses.ts` — NEW: fetch helpers + `getLicenseAlertLevel(expiration, today)` utility with cadence (>90=none / 31-90=notice / 8-30=warning / 1-7=urgent / ≤0=expired) + `isBannerLevel()` helper
+- `src/lib/supabase/appraiser-documents.ts` — NEW: browser fetch helper
+- `src/app/api/admin/users/[id]/route.ts` — extended PATCH to accept phone/address/is_active
+- `src/app/api/admin/fee-catalog/route.ts` + `[id]/route.ts` — NEW: catalog CRUD (DELETE refuses if any user has amounts; force-archive instead)
+- `src/app/api/admin/appraiser-fees/route.ts` — NEW: bulk upsert route (amount=null triggers delete)
+- `src/app/api/admin/appraiser-licenses/route.ts` + `[id]/route.ts` — NEW: license CRUD, state auto-uppercased
+- `src/app/api/admin/appraiser-documents/upload/route.ts` + `[id]/route.ts` — NEW: multipart upload → storage + metadata, DELETE removes both
+- `src/app/api/appraiser-documents/[id]/download/route.ts` — NEW: 60s signed URL, self or admin
+- `src/app/admin/users/users-admin-client.tsx` — name became clickable Link; added Active/Inactive badge column; red-dot next to name when any license in warning/urgent/expired state
+- `src/app/admin/settings/users/[id]/page.tsx` + `profile-detail-client.tsx` — NEW: profile detail shell with 5-tab router + back link
+- `src/app/admin/settings/users/[id]/_tabs/info-tab.tsx` — NEW: Name/Phone/Address form + Active checkbox with explanation
+- `src/app/admin/settings/users/[id]/_tabs/permissions-tab.tsx` — NEW: 4 toggle switches with optimistic updates
+- `src/app/admin/settings/users/[id]/_tabs/fees-tab.tsx` — NEW: 43-row catalog table, dirty-tracked bulk save button showing count of pending changes
+- `src/app/admin/settings/users/[id]/_tabs/licenses-tab.tsx` — NEW: inline add/edit/delete, alert badges computed live from expiration_date
+- `src/app/admin/settings/users/[id]/_tabs/documents-tab.tsx` — NEW: upload/download/delete with optional Kind (W9/License/Contract/Insurance/Other) datalist
+- `src/app/admin/settings/fee-catalog/page.tsx` + `fee-catalog-client.tsx` — NEW: add/edit/archive/delete fee types with sort_order + code (immutable after create)
+- `src/app/my-profile/page.tsx` + `my-profile-client.tsx` — NEW: read-only 4-tab self view for every authenticated user
+- `src/components/license-expiration-banner.tsx` — NEW: session-dismissable dashboard banner. Self view for appraisers (own licenses); admin view shows all users. Cadence semantics: banner is always present while a license is in an alert window (no cron; live evaluation)
+- `src/app/page.tsx` — mounted `<LicenseExpirationBanner />` at top of dashboard; also removed the now-defunct `fetchSiteSetting('allow_regular_create_claims')` — per-user `canCreateClaims` is now the only gate
+- `src/components/claim/ClaimWorkspace.tsx` — filtered reassign picker by `isActive` at render (kept full list in state so already-assigned inactive users still resolve to names); removed the defunct `allowCreateGlobal` check
+- `src/components/claim/messages-tab.tsx` — filtered recipient picker options by `isActive` at the useMemo layer
+- `src/app/admin/settings/access/` — **DELETED entire folder** (page.tsx + access-client.tsx); replaced by per-user Permissions tab
+- `src/app/admin/settings/automation/` — **DELETED entire folder** (page.tsx + automation-client.tsx); replaced by per-user Permissions tab
+- `src/app/admin/settings/_settings-nav.tsx` — removed Access + Automation nav items, added Fee Catalog (DollarSign icon); Users / Fee Catalog / Guidelines / Data
+- `src/components/app-header.tsx` — dropdown menu updated: "My Profile" (`/my-profile`) + "Account & Password" (`/profile`, the pre-existing password/name page — kept reachable so users can still change their password)
+- `src/lib/supabase/site-settings.ts` — `SiteSettingsKey = never` (no site-settings keys currently in use)
+- `src/app/api/cron/status-requests/route.ts` — removed the dead `site_settings.auto_status_requests_enabled` query; per-user `auto_status_requests_override` is the only source of truth after migration, null treated as OFF
+
+**Deploy status:**
+
+- **LIVE now:** `dpl_B82ThBAX89uLAycGDQa5DhEx1686` → `https://modern-tools-14oegqik7-henry-as-projects-88caed67.vercel.app`. Alias `modern-tools-rho.vercel.app` flipped, verified `● Ready`.
+- **Rollback (to yesterday's Eagle View build):** `npx vercel promote https://modern-tools-ef2sikn6f-henry-as-projects-88caed67.vercel.app --scope henry-as-projects-88caed67 --yes`
+
+**Migrations RUN this session (confirmed by Henry):**
+- `supabase/migration-appraiser-profiles.sql` — verified: all 7 verification checks returned 1 (bucket exists, all tables exist, profiles.phone + is_active exist), fee_catalog=43 rows, site_settings orphans=0. Pre-migration site_settings values captured for rollback (`allow_regular_create_claims=true`, `auto_status_requests_enabled=false`).
+
+**Method notes:**
+
+- Used subagent-driven-development to execute the 23-task plan. Batched aggressively for speed — combined tasks by file-group (data layers as one batch, API routes as one batch, profile detail + 5 tabs as one batch, etc.). Only Task 1 (migration SQL) got the full spec-review + code-quality-review loop; caught 3 Important issues (use `is_admin()` helper, guard backfill re-runs, add drop-policy-if-exists) and re-verified before ship. Subsequent tasks relied on tsc + build gates plus a spot-check per task.
+- Started with the plan calling for a manual Supabase Dashboard step to create the `appraiser-documents` bucket. Henry asked mid-execution to eliminate the manual step; folded the bucket creation + RLS + verification-check into the migration SQL so it's now a single SQL script with zero dashboard clicks.
+- One implementer subagent caught a subtle dual-use pattern in `ClaimWorkspace.fetchAllProfilesBrowser` and correctly filtered at the render point (not at fetch/storage) so inactive users' names still resolve when they're on historical assignments — but can't be picked for new ones.
+- Discovered the pre-existing `/profile` page (name + password change) mid-execution and added an "Account & Password" nav entry so it stays reachable alongside the new `/my-profile` read-only view. Longer term the two pages should be consolidated.
+
+**In progress / broken / unknowns:**
+
+- **Not yet manually smoke-tested in prod.** Build + tsc pass clean and the migration verification returned all-1s, but nothing has been actually clicked through by a human yet. Full smoke checklist is in the plan's Task 23 Step 6 — Henry, when you have a minute, run through: (1) open a user's profile page, verify all 5 tabs render, (2) add a license with expiration 5 days out and check the red banner appears on dashboard + red dot next to name in Users, (3) upload a doc as admin and confirm the appraiser can download it from their `/my-profile`, (4) toggle a user Inactive and confirm they disappear from the reassign picker but their existing assigned claim still shows their name.
+- **`/profile` vs `/my-profile` overlap.** The old `/profile` page (password + name) is kept as "Account & Password" nav entry. UX is fine but there are two profile pages in the menu. Consolidate later — either move password change into `/my-profile` or make `/my-profile` editable.
+- **Fee catalog admin permissions:** all admins can add/rename/archive/delete fee types. No audit trail. Fine for now given team size but flag if scaling.
+- **License expiration is passive.** No email or push notification — banner only. If Henry wants email alerts, that's parked behind the SMTP creds carryover.
+- Existing uncommitted files in `git status` (assignment sheet + settings redesign work from earlier sessions) still untouched this session; still not committed.
+
+**Next (punch list — carryover from last session):**
+
+1. **Loss of Use report** — new report type. Design TBD.
+2. **Umpire claims** — support for the umpire branch of the appraisal-clause process. Design TBD.
+3. **Messages for summary page** — thread messaging attached to a summary.
+4. **RTA declaration** — new document/report type. Design TBD.
+5. **Estimate dispute rework** — rework the `/estimate-dispute` flow. Scope TBD.
+6. **Email notifications** — SMTP via Bluehost, parked pending Henry providing SMTP creds. Would unlock license expiration email alerts on top of the in-app banner.
+7. **Consolidate `/profile` and `/my-profile`** — one profile page with editable name/password + read-only fees/licenses/docs.
+
+---
+
 ## 2026-08-29 — Eagle View assignment parser + Claimant block + auto-message on Notes
 
 **Worked on:** Extended the "upload PDF to auto-fill Claim Info" flow to recognise Eagle View Enterprises assignment PDFs alongside the existing Modern Appraisers format. Refactored the two existing parser entry points (client `src/lib/parse-claim-pdf.ts` and orphaned server `/api/acv/parse-claim/route.ts`) to route through a new shared dispatch at `src/lib/acv/parsers/`. Added an optional **Claimant Contact** block to `ClaimInfo` (form + type — no schema migration, jsonb) so PDFs with a separate claimant party (Party=Claimant on the Eagle View form) populate distinct fields from the Insured. Notes captured from Eagle View PDFs auto-post to the claim's Messages tab as an amber-badged "Auto" message from `Modern Tools (Auto)` on first save, with empty recipients (informational only — no unread badge for anyone).
