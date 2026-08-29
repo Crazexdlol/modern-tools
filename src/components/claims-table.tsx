@@ -2,8 +2,8 @@
 
 import { useState, useMemo, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { Search, Trash2, X, Ban } from 'lucide-react'
-import { deleteACVHistory, type ACVHistoryEntry } from '@/lib/supabase/history'
+import { Search, X, Ban } from 'lucide-react'
+import { type ACVHistoryEntry } from '@/lib/supabase/history'
 import type { Profile } from '@/lib/supabase/profiles'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { Button } from '@/components/ui/button'
@@ -13,6 +13,7 @@ import type { AppraiserLicense } from '@/lib/supabase/appraiser-licenses'
 import { isLicensedState, isForbiddenState } from '@/lib/supabase/licensed-states'
 import { isLicenseValid } from '@/lib/supabase/appraiser-licenses'
 import { extractLossState } from '@/lib/claim-state'
+import { type StatusPhaseConfig, formatPhaseAge, phaseColorClasses } from '@/lib/supabase/status-phase-configs'
 
 function fmtDate(iso: string): string {
   return new Date(iso).toLocaleDateString("en-US", {
@@ -83,9 +84,11 @@ export function ClaimsTable({
   perRowReassign = false,
   licensedStates = [],
   licensesByUser = new Map(),
+  statusPhaseConfigs = [],
+  phaseFilter = null,
 }: {
   entries: ACVHistoryEntry[]
-  onDeleted: (id: string) => void
+  onDeleted?: (id: string) => void
   emptyText: string
   showStatus?: boolean
   adminView?: boolean
@@ -95,6 +98,8 @@ export function ClaimsTable({
   perRowReassign?: boolean
   licensedStates?: LicensedState[]
   licensesByUser?: Map<string, AppraiserLicense[]>
+  statusPhaseConfigs?: StatusPhaseConfig[]
+  phaseFilter?: string | null
 }) {
   const router = useRouter()
   const [searchQuery, setSearchQuery] = useState('')
@@ -104,8 +109,6 @@ export function ClaimsTable({
   const [bulkBusy, setBulkBusy] = useState(false)
   const [bulkError, setBulkError] = useState<string | null>(null)
   const [submitConfirmOpen, setSubmitConfirmOpen] = useState(false)
-  const [deleteTarget, setDeleteTarget] = useState<ACVHistoryEntry | null>(null)
-  const [deleteBusy, setDeleteBusy] = useState(false)
   // Per-row reassign state — used by the Completed Assignments page so an
   // admin can hand a submitted claim to another appraiser without opening it.
   const [pendingRowReassign, setPendingRowReassign] = useState<
@@ -153,9 +156,10 @@ export function ClaimsTable({
         if (licenseFilter === 'licensed-state-only' && badge === null) return false
         if (licenseFilter === 'not-licensed' && badge !== 'not-licensed') return false
       }
+      if (phaseFilter !== null && e.statusPhase !== phaseFilter) return false
       return true
     })
-  }, [entries, searchQuery, nameFor, licenseFilter, getLicenseBadge])
+  }, [entries, searchQuery, nameFor, licenseFilter, getLicenseBadge, phaseFilter])
 
   const filteredIds = useMemo(() => filtered.map(e => e.id), [filtered])
   const allFilteredSelected =
@@ -255,20 +259,6 @@ export function ClaimsTable({
     window.location.reload()
   }
 
-  const openDelete = (e: React.MouseEvent, entry: ACVHistoryEntry) => {
-    e.stopPropagation()
-    setDeleteTarget(entry)
-  }
-
-  const runDelete = async () => {
-    if (!deleteTarget) return
-    setDeleteBusy(true)
-    onDeleted(deleteTarget.id)
-    await deleteACVHistory(deleteTarget.id)
-    setDeleteBusy(false)
-    setDeleteTarget(null)
-  }
-
   const runRowReassign = async () => {
     if (!pendingRowReassign) return
     const { entry, targetId } = pendingRowReassign
@@ -297,7 +287,7 @@ export function ClaimsTable({
     (showStatus ? 1 : 0) +
     (showSubmittedColumn ? 1 : 0) +
     (perRowReassign ? 1 : 0) + // Reassign action column
-    (adminView ? 1 : 0) // Delete (admin-only)
+    (statusPhaseConfigs.length > 0 ? 1 : 0) // Phase status column
 
   const selectedCount = selectedIds.size
 
@@ -418,8 +408,8 @@ export function ClaimsTable({
               {perRowReassign && (
                 <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Reassign</th>
               )}
-              {adminView && (
-                <th className="text-right px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Delete</th>
+              {statusPhaseConfigs.length > 0 && (
+                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Phase</th>
               )}
             </tr>
           </thead>
@@ -535,15 +525,22 @@ export function ClaimsTable({
                         </select>
                       </td>
                     )}
-                    {adminView && (
-                      <td className="px-4 py-3 text-right">
-                        <button
-                          onClick={(e) => openDelete(e, entry)}
-                          className="text-gray-300 hover:text-red-500 transition-colors p-1"
-                          title="Delete claim"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
+                    {statusPhaseConfigs.length > 0 && (
+                      <td className="px-4 py-3">
+                        {entry.statusPhase ? (() => {
+                          const cfg = statusPhaseConfigs.find(c => c.code === entry.statusPhase)
+                          if (!cfg) return <span className="text-gray-300">—</span>
+                          const age = formatPhaseAge(entry.statusPhaseSetAt)
+                          return (
+                            <span
+                              className={`inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full border ${phaseColorClasses(cfg.color)}`}
+                              title={age ? `${cfg.label} · ${age}` : cfg.label}
+                            >
+                              {cfg.label}
+                              {age && <span className="opacity-70 font-normal">· {age}</span>}
+                            </span>
+                          )
+                        })() : null}
                       </td>
                     )}
                   </tr>
@@ -589,24 +586,6 @@ export function ClaimsTable({
         onCancel={() => setPendingRowReassign(null)}
       />
 
-      <ConfirmDialog
-        open={!!deleteTarget}
-        title="Delete this claim?"
-        message={
-          deleteTarget ? (
-            <>
-              This will permanently delete claim <b>{deleteTarget.maNumber || deleteTarget.id}</b>
-              {deleteTarget.claim?.insuredName ? <> for <b>{deleteTarget.claim.insuredName}</b></> : null}.
-              This cannot be undone.
-            </>
-          ) : null
-        }
-        confirmLabel="Delete"
-        variant="danger"
-        busy={deleteBusy}
-        onConfirm={runDelete}
-        onCancel={() => setDeleteTarget(null)}
-      />
     </div>
   )
 }

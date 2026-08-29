@@ -13,6 +13,7 @@ import { fetchUnreadCount } from '@/lib/supabase/messages'
 import { LicenseExpirationBanner } from '@/components/license-expiration-banner'
 import { fetchLicensedStates, type LicensedState } from '@/lib/supabase/licensed-states'
 import { fetchAllLicenses, fetchUserLicenses, type AppraiserLicense } from '@/lib/supabase/appraiser-licenses'
+import { fetchStatusPhaseConfigs, phaseColorClasses, type StatusPhaseConfig } from '@/lib/supabase/status-phase-configs'
 
 export default function DashboardPage() {
   const router = useRouter()
@@ -24,6 +25,8 @@ export default function DashboardPage() {
   const [unreadMessages, setUnreadMessages] = useState(0)
   const [licensedStates, setLicensedStates] = useState<LicensedState[]>([])
   const [licensesByUser, setLicensesByUser] = useState<Map<string, AppraiserLicense[]>>(new Map())
+  const [statusPhaseConfigs, setStatusPhaseConfigs] = useState<StatusPhaseConfig[]>([])
+  const [phaseFilter, setPhaseFilter] = useState<string | null>(null)
 
   // Independent fetches — each logs its own timing. Nothing blocks the others.
   const load = () => {
@@ -42,6 +45,7 @@ export default function DashboardPage() {
     time('fetchAllProfilesBrowser', fetchAllProfilesBrowser).then(setProfiles)
     time('fetchUnreadCount', fetchUnreadCount).then(setUnreadMessages)
     time('fetchLicensedStates', fetchLicensedStates).then(setLicensedStates)
+    time('fetchStatusPhaseConfigs', fetchStatusPhaseConfigs).then(setStatusPhaseConfigs)
   }
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- mount-load pattern; setState fires only after the async fetch resolves
@@ -92,23 +96,47 @@ export default function DashboardPage() {
         <div className="flex items-start justify-between gap-4">
           <div className="space-y-3">
             <h2 className="text-2xl font-bold text-gray-900">Dashboard</h2>
-            <div className="flex items-center gap-2">
-              <span className="inline-flex items-center gap-1.5 bg-blue-600 text-white text-sm font-bold px-3 py-1.5 rounded-full shadow-sm">
-                <span className="text-base leading-none">{openClaims.length}</span>
-                <span className="text-xs uppercase tracking-wide opacity-90">open</span>
-              </span>
-              <Link
-                href="/messages"
-                className="flex items-center gap-2 bg-white border border-gray-200 hover:border-gray-300 text-gray-700 text-sm font-bold px-4 py-2 rounded-lg transition-colors shadow-sm"
-              >
-                <MessageSquare className="w-4 h-4" />
-                Messages
-                {unreadMessages > 0 && (
-                  <span className="inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full bg-blue-600 text-white text-xs font-bold">
-                    {unreadMessages}
-                  </span>
-                )}
-              </Link>
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <span className="inline-flex items-center gap-1.5 bg-blue-600 text-white text-sm font-bold px-3 py-1.5 rounded-full shadow-sm">
+                  <span className="text-base leading-none">{openClaims.length}</span>
+                  <span className="text-xs uppercase tracking-wide opacity-90">open</span>
+                </span>
+                <Link
+                  href="/messages"
+                  className="flex items-center gap-2 bg-white border border-gray-200 hover:border-gray-300 text-gray-700 text-sm font-bold px-4 py-2 rounded-lg transition-colors shadow-sm"
+                >
+                  <MessageSquare className="w-4 h-4" />
+                  Messages
+                  {unreadMessages > 0 && (
+                    <span className="inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full bg-blue-600 text-white text-xs font-bold">
+                      {unreadMessages}
+                    </span>
+                  )}
+                </Link>
+              </div>
+              {statusPhaseConfigs.length > 0 && (
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  {statusPhaseConfigs.map(cfg => {
+                    const active = phaseFilter === cfg.code
+                    return (
+                      <button
+                        key={cfg.code}
+                        type="button"
+                        onClick={() => setPhaseFilter(active ? null : cfg.code)}
+                        className={`inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1.5 rounded-md border transition-colors ${
+                          active
+                            ? phaseColorClasses(cfg.color) + ' ring-2 ring-offset-1 ring-current/40'
+                            : 'bg-white border-gray-200 text-gray-600 hover:border-gray-300'
+                        }`}
+                        title={active ? `Clear ${cfg.label} filter` : `Show only ${cfg.label}`}
+                      >
+                        {cfg.label}
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -154,13 +182,14 @@ export default function DashboardPage() {
         ) : (
           <ClaimsTable
             entries={openClaims}
-            onDeleted={(id) => setEntries(prev => prev.filter(e => e.id !== id))}
             emptyText={isAdmin ? 'No open claims.' : 'No claims assigned to you.'}
             adminView={isAdmin}
             profiles={profiles}
             onAssignmentChanged={load}
             licensedStates={licensedStates}
             licensesByUser={licensesByUser}
+            statusPhaseConfigs={statusPhaseConfigs}
+            phaseFilter={phaseFilter}
           />
         )}
       </main>
