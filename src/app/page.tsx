@@ -70,31 +70,36 @@ export default function DashboardPage() {
       <AppHeader />
       <main className="max-w-[1600px] mx-auto px-6 py-8 space-y-8">
         <LicenseExpirationBanner profile={profile ?? null} allProfiles={profiles} />
-        <div className="flex items-center justify-between">
-          <div>
+        <div className="flex items-start justify-between gap-4">
+          <div className="space-y-3">
             <h2 className="text-2xl font-bold text-gray-900">Dashboard</h2>
-            <p className="text-sm text-gray-400">{openClaims.length} open</p>
+            <div className="flex items-center gap-2">
+              <span className="inline-flex items-center gap-1.5 bg-blue-600 text-white text-sm font-bold px-3 py-1.5 rounded-full shadow-sm">
+                <span className="text-base leading-none">{openClaims.length}</span>
+                <span className="text-xs uppercase tracking-wide opacity-90">open</span>
+              </span>
+              <Link
+                href="/messages"
+                className="flex items-center gap-2 bg-white border border-gray-200 hover:border-gray-300 text-gray-700 text-sm font-bold px-4 py-2 rounded-lg transition-colors shadow-sm"
+              >
+                <MessageSquare className="w-4 h-4" />
+                Messages
+                {unreadMessages > 0 && (
+                  <span className="inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full bg-blue-600 text-white text-xs font-bold">
+                    {unreadMessages}
+                  </span>
+                )}
+              </Link>
+            </div>
           </div>
           <div className="flex items-center gap-2">
-            <Link
-              href="/messages"
-              className="flex items-center gap-2 bg-white border border-gray-200 hover:border-gray-300 text-gray-700 text-sm font-bold px-4 py-2.5 rounded-lg transition-colors shadow-sm"
-            >
-              <MessageSquare className="w-4 h-4" />
-              Messages
-              {unreadMessages > 0 && (
-                <span className="inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full bg-blue-600 text-white text-xs font-bold">
-                  {unreadMessages}
-                </span>
-              )}
-            </Link>
             {isAdmin && (
               <Link
                 href="/completed-assignments"
                 className="flex items-center gap-2 bg-white border border-gray-200 hover:border-gray-300 text-gray-700 text-sm font-bold px-4 py-2.5 rounded-lg transition-colors shadow-sm"
               >
                 <Inbox className="w-4 h-4" />
-                Completed Assignments
+                Completed
                 {submittedClaims.length > 0 && (
                   <span className="inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full bg-blue-600 text-white text-xs font-bold">
                     {submittedClaims.length}
