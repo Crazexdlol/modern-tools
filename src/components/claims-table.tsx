@@ -29,50 +29,53 @@ function StateCell({
 }) {
   const state = extractLossState(entry.claim?.ownerAddress)
   const badge = getLicenseBadge(entry)
-
   return (
-    <div className="inline-flex items-center gap-1.5">
-      <span className={`font-mono text-xs ${badge === 'forbidden' ? 'text-red-700 font-bold' : 'text-gray-600'}`}>
-        {state ?? '—'}
-      </span>
-      {badge === 'forbidden' && (
-        <span
-          title="FORBIDDEN — Modern Appraisers cannot handle claims from this state"
-          className="inline-flex items-center gap-0.5 text-xs font-bold uppercase px-1.5 py-0.5 rounded-full border-2 border-red-600 bg-red-100 text-red-800 tracking-wide"
-        >
-          <Ban className="w-3 h-3" />
-          Forbidden
-        </span>
-      )}
-      {badge === 'licensed' && (
-        <span
-          title="Licensed — appraiser holds a valid license for this state"
-          className="inline-flex items-center gap-0.5 text-xs font-semibold px-1.5 py-0.5 rounded-full border text-emerald-700 bg-emerald-50 border-emerald-200"
-        >
-          <Check className="w-3 h-3" />
-          Licensed
-        </span>
-      )}
-      {badge === 'not-licensed' && (
-        <span
-          title="Not licensed — appraiser does not have a valid license for this state"
-          className="inline-flex items-center gap-0.5 text-xs font-semibold px-1.5 py-0.5 rounded-full border text-red-700 bg-red-50 border-red-200"
-        >
-          <AlertTriangle className="w-3 h-3" />
-          Not Licensed
-        </span>
-      )}
-      {badge === 'unassigned' && (
-        <span
-          title="Unassigned — this state requires a license; assign a licensed appraiser"
-          className="inline-flex items-center gap-0.5 text-xs font-semibold px-1.5 py-0.5 rounded-full border text-amber-700 bg-amber-50 border-amber-200"
-        >
-          <AlertTriangle className="w-3 h-3" />
-          Unassigned
-        </span>
-      )}
-    </div>
+    <span className={`font-mono text-xs ${badge === 'forbidden' ? 'text-red-700 font-bold' : 'text-gray-600'}`}>
+      {state ?? '—'}
+    </span>
   )
+}
+
+/** Sits in its own column between State and Date. */
+function LicenseBadgeCell({ badge }: {
+  badge: 'forbidden' | 'licensed' | 'not-licensed' | 'unassigned' | null
+}) {
+  if (badge === 'forbidden') {
+    return (
+      <span
+        title="FORBIDDEN — Modern Appraisers cannot handle claims from this state"
+        className="inline-flex items-center gap-0.5 text-xs font-bold uppercase px-2 py-0.5 rounded-full border-2 border-red-600 bg-red-100 text-red-800 tracking-wide"
+      >
+        <Ban className="w-3 h-3" />
+        Forbidden
+      </span>
+    )
+  }
+  if (badge === 'licensed') {
+    return (
+      <span
+        title="Licensed — appraiser holds a valid license for this state"
+        className="inline-flex items-center gap-0.5 text-xs font-bold uppercase px-2 py-0.5 rounded-full border text-emerald-700 bg-emerald-50 border-emerald-200 tracking-wide"
+      >
+        <Check className="w-3 h-3" />
+        Licensed
+      </span>
+    )
+  }
+  if (badge === 'not-licensed') {
+    return (
+      <span
+        title="Not licensed — appraiser does not have a valid license for this state"
+        className="inline-flex items-center gap-0.5 text-xs font-bold uppercase px-2 py-0.5 rounded-full border text-red-700 bg-red-50 border-red-200 tracking-wide"
+      >
+        <AlertTriangle className="w-3 h-3" />
+        Not Licensed
+      </span>
+    )
+  }
+  // 'unassigned' intentionally not rendered — the Assigned To column already
+  // shows "Unassigned" in that case; a second pill is redundant. Same for null.
+  return null
 }
 
 type LicenseFilter = 'all' | 'forbidden' | 'licensed-state-only' | 'not-licensed'
@@ -298,7 +301,7 @@ export function ClaimsTable({
 
   const colCount =
     (adminView ? 1 : 0) + // checkbox
-    8 + // MA, Insured, Client, Vehicle, VIN, State, Date, Ins. Co.
+    9 + // MA, Insured, Client, Vehicle, VIN, State, License, Date, Ins. Co.
     (adminView ? 1 : 0) + // Assigned To (read-only text now)
     (showStatus ? 1 : 0) +
     (showSubmittedColumn ? 1 : 0) +
@@ -410,6 +413,7 @@ export function ClaimsTable({
               <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Vehicle</th>
               <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">VIN</th>
               <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">State</th>
+              <th className="text-center px-2 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">License</th>
               <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Date</th>
               <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Ins. Co.</th>
               {adminView && (
@@ -477,6 +481,9 @@ export function ClaimsTable({
                     <td className="px-4 py-3 text-gray-500 font-mono text-xs">{entry.vin || '—'}</td>
                     <td className="px-4 py-3">
                       <StateCell entry={entry} getLicenseBadge={getLicenseBadge} />
+                    </td>
+                    <td className="px-2 py-3 text-center">
+                      <LicenseBadgeCell badge={getLicenseBadge(entry)} />
                     </td>
                     <td className="px-4 py-3 text-gray-500">{fmtDate(entry.date)}</td>
                     <td className="px-4 py-3 text-gray-700">{entry.claim?.insuranceCompany || '—'}</td>
