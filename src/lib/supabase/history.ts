@@ -19,7 +19,7 @@ export interface ACVHistoryEntry {
   result: ACVResult
   mileageRate?: number
   status?: ClaimStatus
-  // Role-based workflow columns (see supabase-migration-roles.sql). Writes go
+  // Role-based workflow columns (see supabase/migration-roles.sql). Writes go
   // through dedicated API routes (Task 6) — saveACVHistory intentionally does
   // NOT include these in its payload, and the column-guard trigger will reject
   // appraiser attempts to change them anyway.
@@ -43,6 +43,9 @@ export interface ACVHistoryEntry {
   // Reports tab — Invoice state (jsonb; shape lives in reports-tab.tsx).
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   invoice?: any
+  // Status phase (set via /api/claims/[id]/phase; cleared by setting null).
+  statusPhase?: string | null
+  statusPhaseSetAt?: string | null
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -70,16 +73,25 @@ function rowToEntry(row: any): ACVHistoryEntry {
     documents: row.documents ?? undefined,
     dv: row.dv ?? undefined,
     invoice: row.invoice ?? undefined,
+    statusPhase: row.status_phase ?? null,
+    statusPhaseSetAt: row.status_phase_set_at ?? null,
   }
 }
 
 // Returns null on a fetch error so callers can show a real error state
 // instead of an empty-looking dashboard.
+//
+// List-view fetch: pulls only the columns the three list pages (dashboard,
+// /claims, /completed-assignments) actually render. The fat jsonb blobs
+// (comps, auction_listings, documents, reports_state, estimate, dv, invoice,
+// adjustments, result) are intentionally omitted — on ~390 claims they'd
+// balloon the response into multi-MB territory and stall login. Full-row
+// fetch lives in fetchACVEntry(id) for the claim workspace.
 export async function fetchACVHistory(): Promise<ACVHistoryEntry[] | null> {
   const supabase = createClient()
   const { data, error } = await supabase
     .from('acv_history')
-    .select('*')
+    .select('id, date, mode, vehicle, vin, ma_number, acv, status, claim, assigned_to, submitted_at, submitted_by, status_phase, status_phase_set_at')
     .order('date', { ascending: false })
 
   if (error) {
@@ -148,39 +160,54 @@ export async function saveACVHistory(entry: ACVHistoryEntry, editId?: string | n
   if (entry.dv !== undefined) payload.dv = entry.dv
   if (entry.invoice !== undefined) payload.invoice = entry.invoice
 
-  // Update-first, insert-if-missing (NOT a blind upsert): claims are shared
-  // team-wide, and an upsert would stamp the saver's user_id onto a teammate's
-  // row, silently reassigning attribution.
-  let { data: updated, error: updateError } = await supabase
+  // Existence check first: an "update returned 0 rows" could mean either
+  // "row not found" (correct to fall through to insert) OR "RLS blocked
+  // the update" (falling through to insert would then 23505 or worse).
+  // Doing the SELECT under the same anon-key policies distinguishes the
+  // two cleanly — if we can SEE it, then a subsequent update failure is
+  // real (permission-guard trigger, not RLS row filter), so we should
+  // surface it, not paper over it with a duplicate insert.
+  const { data: existing, error: existsErr } = await supabase
     .from('acv_history')
-    .update(payload)
-    .eq('id', id)
     .select('id')
-
-  if (updateError && updateError.code === '42703') {
-    // documents/dv/invoice columns not migrated yet — save everything else
-    // rather than losing the claim edit.
-    delete payload.documents
-    delete payload.dv
-    delete payload.invoice
-    ;({ data: updated, error: updateError } = await supabase
-      .from('acv_history')
-      .update(payload)
-      .eq('id', id)
-      .select('id'))
-  }
-
-  if (updateError) {
-    console.error('Failed to save ACV history:', updateError)
+    .eq('id', id)
+    .maybeSingle()
+  if (existsErr) {
+    console.error('Failed to check claim existence:', existsErr)
     return
   }
 
-  if (!updated || updated.length === 0) {
-    const { error: insertError } = await supabase
+  if (existing) {
+    // Row exists (and we can see it) — update only.
+    let { error: updateError } = await supabase
       .from('acv_history')
-      .insert({ id, user_id: user.id, ...payload })
-    if (insertError) console.error('Failed to save ACV history:', insertError)
+      .update(payload)
+      .eq('id', id)
+    if (updateError && updateError.code === '42703') {
+      // documents/dv/invoice columns not migrated yet — save everything
+      // else rather than losing the claim edit.
+      delete payload.documents
+      delete payload.dv
+      delete payload.invoice
+      ;({ error: updateError } = await supabase
+        .from('acv_history')
+        .update(payload)
+        .eq('id', id))
+    }
+    if (updateError) {
+      console.error('Failed to update ACV history:', updateError)
+    }
+    return
   }
+
+  // Row not visible — either brand-new id we're creating, or someone
+  // else's private claim we can't see. Attempt insert; on unique-violation
+  // (23505) the row exists but is RLS-hidden from us — surface that as an
+  // error rather than looping.
+  const { error: insertError } = await supabase
+    .from('acv_history')
+    .insert({ id, user_id: user.id, ...payload })
+  if (insertError) console.error('Failed to insert ACV history:', insertError)
 }
 
 export async function deleteACVHistory(id: string) {
