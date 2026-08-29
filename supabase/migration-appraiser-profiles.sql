@@ -8,9 +8,7 @@
 --   * appraiser_fees (per-user amounts)
 --   * appraiser_licenses (multi-state, with expiration tracking)
 --   * appraiser_documents (metadata; files live in the appraiser-documents
---     storage bucket which must be created manually in the Supabase
---     Dashboard: Storage -> New bucket -> name "appraiser-documents",
---     PRIVATE, no file size limit override needed)
+--     storage bucket, created inline below)
 --
 -- Also backfills per-user permission columns from the current site-wide
 -- toggles, then drops the two site_settings rows.
@@ -184,6 +182,32 @@ create policy "Admin write appraiser_documents"
   using (public.is_admin())
   with check (public.is_admin());
 
+-- 5b. Storage bucket + RLS for appraiser documents.
+--     Bucket is PRIVATE (public = false). API routes use the service role
+--     for uploads/deletes and issue signed URLs for downloads — these RLS
+--     policies are defense-in-depth for any direct storage access.
+--     Path convention: {user_id}/{doc_uuid}-{original_filename}
+insert into storage.buckets (id, name, public)
+  values ('appraiser-documents', 'appraiser-documents', false)
+  on conflict (id) do nothing;
+
+drop policy if exists "Read own appraiser docs or admin" on storage.objects;
+create policy "Read own appraiser docs or admin"
+  on storage.objects for select
+  using (
+    bucket_id = 'appraiser-documents'
+    and (
+      (storage.foldername(name))[1] = auth.uid()::text
+      or public.is_admin()
+    )
+  );
+
+drop policy if exists "Admin write appraiser docs" on storage.objects;
+create policy "Admin write appraiser docs"
+  on storage.objects for all
+  using (bucket_id = 'appraiser-documents' and public.is_admin())
+  with check (bucket_id = 'appraiser-documents' and public.is_admin());
+
 -- 6. Backfill per-user permissions from site-wide toggles.
 --    After this backfill runs, per-user columns are the only source of truth.
 --    We coalesce: keep whatever the user already has if it's non-null; else
@@ -233,4 +257,5 @@ union all select 'fee_catalog rows', count(*)::int from public.fee_catalog
 union all select 'appraiser_fees exists', count(*)::int from information_schema.tables where table_schema='public' and table_name='appraiser_fees'
 union all select 'appraiser_licenses exists', count(*)::int from information_schema.tables where table_schema='public' and table_name='appraiser_licenses'
 union all select 'appraiser_documents exists', count(*)::int from information_schema.tables where table_schema='public' and table_name='appraiser_documents'
+union all select 'appraiser-documents bucket exists', count(*)::int from storage.buckets where id='appraiser-documents'
 union all select 'site_settings orphans', count(*)::int from public.site_settings where key in ('allow_regular_create_claims', 'auto_status_requests_enabled');
