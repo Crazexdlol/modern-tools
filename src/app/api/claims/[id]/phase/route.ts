@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/service'
-import { requireClaimAccess } from '@/lib/auth/require-claim-access'
+import { requireAdmin } from '@/lib/auth/require-admin'
 
 export const runtime = 'nodejs'
 
 /**
- * Set or clear the status phase on a claim.
+ * Set or clear the status phase on a claim. ADMIN-ONLY — phase changes are
+ * a management action, not something the assigned appraiser can do.
  * Body: { phase: string | null }
  *   - string: set/change phase; resets status_phase_set_at to now(). Posts an
  *     auto message "Claim has been phased: {label}" to the thread.
@@ -16,7 +17,7 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params
-  const { errorResponse } = await requireClaimAccess(id)
+  const { errorResponse } = await requireAdmin()
   if (errorResponse) return errorResponse
 
   const body = await request.json().catch(() => null) as { phase?: string | null } | null

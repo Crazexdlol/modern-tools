@@ -8,6 +8,7 @@ import type { Profile } from '@/lib/supabase/profiles'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { Button } from '@/components/ui/button'
 import { ClaimMessagePreview } from '@/components/claim-message-preview'
+import { PhaseSelector } from '@/components/claim/phase-selector'
 import type { LicensedState } from '@/lib/supabase/licensed-states'
 import type { AppraiserLicense } from '@/lib/supabase/appraiser-licenses'
 import { isLicensedState, isForbiddenState } from '@/lib/supabase/licensed-states'
@@ -84,6 +85,7 @@ export function ClaimsTable({
   licensesByUser = new Map(),
   statusPhaseConfigs = [],
   phaseFilter = null,
+  onPhaseChanged,
 }: {
   entries: ACVHistoryEntry[]
   onDeleted?: (id: string) => void
@@ -98,6 +100,7 @@ export function ClaimsTable({
   licensesByUser?: Map<string, AppraiserLicense[]>
   statusPhaseConfigs?: StatusPhaseConfig[]
   phaseFilter?: string | null
+  onPhaseChanged?: (id: string, phase: string | null, setAt: string | null) => void
 }) {
   const router = useRouter()
   const [searchQuery, setSearchQuery] = useState('')
@@ -348,7 +351,7 @@ export function ClaimsTable({
         </div>
       </div>
 
-      <div className="bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden">
+      <div className="bg-white border border-gray-200 rounded-lg shadow-sm">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-gray-200 bg-gray-50">
@@ -504,8 +507,15 @@ export function ClaimsTable({
                       </td>
                     )}
                     {statusPhaseConfigs.length > 0 && (
-                      <td className="px-4 py-3">
-                        {entry.statusPhase ? (() => {
+                      <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                        {adminView ? (
+                          <PhaseSelector
+                            claimId={entry.id}
+                            currentPhase={entry.statusPhase}
+                            currentSetAt={entry.statusPhaseSetAt}
+                            onChanged={(phase, setAt) => onPhaseChanged?.(entry.id, phase, setAt)}
+                          />
+                        ) : entry.statusPhase ? (() => {
                           const cfg = statusPhaseConfigs.find(c => c.code === entry.statusPhase)
                           if (!cfg) return <span className="text-gray-300">—</span>
                           const age = formatPhaseAge(entry.statusPhaseSetAt)

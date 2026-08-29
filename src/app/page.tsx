@@ -190,6 +190,9 @@ export default function DashboardPage() {
             licensesByUser={licensesByUser}
             statusPhaseConfigs={statusPhaseConfigs}
             phaseFilter={phaseFilter}
+            onPhaseChanged={(id, phase, setAt) => setEntries(prev =>
+              prev.map(e => e.id === id ? { ...e, statusPhase: phase, statusPhaseSetAt: setAt } : e)
+            )}
           />
         )}
       </main>
