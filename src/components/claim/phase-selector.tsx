@@ -77,12 +77,12 @@ export function PhaseSelector({ claimId, currentPhase, currentSetAt, onChanged, 
   // Sizing tokens per variant. Active-phase button always uses phase-tinted
   // background with BLACK text so the label is legible and prominent.
   const buttonSize = isLg
-    ? 'px-4 py-2 gap-2 rounded-lg'
-    : 'px-2.5 py-1.5 gap-1.5 rounded-lg'
-  const activeLabelSize = isLg ? 'text-base font-black' : 'text-xs font-bold'
+    ? 'px-5 py-2.5 gap-2 rounded-lg border-2'
+    : 'px-2.5 py-1.5 gap-1.5 rounded-lg border'
+  const activeLabelSize = isLg ? 'text-lg font-black' : 'text-xs font-bold'
   const activeAgeSize = isLg ? 'text-xs' : 'text-[10px]'
-  const emptyLabelSize = isLg ? 'text-base font-bold' : 'text-xs font-semibold'
-  const chevronSize = isLg ? 'w-4 h-4' : 'w-3 h-3'
+  const emptyLabelSize = isLg ? 'text-lg font-bold' : 'text-xs font-semibold'
+  const chevronSize = isLg ? 'w-5 h-5' : 'w-3 h-3'
   const activeBg = activeConfig
     ? `${phaseColorClasses(activeConfig.color)} text-gray-900`
     : 'bg-white border-gray-200 text-gray-600 hover:border-gray-300'
@@ -93,7 +93,7 @@ export function PhaseSelector({ claimId, currentPhase, currentSetAt, onChanged, 
         type="button"
         disabled={busy}
         onClick={() => setOpen(o => !o)}
-        className={`flex items-center border transition-colors ${buttonSize} ${activeBg} ${busy ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'}`}
+        className={`flex items-center transition-colors ${buttonSize} ${activeBg} ${busy ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'}`}
         title={activeConfig ? `Phase: ${activeConfig.label}${age ? ` (${age})` : ''} — click to change` : 'Set phase'}
       >
         {activeConfig ? (
