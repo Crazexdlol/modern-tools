@@ -12,6 +12,12 @@ export interface Profile {
   canEditClaimInfo: boolean
   canCreateClaims: boolean
   autoStatusRequestsOverride: boolean | null  // null = follow global setting
+  phone: string | null
+  addressStreet: string | null
+  addressCity: string | null
+  addressState: string | null
+  addressZip: string | null
+  isActive: boolean
   createdAt: string
   updatedAt: string
 }
@@ -25,6 +31,12 @@ interface ProfileRow {
   can_edit_claim_info?: boolean | null
   can_create_claims?: boolean | null
   auto_status_requests_override?: boolean | null
+  phone?: string | null
+  address_street?: string | null
+  address_city?: string | null
+  address_state?: string | null
+  address_zip?: string | null
+  is_active?: boolean | null
   created_at: string
   updated_at: string
 }
@@ -44,6 +56,12 @@ function rowToProfile(row: ProfileRow): Profile {
         : row.auto_status_requests_override === false
           ? false
           : null,
+    phone: row.phone ?? null,
+    addressStreet: row.address_street ?? null,
+    addressCity: row.address_city ?? null,
+    addressState: row.address_state ?? null,
+    addressZip: row.address_zip ?? null,
+    isActive: row.is_active !== false,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   }
