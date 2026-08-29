@@ -1,16 +1,17 @@
 -- =========================================================================
 -- ROLLBACK for supabase/migration-appraiser-profiles.sql
--- Restores site_settings rows to their pre-migration values (edit the
--- INSERT below before running to match what was live at the time).
+-- Restores site_settings rows to their pre-migration values captured on
+-- 2026-08-29 (confirmed by Henry: allow_regular_create_claims=true,
+-- auto_status_requests_enabled=false).
 -- Storage bucket 'appraiser-documents' must be removed manually via the
 -- Supabase Dashboard.
 -- =========================================================================
 
--- 1. Restore site_settings rows (EDIT these values to match your pre-migration state)
+-- 1. Restore site_settings rows to their pre-2026-08-29 values
 insert into public.site_settings (key, value)
   values
-    ('allow_regular_create_claims', 'true'::jsonb),   -- <- SET to your prior value
-    ('auto_status_requests_enabled', 'false'::jsonb)  -- <- SET to your prior value
+    ('allow_regular_create_claims', 'true'::jsonb),
+    ('auto_status_requests_enabled', 'false'::jsonb)
   on conflict (key) do nothing;
 
 -- 2. Drop tables (cascades drop policies + indexes)
