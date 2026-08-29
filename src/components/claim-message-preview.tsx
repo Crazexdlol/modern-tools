@@ -22,20 +22,18 @@ type CacheValue = { value: Resolved; ts: number } | { promise: Promise<Resolved>
 const cache = new Map<string, CacheValue>()
 const TTL_MS = 30_000
 
-// ─── Relative time helper ────────────────────────────────────────────────────
+// ─── Timestamp helper ────────────────────────────────────────────────────────
+// PST (America/Los_Angeles), e.g. "Aug 29, 12:45 PM". No seconds.
 
-function formatRelative(iso: string): string {
-  const diff = Date.now() - new Date(iso).getTime()
-  const minutes = Math.floor(diff / 60_000)
-  if (minutes < 1) return 'just now'
-  if (minutes < 60) return `${minutes}m ago`
-  const hours = Math.floor(minutes / 60)
-  if (hours < 24) return `${hours}h ago`
-  const days = Math.floor(hours / 24)
-  if (days < 7) return `${days}d ago`
-  const weeks = Math.floor(days / 7)
-  if (weeks <= 4) return `${weeks}w ago`
-  return new Date(iso).toLocaleDateString()
+function formatStamp(iso: string): string {
+  return new Date(iso).toLocaleString('en-US', {
+    timeZone: 'America/Los_Angeles',
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  })
 }
 
 // ─── Fetch helper ─────────────────────────────────────────────────────────────
@@ -194,7 +192,7 @@ export function ClaimMessagePreview({ claimId }: { claimId: string }) {
             <div>
               <div className="flex items-center justify-between mb-1.5">
                 <span className="text-xs font-medium text-gray-700 truncate">{result.senderName}</span>
-                <span className="text-xs text-gray-400 ml-2 shrink-0">{formatRelative(result.createdAt)}</span>
+                <span className="text-xs text-gray-400 ml-2 shrink-0">{formatStamp(result.createdAt)}</span>
               </div>
               <p
                 className="text-xs text-gray-600 leading-relaxed overflow-hidden"
