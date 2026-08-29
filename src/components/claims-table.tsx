@@ -30,11 +30,15 @@ function StateCell({
   const state = extractLossState(entry.claim?.ownerAddress)
   const badge = getLicenseBadge(entry)
   const isForbidden = badge === 'forbidden'
-  // Anything except "not in the licensed list" (null) gets the red pill. That
-  // means: licensed / not-licensed / unassigned / forbidden all show it. Henry
-  // wants a single red marker for "this claim is in a licensed state"; the
-  // per-handler detail lives in the claim workspace's State Licensing panel.
-  const showPill = badge !== null
+  // Dot semantics:
+  //   'licensed' (handler holds a valid license) → green
+  //   'not-licensed' or 'unassigned' → red (needs attention)
+  //   null (state not in licensed list) → no dot
+  //   'forbidden' → renders the labelled FORBIDDEN pill instead of a dot
+  const dotColor: 'green' | 'red' | null =
+    badge === 'licensed' ? 'green' :
+    badge === 'not-licensed' || badge === 'unassigned' ? 'red' :
+    null
   return (
     <span className="inline-flex items-center gap-1.5">
       <span className={`font-mono text-xs ${isForbidden ? 'text-red-700 font-bold' : 'text-gray-600'}`}>
@@ -48,10 +52,16 @@ function StateCell({
           <Ban className="w-3 h-3" />
           Forbidden
         </span>
-      ) : showPill ? (
+      ) : dotColor === 'green' ? (
         <span
-          title="Licensed state — check the State Licensing panel in the claim workspace"
-          aria-label="Licensed state"
+          title="Licensed state — assigned appraiser holds a valid license"
+          aria-label="Licensed and handler qualified"
+          className="inline-block w-2.5 h-2.5 rounded-full bg-emerald-500 border border-emerald-600"
+        />
+      ) : dotColor === 'red' ? (
+        <span
+          title="Licensed state — assigned appraiser is not licensed (or unassigned)"
+          aria-label="Licensed and handler not qualified"
           className="inline-block w-2.5 h-2.5 rounded-full bg-red-500 border border-red-600"
         />
       ) : null}

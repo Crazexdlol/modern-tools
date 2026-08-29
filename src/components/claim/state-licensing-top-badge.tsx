@@ -56,7 +56,7 @@ export function StateLicensingTopBadge({
       <div className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-red-600 text-white shadow-md border-2 border-red-700">
         <Ban className="w-5 h-5" />
         <span className="font-black uppercase tracking-wider text-base">
-          FORBIDDEN — {state}
+          FORBIDDEN
         </span>
       </div>
     )
@@ -73,7 +73,7 @@ export function StateLicensingTopBadge({
       <div className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-600 text-white shadow-md border-2 border-emerald-700">
         <Check className="w-5 h-5" />
         <span className="font-black uppercase tracking-wider text-base">
-          LICENSED — {state}
+          LICENSED
         </span>
       </div>
     )
@@ -83,7 +83,7 @@ export function StateLicensingTopBadge({
     <div className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-red-600 text-white shadow-md border-2 border-red-700">
       <AlertTriangle className="w-5 h-5" />
       <span className="font-black uppercase tracking-wider text-base">
-        NOT LICENSED — {state}
+        NOT LICENSED
       </span>
     </div>
   )

@@ -3349,15 +3349,20 @@ function ClaimWorkspaceInner({ claimId }: { claimId: string }) {
               Print
             </button>
           )}
+          {/* Centered slot between Print and the right-side workflow buttons.
+              Flex-1 pushes the right group to the far right; justify-center
+              centers the badge within the remaining horizontal space. */}
           {!isNew && editingId && (
-            <StateLicensingTopBadge
-              claim={claim}
-              assignedTo={assignedTo}
-              profile={profile ?? null}
-            />
+            <div className="flex-1 flex justify-center">
+              <StateLicensingTopBadge
+                claim={claim}
+                assignedTo={assignedTo}
+                profile={profile ?? null}
+              />
+            </div>
           )}
           {!readOnly && hasUnsavedChanges && (
-            <div className="flex items-center gap-2 ml-auto">
+            <div className="flex items-center gap-2">
               <span className="text-xs text-amber-600 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full font-medium">Unsaved changes</span>
               <Button
                 onClick={handleSaveClaim}
@@ -3369,10 +3374,10 @@ function ClaimWorkspaceInner({ claimId }: { claimId: string }) {
               </Button>
             </div>
           )}
-          {/* Task 11: role-aware workflow buttons. Anchored right when there
-              are no unsaved-changes buttons already claiming ml-auto. */}
+          {/* Task 11: role-aware workflow buttons. The flex-1 badge slot
+              above already pushes these to the far right; no ml-auto needed. */}
           {!isNew && editingId && (
-            <div className={cn('flex items-center gap-2', !hasUnsavedChanges && 'ml-auto')}>
+            <div className="flex items-center gap-2">
               {!isSubmitted && !isClosed && (isAssignee || isAdmin) && (
                 <Button
                   onClick={handleSubmit}
