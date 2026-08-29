@@ -90,7 +90,7 @@ export function PhaseSelector({ claimId, currentPhase, currentSetAt, onChanged }
             {age && <span className="opacity-70 font-normal text-[10px]">{age}</span>}
           </span>
         ) : (
-          <span className="text-gray-500">No Phase</span>
+          <span className="text-gray-500 whitespace-nowrap">No Phase</span>
         )}
         <ChevronDown className="w-3 h-3 shrink-0 opacity-60" />
       </button>
