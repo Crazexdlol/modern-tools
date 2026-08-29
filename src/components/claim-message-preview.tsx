@@ -161,9 +161,9 @@ export function ClaimMessagePreview({ claimId }: { claimId: string }) {
         onClick={(e) => e.stopPropagation()}
         onMouseEnter={handleMouseEnter}
         onMouseLeave={handleMouseLeave}
-        className="text-gray-300 hover:text-blue-500 transition-colors"
+        className="text-blue-500 hover:text-blue-700 transition-colors"
       >
-        <MessageCircle className="w-4 h-4" />
+        <MessageCircle className="w-[18px] h-[18px]" strokeWidth={2.25} />
       </button>
 
       {open && (
