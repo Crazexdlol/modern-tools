@@ -2531,7 +2531,6 @@ const TOOL_TABS = [
   { id: 'notes', label: 'Closing Notes', step: 8 },
   { id: 'summary', label: 'Summary', step: 5 },
   { id: 'estimate', label: 'Estimate Dispute', step: 7 },
-  { id: 'reports', label: 'Invoice', step: 12 },
 ] as const
 
 function tabForStep(step: number): string {
@@ -2829,7 +2828,7 @@ function ClaimWorkspaceInner({ claimId }: { claimId: string }) {
     if (types.length === 0) return TOOL_TABS
     const other = types.includes('other')
     return TOOL_TABS.filter(t => {
-      if (t.id === 'award' || t.id === 'notes' || t.id === 'summary' || t.id === 'reports') return true
+      if (t.id === 'award' || t.id === 'notes' || t.id === 'summary') return true
       if (t.id === 'acv')      return other || types.includes('acv')
       if (t.id === 'dv')       return other || types.includes('dv')
       if (t.id === 'estimate') return other || types.includes('estimate')
@@ -3361,18 +3360,6 @@ function ClaimWorkspaceInner({ claimId }: { claimId: string }) {
               <Printer className="w-4 h-4" />
               Print
             </button>
-          )}
-          {!isNew && editingId && (
-            <PhaseSelector
-              claimId={editingId}
-              currentPhase={statusPhase}
-              currentSetAt={statusPhaseSetAt}
-              size="lg"
-              onChanged={(newPhase, newSetAt) => {
-                setStatusPhase(newPhase)
-                setStatusPhaseSetAt(newSetAt)
-              }}
-            />
           )}
           {/* Centered slot between left controls and the right-side workflow buttons.
               Flex-1 pushes the right group to the far right; justify-center

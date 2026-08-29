@@ -513,6 +513,7 @@ export function ClaimsTable({
                             claimId={entry.id}
                             currentPhase={entry.statusPhase}
                             currentSetAt={entry.statusPhaseSetAt}
+                            size="lg"
                             onChanged={(phase, setAt) => onPhaseChanged?.(entry.id, phase, setAt)}
                           />
                         ) : entry.statusPhase ? (() => {
