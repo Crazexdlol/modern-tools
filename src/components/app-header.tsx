@@ -69,6 +69,10 @@ export function AppHeader() {
                         className="flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-100">
                     <UserIcon className="w-4 h-4" /> My Profile
                   </Link>
+                  <Link href="/profile" onClick={() => setMenuOpen(false)}
+                        className="flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-100">
+                    <Settings className="w-4 h-4" /> Account &amp; Password
+                  </Link>
                   {profile?.role === 'admin' && (
                     <Link href="/admin/settings" onClick={() => setMenuOpen(false)}
                           className="flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-100">
