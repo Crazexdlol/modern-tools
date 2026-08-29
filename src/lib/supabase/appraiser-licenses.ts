@@ -8,6 +8,8 @@ export interface AppraiserLicense {
   state: string
   licenseNumber: string
   expirationDate: string   // 'YYYY-MM-DD'
+  issuedDate: string | null  // 'YYYY-MM-DD'
+  status: 'active' | 'expired' | 'pending'
   notes: string | null
 }
 
@@ -17,6 +19,8 @@ interface AppraiserLicenseRow {
   state: string
   license_number: string
   expiration_date: string
+  issued_date: string | null
+  status: 'active' | 'expired' | 'pending'
   notes: string | null
 }
 
@@ -27,8 +31,20 @@ function rowToLicense(row: AppraiserLicenseRow): AppraiserLicense {
     state: row.state,
     licenseNumber: row.license_number,
     expirationDate: row.expiration_date,
+    issuedDate: row.issued_date ?? null,
+    status: row.status ?? 'active',
     notes: row.notes,
   }
+}
+
+/**
+ * A license is valid iff status === 'active' AND expiration_date is in the future.
+ */
+export function isLicenseValid(license: AppraiserLicense, today: Date = new Date()): boolean {
+  if (license.status !== 'active') return false
+  const exp = new Date(license.expirationDate + 'T00:00:00')
+  const t = new Date(today.getFullYear(), today.getMonth(), today.getDate())
+  return exp > t
 }
 
 /**

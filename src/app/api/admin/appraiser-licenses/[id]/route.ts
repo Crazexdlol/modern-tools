@@ -16,9 +16,11 @@ export async function PATCH(
     state?: string
     licenseNumber?: string
     expirationDate?: string
+    issuedDate?: string | null
+    status?: 'active' | 'expired' | 'pending'
     notes?: string | null
   } | null
-  if (!body || (body.state === undefined && body.licenseNumber === undefined && body.expirationDate === undefined && body.notes === undefined)) {
+  if (!body || (body.state === undefined && body.licenseNumber === undefined && body.expirationDate === undefined && body.issuedDate === undefined && body.status === undefined && body.notes === undefined)) {
     return NextResponse.json({ error: 'no fields to update' }, { status: 400 })
   }
 
@@ -27,6 +29,8 @@ export async function PATCH(
   if (body.state !== undefined) patch.state = body.state.toUpperCase()
   if (body.licenseNumber !== undefined) patch.license_number = body.licenseNumber
   if (body.expirationDate !== undefined) patch.expiration_date = body.expirationDate
+  if (body.issuedDate !== undefined) patch.issued_date = body.issuedDate
+  if (body.status !== undefined) patch.status = body.status
   if (body.notes !== undefined) patch.notes = body.notes
 
   const { error } = await service.from('appraiser_licenses').update(patch).eq('id', id)
