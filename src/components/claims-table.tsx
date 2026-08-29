@@ -521,11 +521,11 @@ export function ClaimsTable({
                           const age = formatPhaseAge(entry.statusPhaseSetAt)
                           return (
                             <span
-                              className={`inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full border ${phaseColorClasses(cfg.color)}`}
+                              className={`inline-flex flex-col items-center text-xs font-semibold px-2 py-0.5 rounded-full border ${phaseColorClasses(cfg.color)}`}
                               title={age ? `${cfg.label} · ${age}` : cfg.label}
                             >
-                              {cfg.label}
-                              {age && <span className="opacity-70 font-normal">· {age}</span>}
+                              <span>{cfg.label}</span>
+                              {age && <span className="opacity-70 font-normal text-[10px] leading-tight">{age}</span>}
                             </span>
                           )
                         })() : null}

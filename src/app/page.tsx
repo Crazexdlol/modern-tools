@@ -124,10 +124,8 @@ export default function DashboardPage() {
                         key={cfg.code}
                         type="button"
                         onClick={() => setPhaseFilter(active ? null : cfg.code)}
-                        className={`inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1.5 rounded-md border transition-colors ${
-                          active
-                            ? phaseColorClasses(cfg.color) + ' ring-2 ring-offset-1 ring-current/40'
-                            : 'bg-white border-gray-200 text-gray-600 hover:border-gray-300'
+                        className={`inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1.5 rounded-md border transition-colors ${phaseColorClasses(cfg.color)}${
+                          active ? ' ring-2 ring-offset-1 ring-current/40' : ''
                         }`}
                         title={active ? `Clear ${cfg.label} filter` : `Show only ${cfg.label}`}
                       >

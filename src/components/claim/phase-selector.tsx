@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useRef, useState } from 'react'
-import { ChevronDown, Tag } from 'lucide-react'
+import { ChevronDown } from 'lucide-react'
 import {
   fetchStatusPhaseConfigs,
   formatPhaseAge,
@@ -84,14 +84,13 @@ export function PhaseSelector({ claimId, currentPhase, currentSetAt, onChanged }
         } ${busy ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'}`}
         title={activeConfig ? `Phase: ${activeConfig.label}${age ? ` (${age})` : ''} — click to change` : 'Set phase'}
       >
-        <Tag className="w-3 h-3 shrink-0" />
         {activeConfig ? (
-          <>
+          <span className="flex flex-col items-center leading-tight">
             <span>{activeConfig.label}</span>
-            {age && <span className="opacity-70">· {age}</span>}
-          </>
+            {age && <span className="opacity-70 font-normal text-[10px]">{age}</span>}
+          </span>
         ) : (
-          <span className="text-gray-500">Phase</span>
+          <span className="text-gray-500">No Phase</span>
         )}
         <ChevronDown className="w-3 h-3 shrink-0 opacity-60" />
       </button>
