@@ -2,13 +2,14 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Users, Database, BookOpen, DollarSign } from 'lucide-react'
+import { Users, Database, BookOpen, DollarSign, ShieldCheck } from 'lucide-react'
 
 const SECTIONS = [
-  { href: '/admin/settings/users',       label: 'Users',       Icon: Users },
-  { href: '/admin/settings/fee-catalog', label: 'Fee Catalog', Icon: DollarSign },
-  { href: '/admin/settings/guidelines',  label: 'Guidelines',  Icon: BookOpen },
-  { href: '/admin/settings/data',        label: 'Data',        Icon: Database },
+  { href: '/admin/settings/users',           label: 'Users',            Icon: Users },
+  { href: '/admin/settings/fee-catalog',     label: 'Fee Catalog',      Icon: DollarSign },
+  { href: '/admin/settings/licensed-states', label: 'Licensed States',  Icon: ShieldCheck },
+  { href: '/admin/settings/guidelines',      label: 'Guidelines',       Icon: BookOpen },
+  { href: '/admin/settings/data',            label: 'Data',             Icon: Database },
 ]
 
 export function SettingsNav() {
