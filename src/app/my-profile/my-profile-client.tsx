@@ -135,14 +135,32 @@ function ReadLicenses({ userId }: { userId: string }) {
               <tr key={row.id} className="border-b border-gray-100 last:border-b-0">
                 <td className="px-3 py-2 font-mono text-xs">{row.state}</td>
                 <td className="px-3 py-2 font-mono text-xs">{row.licenseNumber}</td>
-                <td className="px-3 py-2">{row.expirationDate}</td>
-                <td className="px-3 py-2"><SmallLevelBadge level={level} expiration={row.expirationDate} /></td>
+                <td className="px-3 py-2 text-xs text-gray-500">{row.expirationDate}</td>
+                <td className="px-3 py-2">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <SmallStatusPill status={row.status} />
+                    <SmallLevelBadge level={level} expiration={row.expirationDate} />
+                  </div>
+                </td>
               </tr>
             )
           })}
         </tbody>
       </table>
     </div>
+  )
+}
+
+function SmallStatusPill({ status }: { status: 'active' | 'expired' | 'pending' }) {
+  if (status === 'active') return null  // active is the default, no badge needed
+  const styles: Record<string, string> = {
+    pending: 'text-amber-700 bg-amber-50 border-amber-200',
+    expired: 'text-red-700 bg-red-100 border-red-300',
+  }
+  return (
+    <span className={`text-xs font-semibold px-2 py-0.5 rounded-full border capitalize ${styles[status] ?? ''}`}>
+      {status}
+    </span>
   )
 }
 

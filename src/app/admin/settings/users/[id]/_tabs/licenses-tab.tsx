@@ -9,10 +9,12 @@ interface Draft {
   state: string
   licenseNumber: string
   expirationDate: string
+  issuedDate: string
+  status: 'active' | 'expired' | 'pending'
   notes: string
 }
 
-const emptyDraft = (): Draft => ({ id: null, state: '', licenseNumber: '', expirationDate: '', notes: '' })
+const emptyDraft = (): Draft => ({ id: null, state: '', licenseNumber: '', expirationDate: '', issuedDate: '', status: 'active', notes: '' })
 
 export function LicensesTab({ userId }: { userId: string }) {
   const [rows, setRows] = useState<AppraiserLicense[]>([])
@@ -37,6 +39,8 @@ export function LicensesTab({ userId }: { userId: string }) {
       state: row.state,
       licenseNumber: row.licenseNumber,
       expirationDate: row.expirationDate,
+      issuedDate: row.issuedDate ?? '',
+      status: row.status,
       notes: row.notes ?? '',
     })
     setError(null)
@@ -61,6 +65,8 @@ export function LicensesTab({ userId }: { userId: string }) {
       state: draft.state,
       licenseNumber: draft.licenseNumber,
       expirationDate: draft.expirationDate,
+      issuedDate: draft.issuedDate || null,
+      status: draft.status,
       notes: draft.notes || null,
     }
     let res: Response
@@ -112,8 +118,9 @@ export function LicensesTab({ userId }: { userId: string }) {
             <tr>
               <th className="text-left px-3 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider w-20">State</th>
               <th className="text-left px-3 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">License #</th>
-              <th className="text-left px-3 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider w-40">Expires</th>
-              <th className="text-left px-3 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider w-32">Status</th>
+              <th className="text-left px-3 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider w-32">Issued</th>
+              <th className="text-left px-3 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider w-32">Expires</th>
+              <th className="text-left px-3 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider w-40">Status</th>
               <th className="text-right px-3 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider w-24">Actions</th>
             </tr>
           </thead>
@@ -127,8 +134,15 @@ export function LicensesTab({ userId }: { userId: string }) {
                     <>
                       <td className="px-3 py-2"><input value={draft.state} onChange={e => setDraft({ ...draft, state: e.target.value.toUpperCase() })} maxLength={2} className={inputCls + ' w-16'} /></td>
                       <td className="px-3 py-2"><input value={draft.licenseNumber} onChange={e => setDraft({ ...draft, licenseNumber: e.target.value })} className={inputCls} /></td>
+                      <td className="px-3 py-2"><input type="date" value={draft.issuedDate} onChange={e => setDraft({ ...draft, issuedDate: e.target.value })} className={inputCls} /></td>
                       <td className="px-3 py-2"><input type="date" value={draft.expirationDate} onChange={e => setDraft({ ...draft, expirationDate: e.target.value })} className={inputCls} /></td>
-                      <td className="px-3 py-2 text-xs text-gray-400">—</td>
+                      <td className="px-3 py-2">
+                        <select value={draft.status} onChange={e => setDraft({ ...draft, status: e.target.value as Draft['status'] })} className={inputCls}>
+                          <option value="active">Active</option>
+                          <option value="pending">Pending</option>
+                          <option value="expired">Expired</option>
+                        </select>
+                      </td>
                       <td className="px-3 py-2 text-right">
                         <div className="inline-flex gap-2">
                           <button onClick={save} disabled={busy} className="text-emerald-600 hover:text-emerald-700 disabled:opacity-40" title="Save"><Save className="w-4 h-4" /></button>
@@ -140,8 +154,14 @@ export function LicensesTab({ userId }: { userId: string }) {
                     <>
                       <td className="px-3 py-2 font-mono text-xs">{row.state}</td>
                       <td className="px-3 py-2 font-mono text-xs">{row.licenseNumber}</td>
-                      <td className="px-3 py-2">{row.expirationDate}</td>
-                      <td className="px-3 py-2"><LevelBadge level={level} expiration={row.expirationDate} /></td>
+                      <td className="px-3 py-2 text-xs text-gray-500">{row.issuedDate || '—'}</td>
+                      <td className="px-3 py-2 text-xs text-gray-700">{row.expirationDate}</td>
+                      <td className="px-3 py-2">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <StatusPill status={row.status} />
+                          <LevelBadge level={level} expiration={row.expirationDate} />
+                        </div>
+                      </td>
                       <td className="px-3 py-2 text-right">
                         <div className="inline-flex gap-2">
                           <button onClick={() => startEdit(row)} disabled={draft !== null || busy} className="text-gray-400 hover:text-blue-600 disabled:opacity-40" title="Edit">Edit</button>
@@ -157,8 +177,15 @@ export function LicensesTab({ userId }: { userId: string }) {
               <tr className="bg-blue-50/40 border-b border-gray-100">
                 <td className="px-3 py-2"><input value={draft.state} onChange={e => setDraft({ ...draft, state: e.target.value.toUpperCase() })} maxLength={2} placeholder="FL" className={inputCls + ' w-16'} /></td>
                 <td className="px-3 py-2"><input value={draft.licenseNumber} onChange={e => setDraft({ ...draft, licenseNumber: e.target.value })} placeholder="License #" className={inputCls} /></td>
+                <td className="px-3 py-2"><input type="date" value={draft.issuedDate} onChange={e => setDraft({ ...draft, issuedDate: e.target.value })} className={inputCls} /></td>
                 <td className="px-3 py-2"><input type="date" value={draft.expirationDate} onChange={e => setDraft({ ...draft, expirationDate: e.target.value })} className={inputCls} /></td>
-                <td className="px-3 py-2 text-xs text-gray-400">—</td>
+                <td className="px-3 py-2">
+                  <select value={draft.status} onChange={e => setDraft({ ...draft, status: e.target.value as Draft['status'] })} className={inputCls}>
+                    <option value="active">Active</option>
+                    <option value="pending">Pending</option>
+                    <option value="expired">Expired</option>
+                  </select>
+                </td>
                 <td className="px-3 py-2 text-right">
                   <div className="inline-flex gap-2">
                     <button onClick={save} disabled={busy} className="text-emerald-600 hover:text-emerald-700 disabled:opacity-40" title="Save"><Save className="w-4 h-4" /></button>
@@ -168,7 +195,7 @@ export function LicensesTab({ userId }: { userId: string }) {
               </tr>
             )}
             {rows.length === 0 && !draft && (
-              <tr><td colSpan={5} className="px-3 py-6 text-center text-sm text-gray-400 italic">No licenses on file.</td></tr>
+              <tr><td colSpan={6} className="px-3 py-6 text-center text-sm text-gray-400 italic">No licenses on file.</td></tr>
             )}
           </tbody>
         </table>
@@ -180,6 +207,19 @@ export function LicensesTab({ userId }: { userId: string }) {
 }
 
 const inputCls = 'bg-white border border-gray-200 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500'
+
+function StatusPill({ status }: { status: 'active' | 'expired' | 'pending' }) {
+  const styles: Record<string, string> = {
+    active:  'text-emerald-700 bg-emerald-50 border-emerald-200',
+    pending: 'text-amber-700 bg-amber-50 border-amber-200',
+    expired: 'text-red-700 bg-red-100 border-red-300',
+  }
+  return (
+    <span className={`text-xs font-semibold px-2 py-0.5 rounded-full border capitalize ${styles[status] ?? styles.active}`}>
+      {status}
+    </span>
+  )
+}
 
 function LevelBadge({ level, expiration }: { level: LicenseAlertLevel; expiration: string }) {
   if (level === 'none') return null
