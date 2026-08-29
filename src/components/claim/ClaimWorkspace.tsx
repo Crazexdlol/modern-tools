@@ -299,6 +299,7 @@ function ClaimInfoForm({
   duplicates,
   isNew,
   canEdit,
+  onParsedNotes,
 }: {
   claim: ClaimInfo
   onChange: (updated: ClaimInfo) => void
@@ -306,6 +307,7 @@ function ClaimInfoForm({
   duplicates: DuplicateResult
   isNew: boolean
   canEdit: boolean
+  onParsedNotes?: (notes: string) => void
 }) {
   // Edit mode: on for brand-new claims (nothing to protect yet), off by
   // default for existing claims. The Edit button flips it. If the user
@@ -340,6 +342,10 @@ function ClaimInfoForm({
         ownerPhone: data.ownerPhone || claim.ownerPhone,
         ownerEmail: data.ownerEmail || claim.ownerEmail,
         ownerAddress: data.ownerAddress || claim.ownerAddress,
+        claimantName: data.claimantName || claim.claimantName || '',
+        claimantPhone: data.claimantPhone || claim.claimantPhone || '',
+        claimantEmail: data.claimantEmail || claim.claimantEmail || '',
+        claimantAddress: data.claimantAddress || claim.claimantAddress || '',
         insuranceCompany: data.insuranceCompany || claim.insuranceCompany,
         adjuster: data.adjuster || claim.adjuster,
         adjusterPhone: data.adjusterPhone || claim.adjusterPhone,
@@ -353,6 +359,10 @@ function ClaimInfoForm({
       })
       setPdfSuccess(true)
       setTimeout(() => setPdfSuccess(false), 3000)
+      // Stash parsed Notes (Eagle View format only — Modern Appraisers
+      // parser returns empty). Parent workspace fires the auto-message
+      // once the claim has an id.
+      onParsedNotes?.(data.notes || '')
     } catch (err) {
       setPdfError(err instanceof Error ? err.message : 'PDF parse failed')
     } finally {
@@ -515,6 +525,51 @@ function ClaimInfoForm({
           <div className="md:col-span-2">
             <label className={labelCls}>Owner Address</label>
             <input className={inputCls} placeholder="123 Main St, City, ST 00000" value={claim.ownerAddress} onChange={(e) => set('ownerAddress', e.target.value)} />
+          </div>
+        </div>
+      </div>
+
+      {/* Claimant Contact — only fills when the assignment PDF has a
+          separate claimant party (Eagle View format). Always shown so
+          appraisers can enter/edit these manually. */}
+      <div>
+        <h3 className="text-sm font-bold text-gray-900 mb-4">Claimant Contact</h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label className={labelCls}>Claimant Name</label>
+            <input
+              className={inputCls}
+              placeholder="Full name"
+              value={claim.claimantName ?? ''}
+              onChange={(e) => set('claimantName', e.target.value)}
+            />
+          </div>
+          <div>
+            <label className={labelCls}>Claimant Phone</label>
+            <input
+              className={inputCls}
+              placeholder="(555) 000-0000"
+              value={claim.claimantPhone ?? ''}
+              onChange={(e) => set('claimantPhone', e.target.value)}
+            />
+          </div>
+          <div>
+            <label className={labelCls}>Claimant Email</label>
+            <input
+              className={inputCls}
+              placeholder="claimant@email.com"
+              value={claim.claimantEmail ?? ''}
+              onChange={(e) => set('claimantEmail', e.target.value)}
+            />
+          </div>
+          <div className="md:col-span-2">
+            <label className={labelCls}>Claimant Address</label>
+            <input
+              className={inputCls}
+              placeholder="123 Main St, City, ST 00000"
+              value={claim.claimantAddress ?? ''}
+              onChange={(e) => set('claimantAddress', e.target.value)}
+            />
           </div>
         </div>
       </div>
@@ -2687,6 +2742,9 @@ function ClaimWorkspaceInner({ claimId }: { claimId: string }) {
   const editingIdRef = useRef(editingId)
   useEffect(() => { editingIdRef.current = editingId }, [editingId])
   const autoSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // Captures the Notes text parsed from an Eagle View assignment PDF, so
+  // we can post it as an auto-message the moment the claim has an id.
+  const pendingAutoNoteRef = useRef<string>('')
   useEffect(() => {
     if (!initialLoadDone.current) {
       initialLoadDone.current = true
@@ -3205,6 +3263,17 @@ function ClaimWorkspaceInner({ claimId }: { claimId: string }) {
     promotedIdRef.current = id
     localStorage.removeItem(COMP_FINDER_SESSION_KEY)
     router.replace(`/claims/${id}?tab=info`, { scroll: false })
+    // Fire-and-forget auto-message for parser-captured Notes (Eagle View
+    // format only — modern-appraisers parser returns empty notes).
+    if (pendingAutoNoteRef.current) {
+      const noteBody = pendingAutoNoteRef.current
+      pendingAutoNoteRef.current = ''
+      fetch(`/api/claims/${encodeURIComponent(id)}/auto-message`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ body: noteBody, senderName: 'Modern Tools (Auto)' }),
+      }).catch((e) => console.warn('auto-message post failed:', e))
+    }
     setCreatingClaim(false)
   }
 
@@ -3558,6 +3627,7 @@ function ClaimWorkspaceInner({ claimId }: { claimId: string }) {
                   duplicates={duplicates}
                   isNew={isNew}
                   canEdit={isAdmin || profile?.canEditClaimInfo === true}
+                  onParsedNotes={(notes) => { pendingAutoNoteRef.current = notes }}
                 />
                 <div className="border-t border-gray-100 pt-8">
                   <h3 className="text-sm font-bold text-gray-900 mb-4">Opposing Appraiser</h3>
