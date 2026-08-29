@@ -10,7 +10,7 @@ export default async function CompletedAssignmentsPage() {
       <AppHeader />
       <main className="max-w-[1600px] mx-auto px-6 py-8 space-y-6">
         <div>
-          <h2 className="text-2xl font-bold text-gray-900">Completed Assignments</h2>
+          <h2 className="text-2xl font-bold text-gray-900">Completed</h2>
           <p className="text-sm text-gray-400">
             Claims submitted by appraisers, waiting for admin review. Open a
             claim to Approve (close it) or Send Back (return to the appraiser).
