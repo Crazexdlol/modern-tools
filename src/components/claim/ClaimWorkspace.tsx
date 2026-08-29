@@ -3418,7 +3418,7 @@ function ClaimWorkspaceInner({ claimId }: { claimId: string }) {
                             — Unassigned —
                           </button>
                           <div className="border-t border-gray-100" />
-                          {allProfiles.map(p => (
+                          {allProfiles.filter(p => p.isActive).map(p => (
                             <button
                               key={p.id}
                               type="button"

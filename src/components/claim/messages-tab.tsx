@@ -129,6 +129,7 @@ export function MessagesTab({ claimId }: { claimId: string }) {
   const pickerOptions = useMemo(() => {
     const q = pickerQuery.trim().toLowerCase()
     return profiles
+      .filter(p => p.isActive)                           // hide inactive users from picker
       .filter(p => p.id !== myId)                       // can't pick yourself
       .filter(p => !recipientIds.includes(p.id))
       .filter(p => !q || (p.name || "").toLowerCase().includes(q) || p.email.toLowerCase().includes(q))
