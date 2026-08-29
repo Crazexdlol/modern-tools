@@ -3745,6 +3745,29 @@ function ClaimWorkspaceInner({ claimId }: { claimId: string }) {
                     </div>
                   </div>
                 </div>
+                {/* Danger Zone — admin-only delete. Same handler as the toolbar
+                    button, just placed somewhere more discoverable. */}
+                {isAdmin && !isNew && editingId && (
+                  <div className="border-t border-red-200 pt-6 mt-6">
+                    <h3 className="text-sm font-bold text-red-700 mb-2">Danger Zone</h3>
+                    <div className="flex items-start justify-between gap-4 p-4 rounded-lg border border-red-200 bg-red-50">
+                      <div className="text-sm text-red-900">
+                        <div className="font-semibold">Delete this claim</div>
+                        <div className="text-xs text-red-700 mt-1">
+                          Permanently removes the claim, all its saved data, documents, and messages. This cannot be undone.
+                        </div>
+                      </div>
+                      <Button
+                        onClick={() => setDeleteConfirmOpen(true)}
+                        disabled={deleteBusy}
+                        className="bg-red-600 hover:bg-red-500 text-white font-semibold shrink-0"
+                      >
+                        <Trash2 className="w-4 h-4 mr-1.5" />
+                        Delete Claim
+                      </Button>
+                    </div>
+                  </div>
+                )}
               </CardContent>
             </Card>
             {isNew && (
