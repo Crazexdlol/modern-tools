@@ -70,8 +70,6 @@ function StateCell({
   )
 }
 
-type LicenseFilter = 'all' | 'forbidden' | 'licensed-state-only' | 'not-licensed'
-
 export function ClaimsTable({
   entries,
   onDeleted,
@@ -103,7 +101,6 @@ export function ClaimsTable({
 }) {
   const router = useRouter()
   const [searchQuery, setSearchQuery] = useState('')
-  const [licenseFilter, setLicenseFilter] = useState<LicenseFilter>('all')
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [bulkAssignee, setBulkAssignee] = useState<string>('')
   const [bulkBusy, setBulkBusy] = useState(false)
@@ -150,16 +147,10 @@ export function ClaimsTable({
         (e.claim?.clientName ?? '').toLowerCase().includes(q) ||
         nameFor(e.assignedTo).toLowerCase().includes(q)
       )) return false
-      if (licenseFilter !== 'all') {
-        const badge = getLicenseBadge(e)
-        if (licenseFilter === 'forbidden' && badge !== 'forbidden') return false
-        if (licenseFilter === 'licensed-state-only' && badge === null) return false
-        if (licenseFilter === 'not-licensed' && badge !== 'not-licensed') return false
-      }
       if (phaseFilter !== null && e.statusPhase !== phaseFilter) return false
       return true
     })
-  }, [entries, searchQuery, nameFor, licenseFilter, getLicenseBadge, phaseFilter])
+  }, [entries, searchQuery, nameFor, phaseFilter])
 
   const filteredIds = useMemo(() => filtered.map(e => e.id), [filtered])
   const allFilteredSelected =
@@ -345,19 +336,6 @@ export function ClaimsTable({
       )}
 
       <div className="flex items-center justify-end gap-3 mb-4">
-        {licensedStates.length > 0 && (
-          <select
-            value={licenseFilter}
-            onChange={e => setLicenseFilter(e.target.value as LicenseFilter)}
-            className="bg-white border border-gray-200 rounded-lg px-3 py-2.5 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-sm"
-            title="Filter by licensing status"
-          >
-            <option value="all">All states</option>
-            <option value="forbidden">Forbidden only</option>
-            <option value="licensed-state-only">Licensed state only</option>
-            <option value="not-licensed">Not licensed</option>
-          </select>
-        )}
         <div className="relative w-72">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
           <input
