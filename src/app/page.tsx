@@ -16,33 +16,29 @@ export default function DashboardPage() {
   const router = useRouter()
   const { profile } = useCurrentProfile()
   const [entries, setEntries] = useState<ACVHistoryEntry[]>([])
+  const [claimsLoading, setClaimsLoading] = useState(true)
   const [profiles, setProfiles] = useState<Profile[]>([])
   const [fetchError, setFetchError] = useState(false)
   const [unreadMessages, setUnreadMessages] = useState(0)
 
-  const load = async () => {
-    const t0 = performance.now()
-    const timings: Record<string, number> = {}
-    const timed = async <T,>(label: string, fn: () => Promise<T>): Promise<T> => {
+  // Three independent fetches. Each has its own timing log so we can spot the
+  // slow one. Nothing blocks anything else — the claims table can render as
+  // soon as its own fetch resolves, without waiting for messages or profiles.
+  const load = () => {
+    const time = <T,>(label: string, fn: () => Promise<T>) => {
       const start = performance.now()
-      const result = await fn()
-      timings[label] = Math.round(performance.now() - start)
-      return result
+      return fn().then(result => {
+        console.log(`[dashboard perf] ${label}: ${Math.round(performance.now() - start)}ms`)
+        return result
+      })
     }
-    const [claims, profs, unread] = await Promise.all([
-      timed('fetchACVHistory', fetchACVHistory),
-      timed('fetchAllProfilesBrowser', fetchAllProfilesBrowser),
-      timed('fetchUnreadCount', fetchUnreadCount),
-    ])
-    if (claims === null) setFetchError(true); else setEntries(claims)
-    setProfiles(profs)
-    setUnreadMessages(unread)
-    // Diagnostic — remove after slowness is fixed.
-    console.log('[dashboard perf]', {
-      ...timings,
-      totalMs: Math.round(performance.now() - t0),
-      claimCount: claims?.length ?? 0,
+    setClaimsLoading(true)
+    time('fetchACVHistory', fetchACVHistory).then(claims => {
+      if (claims === null) setFetchError(true); else setEntries(claims)
+      setClaimsLoading(false)
     })
+    time('fetchAllProfilesBrowser', fetchAllProfilesBrowser).then(setProfiles)
+    time('fetchUnreadCount', fetchUnreadCount).then(setUnreadMessages)
   }
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- mount-load pattern; setState fires only after the async fetch resolves
@@ -127,14 +123,21 @@ export default function DashboardPage() {
 
         {/* Open Claims — the only table on the dashboard. Completed assignments
             live on /completed-assignments (button above). */}
-        <ClaimsTable
-          entries={openClaims}
-          onDeleted={(id) => setEntries(prev => prev.filter(e => e.id !== id))}
-          emptyText={isAdmin ? 'No open claims.' : 'No claims assigned to you.'}
-          adminView={isAdmin}
-          profiles={profiles}
-          onAssignmentChanged={load}
-        />
+        {claimsLoading ? (
+          <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-8 flex items-center justify-center gap-3 text-gray-500">
+            <span className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+            <span className="text-sm font-medium">Loading claims…</span>
+          </div>
+        ) : (
+          <ClaimsTable
+            entries={openClaims}
+            onDeleted={(id) => setEntries(prev => prev.filter(e => e.id !== id))}
+            emptyText={isAdmin ? 'No open claims.' : 'No claims assigned to you.'}
+            adminView={isAdmin}
+            profiles={profiles}
+            onAssignmentChanged={load}
+          />
+        )}
       </main>
     </div>
   )
