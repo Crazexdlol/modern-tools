@@ -26,6 +26,7 @@ import {
   Printer,
   Lock,
   Pencil,
+  Trash2,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -40,7 +41,7 @@ import {
   defaultAdjustments,
   formatCurrency,
 } from '@/lib/acv/calculations'
-import { saveACVHistory, fetchACVEntry, type ClaimStatus } from '@/lib/supabase/history'
+import { saveACVHistory, fetchACVEntry, deleteACVHistory, type ClaimStatus } from '@/lib/supabase/history'
 import { useCurrentProfile, fetchAllProfilesBrowser, type Profile } from '@/lib/supabase/profiles'
 import { LossSearchTab, type LossListing } from '@/components/claim/loss-search-tab'
 import { EstimateTab } from '@/components/claim/estimate-tab'
@@ -61,6 +62,7 @@ import { SummaryPrintDoc } from '@/app/summary-page/SummaryPrintDoc'
 import { AppHeader } from '@/components/app-header'
 import { StateLicensingTopBadge } from '@/components/claim/state-licensing-top-badge'
 import { HandlingAppraiserLicenseSummary } from '@/components/claim/handling-appraiser-license-summary'
+import { PhaseSelector } from '@/components/claim/phase-selector'
 
 async function saveToHistory(
   claim: ClaimInfo,
@@ -2627,6 +2629,10 @@ function ClaimWorkspaceInner({ claimId }: { claimId: string }) {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [submittedBy, setSubmittedBy] = useState<string | null>(null)
   const [workflowBusy, setWorkflowBusy] = useState(false)
+  const [statusPhase, setStatusPhase] = useState<string | null>(null)
+  const [statusPhaseSetAt, setStatusPhaseSetAt] = useState<string | null>(null)
+  const [deleteBusy, setDeleteBusy] = useState(false)
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
   const [allProfiles, setAllProfiles] = useState<Profile[]>([])
   // Insurance company names from the guidelines directory — fuels the
   // Insurance Company autocomplete so typed values match a guideline exactly.
@@ -2704,6 +2710,8 @@ function ClaimWorkspaceInner({ claimId }: { claimId: string }) {
       setAssignedTo(entry.assignedTo ?? null)
       setSubmittedAt(entry.submittedAt ?? null)
       setSubmittedBy(entry.submittedBy ?? null)
+      setStatusPhase(entry.statusPhase ?? null)
+      setStatusPhaseSetAt(entry.statusPhaseSetAt ?? null)
       setAuctionListings((entry.auctionListings as LossListing[] | undefined) ?? [])
       setEstimate(entry.estimate)
       setDocuments((entry.documents as ClaimDocument[] | undefined) ?? [])
@@ -3291,6 +3299,15 @@ function ClaimWorkspaceInner({ claimId }: { claimId: string }) {
     setCreatingClaim(false)
   }
 
+  const runDeleteClaim = async () => {
+    if (!editingId) return
+    setDeleteBusy(true)
+    await deleteACVHistory(editingId)
+    setDeleteBusy(false)
+    setDeleteConfirmOpen(false)
+    router.push('/')
+  }
+
   const startOver = () => {
     // Cancel any pending auto-save so the cleared claim isn't resurrected.
     if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current)
@@ -3349,7 +3366,18 @@ function ClaimWorkspaceInner({ claimId }: { claimId: string }) {
               Print
             </button>
           )}
-          {/* Centered slot between Print and the right-side workflow buttons.
+          {!isNew && editingId && (
+            <PhaseSelector
+              claimId={editingId}
+              currentPhase={statusPhase}
+              currentSetAt={statusPhaseSetAt}
+              onChanged={(newPhase, newSetAt) => {
+                setStatusPhase(newPhase)
+                setStatusPhaseSetAt(newSetAt)
+              }}
+            />
+          )}
+          {/* Centered slot between left controls and the right-side workflow buttons.
               Flex-1 pushes the right group to the far right; justify-center
               centers the badge within the remaining horizontal space. */}
           {!isNew && editingId && (
@@ -3463,6 +3491,18 @@ function ClaimWorkspaceInner({ claimId }: { claimId: string }) {
                   )}
                 </div>
               )}
+              {isAdmin && !isNew && editingId && (
+                <Button
+                  onClick={() => setDeleteConfirmOpen(true)}
+                  disabled={deleteBusy}
+                  size="sm"
+                  variant="outline"
+                  className="border-red-200 text-red-600 hover:bg-red-50 hover:border-red-300"
+                >
+                  <Trash2 className="w-3.5 h-3.5 mr-1" />
+                  Delete
+                </Button>
+              )}
             </div>
           )}
         </div>
@@ -3490,6 +3530,23 @@ function ClaimWorkspaceInner({ claimId }: { claimId: string }) {
           busy={reassignBusy}
           onConfirm={runReassign}
           onCancel={() => setPendingReassign(null)}
+        />
+
+        <ConfirmDialog
+          open={deleteConfirmOpen}
+          title="Delete this claim?"
+          message={
+            <>
+              This will permanently delete claim <b>{claim.maNumber || editingId}</b>
+              {claim.insuredName ? <> for <b>{claim.insuredName}</b></> : null}.
+              This cannot be undone.
+            </>
+          }
+          confirmLabel="Delete"
+          variant="danger"
+          busy={deleteBusy}
+          onConfirm={runDeleteClaim}
+          onCancel={() => setDeleteConfirmOpen(false)}
         />
 
         {isNew ? (
