@@ -3364,6 +3364,7 @@ function ClaimWorkspaceInner({ claimId }: { claimId: string }) {
               claimId={editingId}
               currentPhase={statusPhase}
               currentSetAt={statusPhaseSetAt}
+              size="lg"
               onChanged={(newPhase, newSetAt) => {
                 setStatusPhase(newPhase)
                 setStatusPhaseSetAt(newSetAt)

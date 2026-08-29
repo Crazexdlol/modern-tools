@@ -14,6 +14,8 @@ interface PhaseSelectorProps {
   currentPhase: string | null | undefined
   currentSetAt: string | null | undefined
   onChanged: (newPhase: string | null, newSetAt: string | null) => void
+  /** 'sm' fits dashboard rows; 'lg' is the prominent workspace toolbar version. */
+  size?: 'sm' | 'lg'
 }
 
 /**
@@ -21,7 +23,7 @@ interface PhaseSelectorProps {
  * Fetches configs on mount. Renders as a button that opens a dropdown menu.
  * When a phase is active, the button shows a colored pill + age.
  */
-export function PhaseSelector({ claimId, currentPhase, currentSetAt, onChanged }: PhaseSelectorProps) {
+export function PhaseSelector({ claimId, currentPhase, currentSetAt, onChanged, size = 'sm' }: PhaseSelectorProps) {
   const [configs, setConfigs] = useState<StatusPhaseConfig[]>([])
   const [open, setOpen] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -70,6 +72,20 @@ export function PhaseSelector({ claimId, currentPhase, currentSetAt, onChanged }
   if (configs.length === 0) return null
 
   const age = formatPhaseAge(currentSetAt)
+  const isLg = size === 'lg'
+
+  // Sizing tokens per variant. Active-phase button always uses phase-tinted
+  // background with BLACK text so the label is legible and prominent.
+  const buttonSize = isLg
+    ? 'px-4 py-2 gap-2 rounded-lg'
+    : 'px-2.5 py-1.5 gap-1.5 rounded-lg'
+  const activeLabelSize = isLg ? 'text-base font-black' : 'text-xs font-bold'
+  const activeAgeSize = isLg ? 'text-xs' : 'text-[10px]'
+  const emptyLabelSize = isLg ? 'text-base font-bold' : 'text-xs font-semibold'
+  const chevronSize = isLg ? 'w-4 h-4' : 'w-3 h-3'
+  const activeBg = activeConfig
+    ? `${phaseColorClasses(activeConfig.color)} text-gray-900`
+    : 'bg-white border-gray-200 text-gray-600 hover:border-gray-300'
 
   return (
     <div className="relative" ref={ref}>
@@ -77,22 +93,18 @@ export function PhaseSelector({ claimId, currentPhase, currentSetAt, onChanged }
         type="button"
         disabled={busy}
         onClick={() => setOpen(o => !o)}
-        className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-semibold transition-colors ${
-          activeConfig
-            ? phaseColorClasses(activeConfig.color)
-            : 'bg-white border-gray-200 text-gray-600 hover:border-gray-300'
-        } ${busy ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'}`}
+        className={`flex items-center border transition-colors ${buttonSize} ${activeBg} ${busy ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'}`}
         title={activeConfig ? `Phase: ${activeConfig.label}${age ? ` (${age})` : ''} — click to change` : 'Set phase'}
       >
         {activeConfig ? (
           <span className="flex flex-col items-center leading-tight">
-            <span>{activeConfig.label}</span>
-            {age && <span className="opacity-70 font-normal text-[10px]">{age}</span>}
+            <span className={activeLabelSize}>{activeConfig.label}</span>
+            {age && <span className={`opacity-70 font-normal ${activeAgeSize}`}>{age}</span>}
           </span>
         ) : (
-          <span className="text-gray-500 whitespace-nowrap">No Phase</span>
+          <span className={`text-gray-500 whitespace-nowrap ${emptyLabelSize}`}>No Phase</span>
         )}
-        <ChevronDown className="w-3 h-3 shrink-0 opacity-60" />
+        <ChevronDown className={`${chevronSize} shrink-0 opacity-60`} />
       </button>
 
       {open && (
