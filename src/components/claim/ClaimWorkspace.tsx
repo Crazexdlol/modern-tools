@@ -1005,9 +1005,6 @@ function AdjustmentsForm({
               onChange={(val) => onMileageRateChange(val)}
             />
             <span className="text-xs text-gray-500">cents per mile</span>
-            <p className="text-xs text-gray-400 ml-auto">
-              Automatically calculates mileage adjustments for each comp
-            </p>
           </div>
         </CardContent>
       </Card>
@@ -1936,7 +1933,6 @@ function ReportsStep({
                 </div>
                 <div>
                   <h3 className="text-sm font-semibold text-gray-900">Summary Page</h3>
-                  <p className="text-xs text-gray-500 mt-0.5">Create a claim summary pre-filled from this report</p>
                 </div>
               </div>
             </CardContent>
@@ -1970,7 +1966,6 @@ function ReportsStep({
           )}
           <div className="flex-1">
             <h3 className="text-base font-semibold text-gray-900">Summary Page</h3>
-            <p className="text-xs text-gray-400">Auto-saved. Unique to this claim.</p>
           </div>
           <Button
             onClick={async () => {
@@ -4312,7 +4307,7 @@ function ClaimWorkspaceInner({ claimId }: { claimId: string }) {
         {/* Step 15: Reports Hub — entry point for all fillable/printable reports
             attached to this claim (Invoice, Contract, Certificate of Appraisal). */}
         {step === 15 && (
-          <ReportsHubTab onOpenInvoice={() => setStep(12)} />
+          <ReportsHubTab claimId={editingId ?? claimId} onOpenInvoice={() => setStep(12)} />
         )}
       </main>
 
