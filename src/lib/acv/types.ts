@@ -1,7 +1,15 @@
+// Claim work types — controls which tool tabs appear in the workspace.
+// 'other' unlocks every tool (used for mixed/complex claims). Multiple can
+// be selected. Empty array = legacy claim (no filtering, all tools shown).
+export type ClaimType = 'acv' | 'dv' | 'estimate' | 'other'
+
 export interface ClaimInfo {
   maNumber: string
   claimNumber: string
   handlingAppraiser?: string
+  // Type-driven tool visibility. Optional so pre-existing claims (imported
+  // or created before this field existed) fall through to "show all tools".
+  claimTypes?: ClaimType[]
   // Date the assignment was received (parsed from the CL PDF's Appraisal
   // Information -> Date Created field). Auto-fills Date Received Claim on
   // the Summary Page. Optional so existing claims that predate this field
@@ -14,6 +22,14 @@ export interface ClaimInfo {
   ownerPhone: string
   ownerEmail: string
   ownerAddress: string
+  // Optional Claimant contact block. Populated when the assignment PDF
+  // captures a separate claimant party from the insured (Eagle View format
+  // only for now). Existing claims fall through with these undefined —
+  // non-breaking; downstream consumers keep reading insuredName/owner*.
+  claimantName?: string
+  claimantPhone?: string
+  claimantEmail?: string
+  claimantAddress?: string
   insuranceCompany: string
   adjuster: string
   adjusterPhone: string
