@@ -8,7 +8,7 @@ export default async function CompletedAssignmentsPage() {
       {/* Renders notFound() (404) for non-admins */}
       <AdminGuard />
       <AppHeader />
-      <main className="max-w-7xl mx-auto px-6 py-8 space-y-6">
+      <main className="max-w-[1600px] mx-auto px-6 py-8 space-y-6">
         <div>
           <h2 className="text-2xl font-bold text-gray-900">Completed Assignments</h2>
           <p className="text-sm text-gray-400">

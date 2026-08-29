@@ -23,6 +23,7 @@ export function ClaimsTable({
   profiles = [],
   showSubmittedColumn = false,
   onAssignmentChanged,
+  perRowReassign = false,
 }: {
   entries: ACVHistoryEntry[]
   onDeleted: (id: string) => void
@@ -32,6 +33,7 @@ export function ClaimsTable({
   profiles?: Profile[]
   showSubmittedColumn?: boolean
   onAssignmentChanged?: () => void
+  perRowReassign?: boolean
 }) {
   const router = useRouter()
   const [searchQuery, setSearchQuery] = useState('')
@@ -39,8 +41,15 @@ export function ClaimsTable({
   const [bulkAssignee, setBulkAssignee] = useState<string>('')
   const [bulkBusy, setBulkBusy] = useState(false)
   const [bulkError, setBulkError] = useState<string | null>(null)
+  const [submitConfirmOpen, setSubmitConfirmOpen] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<ACVHistoryEntry | null>(null)
   const [deleteBusy, setDeleteBusy] = useState(false)
+  // Per-row reassign state — used by the Completed Assignments page so an
+  // admin can hand a submitted claim to another appraiser without opening it.
+  const [pendingRowReassign, setPendingRowReassign] = useState<
+    { entry: ACVHistoryEntry; targetId: string | null; targetLabel: string } | null
+  >(null)
+  const [rowReassignBusy, setRowReassignBusy] = useState(false)
 
   // Look up an assignee's display name by profile id.
   const nameFor = useCallback((id: string | null | undefined): string => {
@@ -59,6 +68,7 @@ export function ClaimsTable({
       e.vehicle?.toLowerCase().includes(q) ||
       (e.claim?.insuredName ?? '').toLowerCase().includes(q) ||
       (e.claim?.insuranceCompany ?? '').toLowerCase().includes(q) ||
+      (e.claim?.clientName ?? '').toLowerCase().includes(q) ||
       nameFor(e.assignedTo).toLowerCase().includes(q)
     )
   }, [entries, searchQuery, nameFor])
@@ -125,6 +135,42 @@ export function ClaimsTable({
     window.location.reload()
   }
 
+  // Bulk submit — POSTs to /api/claims/[id]/submit for each selected id in
+  // parallel. The API 400s on already-submitted or closed claims, so we
+  // count those as "skipped" and report a summary instead of failing hard.
+  const runBulkSubmit = async () => {
+    setSubmitConfirmOpen(false)
+    setBulkBusy(true)
+    setBulkError(null)
+    const ids = Array.from(selectedIds)
+    const results = await Promise.all(
+      ids.map(id =>
+        fetch(`/api/claims/${id}/submit`, { method: 'POST' })
+          .then(async r => {
+            if (r.ok) return 'ok' as const
+            const body = await r.json().catch(() => ({ error: '' }))
+            const msg = (body?.error ?? '').toString().toLowerCase()
+            if (msg.includes('already submitted') || msg.includes('not open')) return 'skipped' as const
+            return 'failed' as const
+          })
+          .catch(() => 'failed' as const),
+      ),
+    )
+    setBulkBusy(false)
+    const ok = results.filter(r => r === 'ok').length
+    const skipped = results.filter(r => r === 'skipped').length
+    const failed = results.filter(r => r === 'failed').length
+    if (failed > 0 || skipped > 0) {
+      const parts = [`Submitted ${ok}`]
+      if (skipped > 0) parts.push(`${skipped} skipped (already submitted or closed)`)
+      if (failed > 0) parts.push(`${failed} failed`)
+      setBulkError(parts.join(' · ') + '. Refresh to see current state.')
+      onAssignmentChanged?.()
+      return
+    }
+    window.location.reload()
+  }
+
   const openDelete = (e: React.MouseEvent, entry: ACVHistoryEntry) => {
     e.stopPropagation()
     setDeleteTarget(entry)
@@ -139,12 +185,34 @@ export function ClaimsTable({
     setDeleteTarget(null)
   }
 
+  const runRowReassign = async () => {
+    if (!pendingRowReassign) return
+    const { entry, targetId } = pendingRowReassign
+    setRowReassignBusy(true)
+    const res = await fetch(`/api/claims/${entry.id}/assign`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ assignedTo: targetId }),
+    })
+    setRowReassignBusy(false)
+    setPendingRowReassign(null)
+    if (!res.ok) {
+      const b = await res.json().catch(() => ({}))
+      setBulkError((b as { error?: string }).error ?? 'Reassign failed')
+      return
+    }
+    // Reload so the queue reflects the new assignment (assignee may now be
+    // out-of-scope for this admin's view depending on filters).
+    window.location.reload()
+  }
+
   const colCount =
     (adminView ? 1 : 0) + // checkbox
-    6 + // MA, Insured, Vehicle, VIN, Date, Ins. Co.
+    7 + // MA, Insured, Client, Vehicle, VIN, Date, Ins. Co.
     (adminView ? 1 : 0) + // Assigned To (read-only text now)
     (showStatus ? 1 : 0) +
     (showSubmittedColumn ? 1 : 0) +
+    (perRowReassign ? 1 : 0) + // Reassign action column
     (adminView ? 1 : 0) // Delete (admin-only)
 
   const selectedCount = selectedIds.size
@@ -153,11 +221,19 @@ export function ClaimsTable({
     <div>
       {/* Bulk action toolbar (admin only, visible when selection is non-empty) */}
       {adminView && selectedCount > 0 && (
-        <div className="mb-4 flex items-center gap-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+        <div className="mb-4 flex flex-wrap items-center gap-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
           <div className="text-sm font-semibold text-blue-900">
             {selectedCount} claim{selectedCount === 1 ? '' : 's'} selected
           </div>
-          <div className="flex items-center gap-2 ml-auto">
+          <div className="flex flex-wrap items-center gap-2 ml-auto">
+            <Button
+              onClick={() => setSubmitConfirmOpen(true)}
+              disabled={bulkBusy}
+              className="bg-emerald-600 hover:bg-emerald-500 text-white text-sm"
+            >
+              {bulkBusy ? 'Working…' : 'Submit All'}
+            </Button>
+            <span className="mx-2 h-6 w-px bg-blue-200" aria-hidden />
             <span className="text-sm text-blue-900">Reassign to:</span>
             <select
               value={bulkAssignee}
@@ -227,6 +303,7 @@ export function ClaimsTable({
               )}
               <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">MA #</th>
               <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Insured</th>
+              <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Client</th>
               <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Vehicle</th>
               <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">VIN</th>
               <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Date</th>
@@ -239,6 +316,9 @@ export function ClaimsTable({
               )}
               {showSubmittedColumn && (
                 <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Submitted</th>
+              )}
+              {perRowReassign && (
+                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Reassign</th>
               )}
               {adminView && (
                 <th className="text-right px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Delete</th>
@@ -285,6 +365,7 @@ export function ClaimsTable({
                       </button>
                     </td>
                     <td className="px-4 py-3 text-gray-700">{entry.claim?.insuredName || '—'}</td>
+                    <td className="px-4 py-3 text-gray-700">{entry.claim?.clientName || '—'}</td>
                     <td className="px-4 py-3 text-gray-700">{entry.vehicle || '—'}</td>
                     <td className="px-4 py-3 text-gray-500 font-mono text-xs">{entry.vin || '—'}</td>
                     <td className="px-4 py-3 text-gray-500">{fmtDate(entry.date)}</td>
@@ -317,6 +398,39 @@ export function ClaimsTable({
                         ) : <span className="text-gray-300">—</span>}
                       </td>
                     )}
+                    {perRowReassign && (
+                      <td className="px-4 py-3">
+                        <select
+                          value=""
+                          onClick={(e) => e.stopPropagation()}
+                          onChange={(e) => {
+                            const val = e.target.value
+                            e.currentTarget.value = ''  // reset so the same choice can be re-picked
+                            if (val === '') return
+                            if (val === '__unassign__') {
+                              setPendingRowReassign({ entry, targetId: null, targetLabel: 'Unassigned' })
+                              return
+                            }
+                            const p = profiles.find(x => x.id === val)
+                            setPendingRowReassign({
+                              entry,
+                              targetId: val,
+                              targetLabel: p ? (p.name || p.email) : 'Unknown',
+                            })
+                          }}
+                          className="text-xs bg-white border border-gray-200 rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        >
+                          <option value="">Reassign to…</option>
+                          <option value="__unassign__">— Unassigned —</option>
+                          {profiles.map(p => (
+                            <option key={p.id} value={p.id}>
+                              {(p.name || p.email)}
+                              {p.id === entry.assignedTo ? '  (current)' : ''}
+                            </option>
+                          ))}
+                        </select>
+                      </td>
+                    )}
                     {adminView && (
                       <td className="px-4 py-3 text-right">
                         <button
@@ -335,6 +449,41 @@ export function ClaimsTable({
           </tbody>
         </table>
       </div>
+
+      <ConfirmDialog
+        open={submitConfirmOpen}
+        title={`Submit ${selectedCount} claim${selectedCount === 1 ? '' : 's'}?`}
+        message={
+          <>
+            This marks the selected claim{selectedCount === 1 ? '' : 's'} as submitted for admin review.
+            Claims that are already submitted or closed will be skipped.
+          </>
+        }
+        confirmLabel="Submit All"
+        variant="primary"
+        busy={bulkBusy}
+        onConfirm={runBulkSubmit}
+        onCancel={() => setSubmitConfirmOpen(false)}
+      />
+
+      <ConfirmDialog
+        open={!!pendingRowReassign}
+        title="Reassign this claim?"
+        message={
+          pendingRowReassign ? (
+            <>
+              Reassign claim <b>{pendingRowReassign.entry.maNumber || pendingRowReassign.entry.id}</b> to{' '}
+              <b>{pendingRowReassign.targetLabel}</b>? The claim stays submitted — the new appraiser
+              picks up review responsibility.
+            </>
+          ) : null
+        }
+        confirmLabel="Reassign"
+        variant="primary"
+        busy={rowReassignBusy}
+        onConfirm={runRowReassign}
+        onCancel={() => setPendingRowReassign(null)}
+      />
 
       <ConfirmDialog
         open={!!deleteTarget}

@@ -54,7 +54,7 @@ export default function DashboardPage() {
     <div className="min-h-screen bg-gray-50 text-gray-900">
       <MigrateData />
       <AppHeader />
-      <main className="max-w-7xl mx-auto px-6 py-8 space-y-8">
+      <main className="max-w-[1600px] mx-auto px-6 py-8 space-y-8">
         <LicenseExpirationBanner profile={profile ?? null} allProfiles={profiles} />
         <div className="flex items-center justify-between">
           <div>
