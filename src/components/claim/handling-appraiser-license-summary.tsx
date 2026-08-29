@@ -1,7 +1,6 @@
 "use client"
 
 import { useEffect, useState } from 'react'
-import { AlertTriangle, Check } from 'lucide-react'
 import { extractLossState } from '@/lib/claim-state'
 import { fetchLicensedStates, isLicensedState, isForbiddenState, type LicensedState } from '@/lib/supabase/licensed-states'
 import { fetchAllLicenses, isLicenseValid, type AppraiserLicense } from '@/lib/supabase/appraiser-licenses'
@@ -66,8 +65,7 @@ export function HandlingAppraiserLicenseSummary({
 
   if (handlerMatch) {
     return (
-      <div className="mb-3 inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 text-sm">
-        <Check className="w-4 h-4 shrink-0" />
+      <div className="mb-3 inline-flex items-center px-3 py-2 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 text-sm">
         <span>
           <strong>{handlerMatch.name}</strong> — {state} License{' '}
           <span className="font-mono">#{handlerMatch.licenseNumber}</span>
@@ -79,8 +77,7 @@ export function HandlingAppraiserLicenseSummary({
   // Handler not licensed (or no handler yet). Show the roster.
   return (
     <div className="mb-3 p-3 rounded-lg bg-red-50 border border-red-200 text-sm space-y-2">
-      <div className="flex items-center gap-2 text-red-800 font-semibold">
-        <AlertTriangle className="w-4 h-4 shrink-0" />
+      <div className="text-red-800 font-semibold">
         <span>
           {handlerName ? `${handlerName} is not licensed in ${state}.` : `A ${state} license is required for this claim.`}
         </span>

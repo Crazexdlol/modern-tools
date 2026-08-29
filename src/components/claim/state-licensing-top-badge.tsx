@@ -1,7 +1,6 @@
 "use client"
 
 import { useEffect, useState } from 'react'
-import { Ban, Check, AlertTriangle } from 'lucide-react'
 import { extractLossState } from '@/lib/claim-state'
 import { fetchLicensedStates, isLicensedState, isForbiddenState, type LicensedState } from '@/lib/supabase/licensed-states'
 import { fetchAllLicenses, fetchUserLicenses, isLicenseValid, type AppraiserLicense } from '@/lib/supabase/appraiser-licenses'
@@ -53,8 +52,7 @@ export function StateLicensingTopBadge({
 
   if (isForbiddenState(state, licensedStates)) {
     return (
-      <div className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-red-600 text-white shadow-md border-2 border-red-700">
-        <Ban className="w-5 h-5" />
+      <div className="inline-flex items-center px-4 py-2 rounded-lg bg-red-600 text-white shadow-md border-2 border-red-700">
         <span className="font-black uppercase tracking-wider text-base">
           FORBIDDEN
         </span>
@@ -70,8 +68,7 @@ export function StateLicensingTopBadge({
 
   if (handlerLicensed) {
     return (
-      <div className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-600 text-white shadow-md border-2 border-emerald-700">
-        <Check className="w-5 h-5" />
+      <div className="inline-flex items-center px-4 py-2 rounded-lg bg-emerald-600 text-white shadow-md border-2 border-emerald-700">
         <span className="font-black uppercase tracking-wider text-base">
           LICENSED
         </span>
@@ -80,8 +77,7 @@ export function StateLicensingTopBadge({
   }
 
   return (
-    <div className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-red-600 text-white shadow-md border-2 border-red-700">
-      <AlertTriangle className="w-5 h-5" />
+    <div className="inline-flex items-center px-4 py-2 rounded-lg bg-red-600 text-white shadow-md border-2 border-red-700">
       <span className="font-black uppercase tracking-wider text-base">
         NOT LICENSED
       </span>

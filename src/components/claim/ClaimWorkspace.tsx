@@ -14,10 +14,8 @@ import {
   Search,
   AlertCircle,
   Car,
-  MapPin,
   X,
   Plus,
-  Gauge,
   ArrowUpDown,
   Upload,
   CheckCircle2,
@@ -184,8 +182,7 @@ function DuplicateWarning({
   }
   return (
     <div className="mt-2 p-2 rounded border border-amber-200 bg-amber-50 text-xs text-amber-800">
-      <div className="font-semibold flex items-center gap-1 mb-1">
-        <AlertCircle className="w-3 h-3" />
+      <div className="font-semibold mb-1">
         Duplicate {field}: matches {matches.length} other claim{matches.length === 1 ? '' : 's'}
       </div>
       <ul className="pl-4 list-disc space-y-0.5">
@@ -415,8 +412,7 @@ function ClaimInfoForm({
           </Button>
           <span className="text-xs text-gray-400">Auto-fill from a claim assignment PDF</span>
           {pdfError && (
-            <p className="text-xs text-red-500 flex items-center gap-1">
-              <AlertCircle className="w-3 h-3" />
+            <p className="text-xs text-red-500">
               {pdfError}
             </p>
           )}
@@ -723,8 +719,7 @@ function SearchParametersPanel({
           </Button>
         </div>
         {decodeError && (
-          <p className="text-xs text-red-500 mt-1 flex items-center gap-1">
-            <AlertCircle className="w-3 h-3" />
+          <p className="text-xs text-red-500 mt-1">
             {decodeError}
           </p>
         )}
@@ -894,13 +889,11 @@ function CompCard({
 
         {/* Stats */}
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-3 text-xs text-gray-500">
-          <span className="flex items-center gap-1">
-            <Gauge className="w-3 h-3" />
+          <span>
             {(comp.miles ?? 0).toLocaleString()} mi
           </span>
           {(comp.distanceMi > 0 || comp.dealerCity) && (
-            <span className="flex items-center gap-1">
-              <MapPin className="w-3 h-3" />
+            <span>
               {[
                 comp.dealerCity ? `${comp.dealerCity}, ${comp.dealerState}` : '',
                 comp.distanceMi > 0 ? `${comp.distanceMi} mi` : '',
