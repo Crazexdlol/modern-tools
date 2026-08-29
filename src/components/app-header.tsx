@@ -4,7 +4,7 @@ import { useState, useRef, useEffect } from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
 import { usePathname } from 'next/navigation'
-import { ChevronDown, User as UserIcon, Shield } from 'lucide-react'
+import { ChevronDown, User as UserIcon, Settings } from 'lucide-react'
 import { LogoutButton } from '@/components/logout-button'
 import { useCurrentProfile } from '@/lib/supabase/profiles'
 
@@ -65,14 +65,14 @@ export function AppHeader() {
               </button>
               {menuOpen && (
                 <div className="absolute right-0 top-full mt-1 w-48 bg-white border border-gray-200 rounded-lg shadow-lg py-1 z-20">
-                  <Link href="/profile" onClick={() => setMenuOpen(false)}
+                  <Link href="/my-profile" onClick={() => setMenuOpen(false)}
                         className="flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-100">
-                    <UserIcon className="w-4 h-4" /> Profile
+                    <UserIcon className="w-4 h-4" /> My Profile
                   </Link>
                   {profile?.role === 'admin' && (
-                    <Link href="/admin/users" onClick={() => setMenuOpen(false)}
+                    <Link href="/admin/settings" onClick={() => setMenuOpen(false)}
                           className="flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-100">
-                      <Shield className="w-4 h-4" /> Admin
+                      <Settings className="w-4 h-4" /> Settings
                     </Link>
                   )}
                   <div className="border-t border-gray-100 my-1" />

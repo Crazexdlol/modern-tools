@@ -1,6 +1,6 @@
 import { createClient as createBrowserClient } from './client'
 
-export type SiteSettingsKey = 'allow_regular_create_claims'
+export type SiteSettingsKey = never
 
 export async function fetchSiteSetting<T>(key: SiteSettingsKey): Promise<T | null> {
   const supabase = createBrowserClient()

@@ -42,7 +42,6 @@ import {
 } from '@/lib/acv/calculations'
 import { saveACVHistory, fetchACVEntry, type ClaimStatus } from '@/lib/supabase/history'
 import { useCurrentProfile, fetchAllProfilesBrowser, type Profile } from '@/lib/supabase/profiles'
-import { fetchSiteSetting } from '@/lib/supabase/site-settings'
 import { LossSearchTab, type LossListing } from '@/components/claim/loss-search-tab'
 import { EstimateTab } from '@/components/claim/estimate-tab'
 import { DocumentsTab } from '@/components/claim/documents-tab'
@@ -2612,24 +2611,18 @@ function ClaimWorkspaceInner({ claimId }: { claimId: string }) {
   // Insurance Company autocomplete so typed values match a guideline exactly.
   const [insuranceCompanyOptions, setInsuranceCompanyOptions] = useState<string[]>([])
   const { profile } = useCurrentProfile()
-  const [allowCreateGlobal, setAllowCreateGlobal] = useState<boolean | null>(null)
-  useEffect(() => {
-    fetchSiteSetting<boolean>('allow_regular_create_claims').then(v => setAllowCreateGlobal(v ?? true))
-  }, [])
   // Direct-URL guard: if a non-admin without the create grant lands on
   // /claims/new (e.g. bookmark, address-bar), silently bounce to the
   // dashboard. RLS blocks the insert anyway; this just prevents a
-  // confusing dead-end form. Waits until profile + master flag are both
-  // loaded to avoid a flash-redirect on slow connections.
+  // confusing dead-end form.
   useEffect(() => {
     if (!isNew) return
     if (profile === null) return          // still loading
-    if (allowCreateGlobal === null) return
     const canCreate =
       profile.role === 'admin' ||
-      (allowCreateGlobal && profile.canCreateClaims === true)
+      profile.canCreateClaims === true
     if (!canCreate) router.replace('/')
-  }, [isNew, profile, allowCreateGlobal, router])
+  }, [isNew, profile, router])
   const role = profile?.role
   const isAdmin = role === 'admin'
   const userId = profile?.id

@@ -9,7 +9,6 @@ import { AppHeader } from "@/components/app-header"
 import { ClaimsTable } from "@/components/claims-table"
 import { fetchACVHistory, type ACVHistoryEntry } from '@/lib/supabase/history'
 import { useCurrentProfile, fetchAllProfilesBrowser, type Profile } from '@/lib/supabase/profiles'
-import { fetchSiteSetting } from '@/lib/supabase/site-settings'
 import { fetchUnreadCount } from '@/lib/supabase/messages'
 import { LicenseExpirationBanner } from '@/components/license-expiration-banner'
 
@@ -19,19 +18,16 @@ export default function DashboardPage() {
   const [entries, setEntries] = useState<ACVHistoryEntry[]>([])
   const [profiles, setProfiles] = useState<Profile[]>([])
   const [fetchError, setFetchError] = useState(false)
-  const [allowCreate, setAllowCreate] = useState(true)
   const [unreadMessages, setUnreadMessages] = useState(0)
 
   const load = async () => {
-    const [claims, profs, gate, unread] = await Promise.all([
+    const [claims, profs, unread] = await Promise.all([
       fetchACVHistory(),
       fetchAllProfilesBrowser(),
-      fetchSiteSetting<boolean>('allow_regular_create_claims'),
       fetchUnreadCount(),
     ])
     if (claims === null) setFetchError(true); else setEntries(claims)
     setProfiles(profs)
-    setAllowCreate(gate ?? true)
     setUnreadMessages(unread)
   }
   useEffect(() => {
@@ -42,9 +38,8 @@ export default function DashboardPage() {
   const isAdmin = profile?.role === 'admin'
   const openClaims = entries.filter(e => e.status !== 'closed' && !e.submittedAt)
   const submittedClaims = entries.filter(e => e.status !== 'closed' && !!e.submittedAt)
-  // Master + grant: admins always; non-admins need BOTH the site-wide master
-  // (allowCreate) and their per-user grant (profile.canCreateClaims).
-  const canCreate = isAdmin || (allowCreate && profile?.canCreateClaims === true)
+  // Admins always; non-admins need their per-user grant (profile.canCreateClaims).
+  const canCreate = isAdmin || profile?.canCreateClaims === true
 
   const startNewClaim = () => {
     localStorage.removeItem('modern-tools-comp-finder-draft')
