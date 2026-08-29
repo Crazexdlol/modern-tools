@@ -59,6 +59,7 @@ import { saveSummary, getSummary, genId, newEmptyForm, type SavedSummary } from 
 import { SummaryFields } from '@/app/summary-page/SummaryFields'
 import { SummaryPrintDoc } from '@/app/summary-page/SummaryPrintDoc'
 import { AppHeader } from '@/components/app-header'
+import { StateLicensingPanel } from '@/components/claim/state-licensing-panel'
 
 async function saveToHistory(
   claim: ClaimInfo,
@@ -3622,6 +3623,16 @@ function ClaimWorkspaceInner({ claimId }: { claimId: string }) {
                   canEdit={isAdmin || profile?.canEditClaimInfo === true}
                   onParsedNotes={(notes) => { pendingAutoNoteRef.current = notes }}
                 />
+                {!isNew && (
+                  <div className="border-t border-gray-100 pt-6">
+                    <StateLicensingPanel
+                      claim={claim}
+                      assignedTo={assignedTo}
+                      profile={profile ?? null}
+                      allProfiles={allProfiles}
+                    />
+                  </div>
+                )}
                 <div className="border-t border-gray-100 pt-8">
                   <h3 className="text-sm font-bold text-gray-900 mb-4">Opposing Appraiser</h3>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
