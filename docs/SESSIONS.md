@@ -40,10 +40,13 @@ Full spec + plan committed with the change: `docs/superpowers/specs/2026-08-29-e
 - `docs/superpowers/specs/2026-08-29-eagle-view-assignment-parser-design.md` — NEW: full design doc
 - `docs/superpowers/plans/2026-08-29-eagle-view-assignment-parser.md` — NEW: 12-task implementation plan
 
+**Follow-up tweak (same session):** Henry noted that Eagle View is Sedgwick's assignment platform — every PDF that comes through it is a Sedgwick sub-assignment. Updated `src/lib/acv/parsers/eagle-view.ts` to hardcode `clientName: 'Sedgwick'` instead of leaving it blank. `insuranceCompany` still comes from the PDF's `Client` field (e.g. `Sedgwick Claims Management Servic`, `USAA Sedgwick CAT`) — distinct from `clientName` which is the TPA. Second prod deploy this session for the tweak.
+
 **Deploy status:**
 
-- **LIVE now:** `dpl_Dtjzgmp4HEc4t35oEDXvU8WSwZGn` → `https://modern-tools-pq1bot0tz-henry-as-projects-88caed67.vercel.app`. Alias `modern-tools-rho.vercel.app` flipped, verified.
-- **Rollback (to yesterday's live build):** `npx vercel promote https://modern-tools-o7gdo79x3-henry-as-projects-88caed67.vercel.app --scope henry-as-projects-88caed67 --yes`
+- **LIVE now:** `dpl_9iLvXpFo8wzVXr8dDfte4m3vM4Pb` → `https://modern-tools-ef2sikn6f-henry-as-projects-88caed67.vercel.app`. Alias `modern-tools-rho.vercel.app` flipped, verified. (Includes the Sedgwick clientName tweak.)
+- **Rollback (to the first Eagle View deploy without the Sedgwick tweak):** `npx vercel promote https://modern-tools-pq1bot0tz-henry-as-projects-88caed67.vercel.app --scope henry-as-projects-88caed67 --yes`
+- **Rollback (to yesterday's build, pre-Eagle-View):** `npx vercel promote https://modern-tools-o7gdo79x3-henry-as-projects-88caed67.vercel.app --scope henry-as-projects-88caed67 --yes`
 
 **Migrations RUN this session:** none. Everything lives in existing `acv_history.claim` jsonb (new optional fields) and existing `messages` table (auto-message insert uses existing columns).
 
