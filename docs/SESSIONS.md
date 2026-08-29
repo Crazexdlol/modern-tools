@@ -18,6 +18,59 @@ Read `CLAUDE.md` first if you haven't. Then read the top entry here before touch
 
 ---
 
+## 2026-08-29 — Eagle View assignment parser + Claimant block + auto-message on Notes
+
+**Worked on:** Extended the "upload PDF to auto-fill Claim Info" flow to recognise Eagle View Enterprises assignment PDFs alongside the existing Modern Appraisers format. Refactored the two existing parser entry points (client `src/lib/parse-claim-pdf.ts` and orphaned server `/api/acv/parse-claim/route.ts`) to route through a new shared dispatch at `src/lib/acv/parsers/`. Added an optional **Claimant Contact** block to `ClaimInfo` (form + type — no schema migration, jsonb) so PDFs with a separate claimant party (Party=Claimant on the Eagle View form) populate distinct fields from the Insured. Notes captured from Eagle View PDFs auto-post to the claim's Messages tab as an amber-badged "Auto" message from `Modern Tools (Auto)` on first save, with empty recipients (informational only — no unread badge for anyone).
+
+Full spec + plan committed with the change: `docs/superpowers/specs/2026-08-29-eagle-view-assignment-parser-design.md`, `docs/superpowers/plans/2026-08-29-eagle-view-assignment-parser.md`.
+
+**Changed:**
+
+- `src/lib/acv/types.ts` — added 4 optional fields to `ClaimInfo`: `claimantName`, `claimantPhone`, `claimantEmail`, `claimantAddress` (all backward-compatible, non-breaking)
+- `src/lib/acv/parsers/types.ts` — NEW: shared `ParsedClaim` interface + `ClaimFormat = 'modern-appraisers' | 'eagle-view'` discriminator
+- `src/lib/acv/parsers/detect.ts` — NEW: `detectFormat(text)` — signature phrase check for `Eagle View Enterprises` OR both `Admin Data` + `Appraiser Details` bare-line section headers
+- `src/lib/acv/parsers/modern-appraisers.ts` — NEW: extracted `parseModernAppraisers()` verbatim from the pre-existing `parseClaimText` (behavior-preserving move, adds `format` + empty claimant/notes fields)
+- `src/lib/acv/parsers/eagle-view.ts` — NEW: `parseEagleView()`. Extracts admin fields (Claim #, Client → insuranceCompany, Party → clientType, Date of Loss), Vehicle fields, splits the 4 party blocks by fixed order (`Company Name` marker → Vehicle Location, Claimant, Insured, Owner), pulls names/addresses/phones/emails, spans the phone value across the newline that separates label-type from digits, and extracts Notes text (strips leaked party-block field lines that leak past the Notes header when Notes appears mid-document like in Sample 2). Explicit `MM/DD/YYYY` regex parse rather than `new Date()` (implementation-defined for non-ISO strings). Landed with two review-loop fixes: (1) Bug 1 initial fix (skipping Notes by offset) dropped Sample 2's notes entirely — reverted and relied purely on the strengthened line filter; (2) Bug 2 phone truncation caught before shipping.
+- `src/lib/acv/parsers/index.ts` — NEW: `parseClaim(text)` dispatch that detects format and routes to the correct parser
+- `src/lib/parse-claim-pdf.ts` — REFACTOR: 269 lines → 67 lines. Now only browser-side PDF text extraction (pdfjs-dist + tesseract OCR fallback) → `parseClaim(text)`. All parser constants and helpers deleted (they live in `parsers/modern-appraisers.ts` now). Exported surface preserved so `ClaimWorkspace` import is untouched.
+- `src/app/api/acv/parse-claim/route.ts` — REFACTOR: 167 lines → 39 lines. Symmetric with the client entry — server-side text extract (unpdf) → `parseClaim(text)`. Minor behavior change: server route now returns `'N/A'` for empty fields (matching client behavior via shared parser) instead of bare empty strings. Route is currently unused by any UI so no user impact.
+- `src/app/api/claims/[id]/auto-message/route.ts` — NEW: service-role POST endpoint. Body `{ body, senderName }` — auth-gated via `requireClaimAccess`, uses `SUPABASE_SERVICE_ROLE_KEY` to insert a `messages` row with `sender_id: null`, `recipient_ids: []`, `is_auto_request: true`. Message body max 4000 chars. Auto-message never appears in anyone's unread queue (queue filters `recipient_ids @> [uid]`, empty array never matches).
+- `src/components/claim/ClaimWorkspace.tsx` — 4 edits: (1) `ClaimInfoForm` gains an optional `onParsedNotes?: (notes: string) => void` prop; (2) `handlePdfUpload` merges the 4 claimant fields into the parsed onChange call and fires `onParsedNotes?.(data.notes || '')`; (3) new "Claimant Contact" form section (Name / Phone / Email / Address, 2-col grid matching existing Owner section) inserted between Owner and Insurance sections; (4) parent gets a `pendingAutoNoteRef` populated by the callback, and `createClaim` fire-and-forgets `POST /api/claims/[id]/auto-message` immediately after `router.replace` when the ref has content (cleared before fetch to prevent double-post on rapid clicks).
+- `src/components/claim/messages-tab.tsx` — guard the `→ recipientNames` render behind `recipientNames.length > 0` so the auto-message's empty recipient list doesn't render a bare arrow.
+- `docs/superpowers/specs/2026-08-29-eagle-view-assignment-parser-design.md` — NEW: full design doc
+- `docs/superpowers/plans/2026-08-29-eagle-view-assignment-parser.md` — NEW: 12-task implementation plan
+
+**Deploy status:**
+
+- **LIVE now:** `dpl_Dtjzgmp4HEc4t35oEDXvU8WSwZGn` → `https://modern-tools-pq1bot0tz-henry-as-projects-88caed67.vercel.app`. Alias `modern-tools-rho.vercel.app` flipped, verified.
+- **Rollback (to yesterday's live build):** `npx vercel promote https://modern-tools-o7gdo79x3-henry-as-projects-88caed67.vercel.app --scope henry-as-projects-88caed67 --yes`
+
+**Migrations RUN this session:** none. Everything lives in existing `acv_history.claim` jsonb (new optional fields) and existing `messages` table (auto-message insert uses existing columns).
+
+**Method notes:**
+
+- Used subagent-driven-development to execute the 10 code tasks — dispatched a fresh implementer subagent per task (haiku for mechanical tasks, sonnet for the two complex tasks — Eagle View parser and ClaimWorkspace wiring). Reviewer subagents did spec + quality passes after each; caught two critical bugs in the Eagle View parser (Notes bleed on Sample 2 + phone truncation) before ship. One follow-up fix loop when the initial Bug 1 fix over-corrected. All build gates passed clean each round (`tsc --noEmit` + `npm run build`).
+- Skipped local manual verification and went straight to prod deploy on Henry's explicit ask ("bro why aren't you just deploying").
+
+**In progress / broken / unknowns:**
+
+- **Not yet manually verified against real PDFs.** All logic traced through by reviewer subagents against the actual raw text extractions of both sample PDFs, but nothing has been actually uploaded through the live UI yet. Test on prod with the two samples on Henry's Desktop (`4A2608CJ01D0002 Assignments.pdf`, `003197519000000819001 Assignment.pdf`). If any field is wrong, iterate on `src/lib/acv/parsers/eagle-view.ts`.
+- **Auto-message flow depends on `SUPABASE_SERVICE_ROLE_KEY` env var in Vercel.** Existing routes (cron, admin) already use it so it should be set — if missing the route logs `Server misconfigured` and returns 500. Client swallows the error (fire-and-forget with `.catch`), so claim creation still succeeds — the message just doesn't post. Worth confirming on the first Eagle View upload in prod.
+- **Only 2 Eagle View sample PDFs seen.** Field-mapping is fitted to these two. Other insurers routed through the Eagle View platform may render fields slightly differently — first mismatch will need a small tweak.
+- Existing uncommitted files in `git status` (assignment sheet + settings redesign work from earlier sessions) untouched this session; still not committed.
+
+**Next (punch list — carryover from last session):**
+
+1. **Loss of Use report** — new report type. Design TBD.
+2. **Umpire claims** — support for the umpire branch of the appraisal-clause process. Design TBD.
+3. **Messages for summary page** — thread messaging attached to a summary.
+4. **RTA declaration** — new document/report type. Design TBD.
+5. **Estimate dispute rework** — rework the `/estimate-dispute` flow. Scope TBD.
+6. **Automation page cleanup** — apply the search-first per-appraiser pattern to Automation settings.
+7. **Email notifications** — SMTP via Bluehost, parked pending Henry providing SMTP creds.
+
+---
+
 ## 2026-08-27 (session 2) — Repo cleanup + dashboard perf + audit-bundle ship + per-user create-claims
 
 **Worked on:**
