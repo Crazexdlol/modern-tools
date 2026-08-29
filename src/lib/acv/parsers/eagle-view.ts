@@ -79,9 +79,7 @@ function parseBlock(block: string): {
 // Splits the text into the 4 party blocks in fixed order:
 // [0] Vehicle Location, [1] Claimant, [2] Insured, [3] Owner.
 // Uses "Company Name" as the block-start marker and finds all 4 occurrences.
-// BUG 1 + BUG 5 FIX: returns start offsets alongside blocks so the caller
-// can pass the 4th block's start offset to extractNotes; also breaks after
-// 4 starts (was incorrectly breaking at 5).
+// BUG 5 FIX: breaks after 4 starts (was incorrectly breaking at 5).
 function splitPartyBlocks(text: string): { blocks: [string, string, string, string]; starts: number[] } {
   const starts: number[] = []
   const re = /Company Name/g
@@ -125,16 +123,14 @@ function parseDate(raw: string): string {
   return `${m[3]}-${mm}-${dd}`
 }
 
-// Returns everything after the "Notes" header that appears at or after
-// `fromOffset`, stripped of any known-label lines that leaked past the
-// header due to PDF layout quirks. Trimmed; runs of 3+ blank lines
-// collapsed to 2.
-// BUG 1 FIX: accepts fromOffset so that a mid-document "Notes" header
-// (inside a party block in Sample 2) is ignored; also strengthens the
-// label-line filter to catch leaked "Label Value" lines.
-function extractNotes(text: string, fromOffset: number): string {
-  const searchArea = text.slice(fromOffset)
-  const m = searchArea.match(/(?:^|\n)\s*Notes\s*\n([\s\S]*)$/i)
+// Returns everything after the last "Notes" header in `text`, stripped of
+// any known-label lines that leaked past the header due to PDF layout quirks.
+// Trimmed; runs of 3+ blank lines collapsed to 2.
+// NOTE: uses the full text (not a sliced offset) so that Sample 2 — where
+// the only Notes header appears before the last party block — is still found.
+// The leakedFieldLine filter handles the bleed from that block.
+function extractNotes(text: string): string {
+  const m = text.match(/(?:^|\n)\s*Notes\s*\n([\s\S]*)$/i)
   if (!m) return ''
   const raw = m[1]
   const labelLine = new RegExp(
@@ -175,9 +171,7 @@ export function parseEagleView(text: string): ParsedClaim {
   const mileage = parseInt(mileageRaw.replace(/,/g, ''), 10) || 0
 
   // 4 party blocks in fixed order: [VehicleLocation, Claimant, Insured, Owner]
-  // BUG 1 FIX: destructure starts alongside blocks; pass 4th block's offset
-  // to extractNotes so the mid-document Notes in Sample 2 is skipped.
-  const { blocks, starts } = splitPartyBlocks(text)
+  const { blocks } = splitPartyBlocks(text)
   const [, claimantBlock, insuredBlock] = blocks
   const insured = parseBlock(insuredBlock)
   const claimant = parseBlock(claimantBlock)
@@ -187,8 +181,7 @@ export function parseEagleView(text: string): ParsedClaim {
 
   const zip = extractZip(insured.cityStateZip) || extractZip(claimant.cityStateZip)
 
-  const notesSearchFrom = starts[3] ?? starts[2] ?? starts[1] ?? starts[0] ?? 0
-  const notes = extractNotes(text, notesSearchFrom)
+  const notes = extractNotes(text)
 
   return {
     format: 'eagle-view',
