@@ -10,6 +10,7 @@ export interface AppraiserLicense {
   expirationDate: string   // 'YYYY-MM-DD'
   issuedDate: string | null  // 'YYYY-MM-DD'
   status: 'active' | 'expired' | 'pending'
+  licenseType: string | null   // Admin-only descriptor (e.g. "Independent Adjuster")
   notes: string | null
 }
 
@@ -21,6 +22,7 @@ interface AppraiserLicenseRow {
   expiration_date: string
   issued_date: string | null
   status: 'active' | 'expired' | 'pending'
+  license_type?: string | null
   notes: string | null
 }
 
@@ -33,6 +35,7 @@ function rowToLicense(row: AppraiserLicenseRow): AppraiserLicense {
     expirationDate: row.expiration_date,
     issuedDate: row.issued_date ?? null,
     status: row.status ?? 'active',
+    licenseType: row.license_type ?? null,
     notes: row.notes,
   }
 }

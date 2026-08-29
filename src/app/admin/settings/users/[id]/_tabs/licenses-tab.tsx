@@ -11,10 +11,11 @@ interface Draft {
   licenseNumber: string
   expirationDate: string
   status: 'active' | 'expired' | 'pending'
+  licenseType: string
   notes: string
 }
 
-const emptyDraft = (): Draft => ({ id: null, state: '', licenseNumber: '', expirationDate: '', status: 'active', notes: '' })
+const emptyDraft = (): Draft => ({ id: null, state: '', licenseNumber: '', expirationDate: '', status: 'active', licenseType: '', notes: '' })
 
 export function LicensesTab({ userId }: { userId: string }) {
   const [rows, setRows] = useState<AppraiserLicense[]>([])
@@ -40,6 +41,7 @@ export function LicensesTab({ userId }: { userId: string }) {
       licenseNumber: row.licenseNumber,
       expirationDate: row.expirationDate,
       status: row.status,
+      licenseType: row.licenseType ?? '',
       notes: row.notes ?? '',
     })
     setError(null)
@@ -65,6 +67,7 @@ export function LicensesTab({ userId }: { userId: string }) {
       licenseNumber: draft.licenseNumber,
       expirationDate: draft.expirationDate,
       status: draft.status,
+      licenseType: draft.licenseType.trim() || null,
       notes: draft.notes || null,
     }
     let res: Response
@@ -115,7 +118,8 @@ export function LicensesTab({ userId }: { userId: string }) {
           <thead className="bg-gray-50 border-b border-gray-200">
             <tr>
               <th className="text-left px-3 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider w-24">State</th>
-              <th className="text-left px-3 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">License #</th>
+              <th className="text-left px-3 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider w-44">License #</th>
+              <th className="text-left px-3 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">Type</th>
               <th className="text-left px-3 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider w-36">Expires</th>
               <th className="text-left px-3 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider w-44">Status</th>
               <th className="text-right px-3 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider w-48">Actions</th>
@@ -131,6 +135,7 @@ export function LicensesTab({ userId }: { userId: string }) {
                     <>
                       <td className="px-3 py-2"><StateSelect value={draft.state} onChange={v => setDraft({ ...draft, state: v })} /></td>
                       <td className="px-3 py-2"><input value={draft.licenseNumber} onChange={e => setDraft({ ...draft, licenseNumber: e.target.value })} className={inputCls + ' w-full'} /></td>
+                      <td className="px-3 py-2"><input value={draft.licenseType} onChange={e => setDraft({ ...draft, licenseType: e.target.value })} placeholder="e.g. Independent Adjuster" className={inputCls + ' w-full'} /></td>
                       <td className="px-3 py-2"><input type="date" value={draft.expirationDate} onChange={e => setDraft({ ...draft, expirationDate: e.target.value })} className={inputCls + ' w-full'} /></td>
                       <td className="px-3 py-2">
                         <select value={draft.status} onChange={e => setDraft({ ...draft, status: e.target.value as Draft['status'] })} className={inputCls + ' w-full'}>
@@ -154,6 +159,7 @@ export function LicensesTab({ userId }: { userId: string }) {
                     <>
                       <td className="px-3 py-2 font-mono text-xs">{row.state}</td>
                       <td className="px-3 py-2 font-mono text-xs">{row.licenseNumber}</td>
+                      <td className="px-3 py-2 text-xs text-gray-700">{row.licenseType || <span className="text-gray-300">—</span>}</td>
                       <td className="px-3 py-2 text-xs text-gray-700">{row.expirationDate}</td>
                       <td className="px-3 py-2">
                         <div className="flex items-center gap-1.5 flex-wrap">
@@ -176,6 +182,7 @@ export function LicensesTab({ userId }: { userId: string }) {
               <tr className="bg-blue-50/40 border-b border-gray-100">
                 <td className="px-3 py-2"><StateSelect value={draft.state} onChange={v => setDraft({ ...draft, state: v })} /></td>
                 <td className="px-3 py-2"><input value={draft.licenseNumber} onChange={e => setDraft({ ...draft, licenseNumber: e.target.value })} placeholder="License #" className={inputCls + ' w-full'} /></td>
+                <td className="px-3 py-2"><input value={draft.licenseType} onChange={e => setDraft({ ...draft, licenseType: e.target.value })} placeholder="e.g. Independent Adjuster" className={inputCls + ' w-full'} /></td>
                 <td className="px-3 py-2"><input type="date" value={draft.expirationDate} onChange={e => setDraft({ ...draft, expirationDate: e.target.value })} className={inputCls + ' w-full'} /></td>
                 <td className="px-3 py-2">
                   <select value={draft.status} onChange={e => setDraft({ ...draft, status: e.target.value as Draft['status'] })} className={inputCls + ' w-full'}>
@@ -197,7 +204,7 @@ export function LicensesTab({ userId }: { userId: string }) {
               </tr>
             )}
             {rows.length === 0 && !draft && (
-              <tr><td colSpan={5} className="px-3 py-6 text-center text-sm text-gray-400 italic">No licenses on file.</td></tr>
+              <tr><td colSpan={6} className="px-3 py-6 text-center text-sm text-gray-400 italic">No licenses on file.</td></tr>
             )}
           </tbody>
         </table>

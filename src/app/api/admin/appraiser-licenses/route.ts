@@ -15,6 +15,7 @@ export async function POST(request: NextRequest) {
     expirationDate?: string
     issuedDate?: string | null
     status?: 'active' | 'expired' | 'pending'
+    licenseType?: string | null
     notes?: string | null
   } | null
   if (!body?.userId || !body?.state || !body?.licenseNumber || !body?.expirationDate) {
@@ -29,6 +30,7 @@ export async function POST(request: NextRequest) {
     expiration_date: body.expirationDate,
     issued_date: body.issuedDate ?? null,
     status: body.status ?? 'active',
+    license_type: body.licenseType ?? null,
     notes: body.notes ?? null,
   }).select().single()
   if (error) return NextResponse.json({ error: error.message }, { status: 400 })
