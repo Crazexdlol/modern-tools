@@ -11,6 +11,8 @@ import { fetchACVHistory, type ACVHistoryEntry } from '@/lib/supabase/history'
 import { useCurrentProfile, fetchAllProfilesBrowser, type Profile } from '@/lib/supabase/profiles'
 import { fetchUnreadCount } from '@/lib/supabase/messages'
 import { LicenseExpirationBanner } from '@/components/license-expiration-banner'
+import { fetchLicensedStates, type LicensedState } from '@/lib/supabase/licensed-states'
+import { fetchAllLicenses, fetchUserLicenses, type AppraiserLicense } from '@/lib/supabase/appraiser-licenses'
 
 export default function DashboardPage() {
   const router = useRouter()
@@ -20,10 +22,10 @@ export default function DashboardPage() {
   const [profiles, setProfiles] = useState<Profile[]>([])
   const [fetchError, setFetchError] = useState(false)
   const [unreadMessages, setUnreadMessages] = useState(0)
+  const [licensedStates, setLicensedStates] = useState<LicensedState[]>([])
+  const [licensesByUser, setLicensesByUser] = useState<Map<string, AppraiserLicense[]>>(new Map())
 
-  // Three independent fetches. Each has its own timing log so we can spot the
-  // slow one. Nothing blocks anything else — the claims table can render as
-  // soon as its own fetch resolves, without waiting for messages or profiles.
+  // Independent fetches — each logs its own timing. Nothing blocks the others.
   const load = () => {
     const time = <T,>(label: string, fn: () => Promise<T>) => {
       const start = performance.now()
@@ -39,11 +41,32 @@ export default function DashboardPage() {
     })
     time('fetchAllProfilesBrowser', fetchAllProfilesBrowser).then(setProfiles)
     time('fetchUnreadCount', fetchUnreadCount).then(setUnreadMessages)
+    time('fetchLicensedStates', fetchLicensedStates).then(setLicensedStates)
   }
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- mount-load pattern; setState fires only after the async fetch resolves
     load()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // Fetch licenses once the profile is known (role determines scope).
+  // Admins fetch all; non-admins fetch only their own.
+  useEffect(() => {
+    if (!profile) return
+    const start = performance.now()
+    const isAdmin = profile.role === 'admin'
+    const fetchFn = isAdmin ? fetchAllLicenses : () => fetchUserLicenses(profile.id)
+    fetchFn().then(licenses => {
+      console.log(`[dashboard perf] fetchLicenses: ${Math.round(performance.now() - start)}ms`)
+      const byUser = new Map<string, AppraiserLicense[]>()
+      for (const lic of licenses) {
+        const arr = byUser.get(lic.userId) ?? []
+        arr.push(lic)
+        byUser.set(lic.userId, arr)
+      }
+      setLicensesByUser(byUser)
+    })
+  }, [profile?.id, profile?.role])
 
   const isAdmin = profile?.role === 'admin'
   const openClaims = entries.filter(e => e.status !== 'closed' && !e.submittedAt)
@@ -136,6 +159,8 @@ export default function DashboardPage() {
             adminView={isAdmin}
             profiles={profiles}
             onAssignmentChanged={load}
+            licensedStates={licensedStates}
+            licensesByUser={licensesByUser}
           />
         )}
       </main>

@@ -2,18 +2,69 @@
 
 import { useState, useMemo, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { Search, Trash2, X } from 'lucide-react'
+import { Search, Trash2, X, Check, AlertTriangle } from 'lucide-react'
 import { deleteACVHistory, type ACVHistoryEntry } from '@/lib/supabase/history'
 import type { Profile } from '@/lib/supabase/profiles'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { Button } from '@/components/ui/button'
 import { ClaimMessagePreview } from '@/components/claim-message-preview'
+import type { LicensedState } from '@/lib/supabase/licensed-states'
+import type { AppraiserLicense } from '@/lib/supabase/appraiser-licenses'
+import { isLicensedState } from '@/lib/supabase/licensed-states'
+import { isLicenseValid } from '@/lib/supabase/appraiser-licenses'
+import { extractLossState } from '@/lib/claim-state'
 
 function fmtDate(iso: string): string {
   return new Date(iso).toLocaleDateString("en-US", {
     month: "2-digit", day: "2-digit", year: "numeric",
   })
 }
+
+function StateCell({
+  entry,
+  getLicenseBadge,
+}: {
+  entry: ACVHistoryEntry
+  getLicenseBadge: (entry: ACVHistoryEntry) => 'licensed' | 'not-licensed' | 'unassigned' | null
+}) {
+  const state = extractLossState(entry.claim?.ownerAddress)
+  const badge = getLicenseBadge(entry)
+
+  return (
+    <div className="inline-flex items-center gap-1.5">
+      <span className="font-mono text-xs text-gray-600">{state ?? '—'}</span>
+      {badge === 'licensed' && (
+        <span
+          title="Licensed — appraiser holds a valid license for this state"
+          className="inline-flex items-center gap-0.5 text-xs font-semibold px-1.5 py-0.5 rounded-full border text-emerald-700 bg-emerald-50 border-emerald-200"
+        >
+          <Check className="w-3 h-3" />
+          Licensed
+        </span>
+      )}
+      {badge === 'not-licensed' && (
+        <span
+          title="Not licensed — appraiser does not have a valid license for this state"
+          className="inline-flex items-center gap-0.5 text-xs font-semibold px-1.5 py-0.5 rounded-full border text-red-700 bg-red-50 border-red-200"
+        >
+          <AlertTriangle className="w-3 h-3" />
+          Not Licensed
+        </span>
+      )}
+      {badge === 'unassigned' && (
+        <span
+          title="Unassigned — this state requires a license; assign a licensed appraiser"
+          className="inline-flex items-center gap-0.5 text-xs font-semibold px-1.5 py-0.5 rounded-full border text-amber-700 bg-amber-50 border-amber-200"
+        >
+          <AlertTriangle className="w-3 h-3" />
+          Unassigned
+        </span>
+      )}
+    </div>
+  )
+}
+
+type LicenseFilter = 'all' | 'licensed-state-only' | 'not-licensed'
 
 export function ClaimsTable({
   entries,
@@ -25,6 +76,8 @@ export function ClaimsTable({
   showSubmittedColumn = false,
   onAssignmentChanged,
   perRowReassign = false,
+  licensedStates = [],
+  licensesByUser = new Map(),
 }: {
   entries: ACVHistoryEntry[]
   onDeleted: (id: string) => void
@@ -35,9 +88,12 @@ export function ClaimsTable({
   showSubmittedColumn?: boolean
   onAssignmentChanged?: () => void
   perRowReassign?: boolean
+  licensedStates?: LicensedState[]
+  licensesByUser?: Map<string, AppraiserLicense[]>
 }) {
   const router = useRouter()
   const [searchQuery, setSearchQuery] = useState('')
+  const [licenseFilter, setLicenseFilter] = useState<LicenseFilter>('all')
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [bulkAssignee, setBulkAssignee] = useState<string>('')
   const [bulkBusy, setBulkBusy] = useState(false)
@@ -59,20 +115,38 @@ export function ClaimsTable({
     return p?.name || p?.email || 'Unknown'
   }, [profiles])
 
+  // Compute license badge status for each entry. Only meaningful when
+  // licensedStates is non-empty.
+  const getLicenseBadge = useCallback((entry: ACVHistoryEntry): 'licensed' | 'not-licensed' | 'unassigned' | null => {
+    const state = extractLossState(entry.claim?.ownerAddress)
+    if (!state || !isLicensedState(state, licensedStates)) return null
+    if (!entry.assignedTo) return 'unassigned'
+    const licenses = licensesByUser.get(entry.assignedTo) ?? []
+    const validForState = licenses.some(l => l.state === state && isLicenseValid(l))
+    return validForState ? 'licensed' : 'not-licensed'
+  }, [licensedStates, licensesByUser])
+
   const filtered = useMemo(() => {
-    if (!searchQuery.trim()) return entries
     const q = searchQuery.toLowerCase().trim()
-    return entries.filter(e =>
-      e.maNumber?.toLowerCase().includes(q) ||
-      e.vin?.toLowerCase().includes(q) ||
-      (e.claim?.claimNumber ?? '').toLowerCase().includes(q) ||
-      e.vehicle?.toLowerCase().includes(q) ||
-      (e.claim?.insuredName ?? '').toLowerCase().includes(q) ||
-      (e.claim?.insuranceCompany ?? '').toLowerCase().includes(q) ||
-      (e.claim?.clientName ?? '').toLowerCase().includes(q) ||
-      nameFor(e.assignedTo).toLowerCase().includes(q)
-    )
-  }, [entries, searchQuery, nameFor])
+    return entries.filter(e => {
+      if (q && !(
+        e.maNumber?.toLowerCase().includes(q) ||
+        e.vin?.toLowerCase().includes(q) ||
+        (e.claim?.claimNumber ?? '').toLowerCase().includes(q) ||
+        e.vehicle?.toLowerCase().includes(q) ||
+        (e.claim?.insuredName ?? '').toLowerCase().includes(q) ||
+        (e.claim?.insuranceCompany ?? '').toLowerCase().includes(q) ||
+        (e.claim?.clientName ?? '').toLowerCase().includes(q) ||
+        nameFor(e.assignedTo).toLowerCase().includes(q)
+      )) return false
+      if (licenseFilter !== 'all') {
+        const badge = getLicenseBadge(e)
+        if (licenseFilter === 'licensed-state-only' && badge === null) return false
+        if (licenseFilter === 'not-licensed' && badge !== 'not-licensed') return false
+      }
+      return true
+    })
+  }, [entries, searchQuery, nameFor, licenseFilter, getLicenseBadge])
 
   const filteredIds = useMemo(() => filtered.map(e => e.id), [filtered])
   const allFilteredSelected =
@@ -209,7 +283,7 @@ export function ClaimsTable({
 
   const colCount =
     (adminView ? 1 : 0) + // checkbox
-    7 + // MA, Insured, Client, Vehicle, VIN, Date, Ins. Co.
+    8 + // MA, Insured, Client, Vehicle, VIN, State, Date, Ins. Co.
     (adminView ? 1 : 0) + // Assigned To (read-only text now)
     (showStatus ? 1 : 0) +
     (showSubmittedColumn ? 1 : 0) +
@@ -271,7 +345,19 @@ export function ClaimsTable({
         </div>
       )}
 
-      <div className="flex items-center justify-end mb-4">
+      <div className="flex items-center justify-end gap-3 mb-4">
+        {licensedStates.length > 0 && (
+          <select
+            value={licenseFilter}
+            onChange={e => setLicenseFilter(e.target.value as LicenseFilter)}
+            className="bg-white border border-gray-200 rounded-lg px-3 py-2.5 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-sm"
+            title="Filter by licensing status"
+          >
+            <option value="all">All states</option>
+            <option value="licensed-state-only">Licensed state only</option>
+            <option value="not-licensed">Not licensed</option>
+          </select>
+        )}
         <div className="relative w-72">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
           <input
@@ -307,6 +393,7 @@ export function ClaimsTable({
               <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Client</th>
               <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Vehicle</th>
               <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">VIN</th>
+              <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">State</th>
               <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Date</th>
               <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Ins. Co.</th>
               {adminView && (
@@ -372,6 +459,9 @@ export function ClaimsTable({
                     <td className="px-4 py-3 text-gray-700">{entry.claim?.clientName || '—'}</td>
                     <td className="px-4 py-3 text-gray-700">{entry.vehicle || '—'}</td>
                     <td className="px-4 py-3 text-gray-500 font-mono text-xs">{entry.vin || '—'}</td>
+                    <td className="px-4 py-3">
+                      <StateCell entry={entry} getLicenseBadge={getLicenseBadge} />
+                    </td>
                     <td className="px-4 py-3 text-gray-500">{fmtDate(entry.date)}</td>
                     <td className="px-4 py-3 text-gray-700">{entry.claim?.insuranceCompany || '—'}</td>
                     {adminView && (
