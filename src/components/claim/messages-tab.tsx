@@ -65,6 +65,7 @@ export function MessagesTab({ claimId }: { claimId: string }) {
 
   const threadRef = useRef<HTMLDivElement | null>(null)
   const pickerRef = useRef<HTMLDivElement | null>(null)
+  const bodyRef = useRef<HTMLTextAreaElement | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -103,6 +104,17 @@ export function MessagesTab({ claimId }: { claimId: string }) {
     if (!el) return
     el.scrollTop = el.scrollHeight
   }, [messages.length])
+
+  // Auto-size the composer textarea so the whole draft is visible without
+  // needing to scroll inside a tiny box. Caps at ~50vh to keep the composer
+  // from taking over the whole panel — beyond that it scrolls internally.
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- direct DOM style mutation, no setState involved
+  useEffect(() => {
+    const el = bodyRef.current
+    if (!el) return
+    el.style.height = 'auto'
+    el.style.height = `${el.scrollHeight}px`
+  }, [body])
 
   // Close picker on click-outside.
   useEffect(() => {
@@ -189,12 +201,29 @@ export function MessagesTab({ claimId }: { claimId: string }) {
           </div>
         )}
         {messages.map(m => (
-          <div key={m.id} className="border border-gray-200 rounded-lg bg-white px-3 py-2">
-            <div className="text-xs text-gray-500 mb-1">
+          <div
+            key={m.id}
+            className={cn(
+              "border rounded-lg px-3 py-2",
+              m.isAutoRequest
+                ? "border-amber-200 bg-amber-50"
+                : "border-gray-200 bg-white",
+            )}
+          >
+            <div className="text-xs text-gray-500 mb-1 flex items-center flex-wrap gap-1">
               <span className="font-semibold text-gray-800">{m.senderName}</span>
-              <span className="mx-1">→</span>
-              <span>{m.recipientNames.join(", ")}</span>
-              <span className="mx-1">·</span>
+              {m.isAutoRequest && (
+                <span className="ml-1 inline-block text-[10px] font-semibold uppercase tracking-wide text-amber-800 bg-amber-100 border border-amber-200 rounded px-1.5 py-0.5">
+                  Auto
+                </span>
+              )}
+              {m.recipientNames.length > 0 && (
+                <>
+                  <span>→</span>
+                  <span>{m.recipientNames.join(", ")}</span>
+                </>
+              )}
+              <span>·</span>
               <span>{fmtStamp(m.createdAt)}</span>
             </div>
             <div className="text-sm text-gray-800">
@@ -234,7 +263,7 @@ export function MessagesTab({ claimId }: { claimId: string }) {
               className="w-full bg-white border border-gray-200 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
             {pickerOpen && pickerOptions.length > 0 && (
-              <div className="absolute left-0 top-full mt-1 w-full max-h-56 overflow-y-auto bg-white border border-gray-200 rounded-lg shadow-lg z-30">
+              <div className="absolute left-0 top-full mt-1 w-full max-h-96 overflow-y-auto bg-white border border-gray-200 rounded-lg shadow-lg z-30">
                 {pickerOptions.map(p => (
                   <button
                     key={p.id}
@@ -259,12 +288,13 @@ export function MessagesTab({ claimId }: { claimId: string }) {
         {/* Body + send */}
         <div className="flex items-end gap-2">
           <textarea
+            ref={bodyRef}
             value={body}
             onChange={(e) => setBody(e.target.value)}
             onKeyDown={onKeyDown}
             placeholder="Write a message… (Ctrl+Enter to send)"
             rows={3}
-            className="flex-1 bg-white border border-gray-200 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-y max-h-40 min-h-[70px]"
+            className="flex-1 bg-white border border-gray-200 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none min-h-[80px] max-h-[50vh] overflow-y-auto"
           />
           <Button
             onClick={doSend}
