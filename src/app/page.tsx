@@ -11,6 +11,7 @@ import { fetchACVHistory, type ACVHistoryEntry } from '@/lib/supabase/history'
 import { useCurrentProfile, fetchAllProfilesBrowser, type Profile } from '@/lib/supabase/profiles'
 import { fetchSiteSetting } from '@/lib/supabase/site-settings'
 import { fetchUnreadCount } from '@/lib/supabase/messages'
+import { LicenseExpirationBanner } from '@/components/license-expiration-banner'
 
 export default function DashboardPage() {
   const router = useRouter()
@@ -59,6 +60,7 @@ export default function DashboardPage() {
       <MigrateData />
       <AppHeader />
       <main className="max-w-7xl mx-auto px-6 py-8 space-y-8">
+        <LicenseExpirationBanner />
         <div className="flex items-center justify-between">
           <div>
             <h2 className="text-2xl font-bold text-gray-900">Dashboard</h2>
