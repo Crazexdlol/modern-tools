@@ -46,6 +46,7 @@ import { EstimateTab } from '@/components/claim/estimate-tab'
 import { DocumentsTab } from '@/components/claim/documents-tab'
 import { MessagesTab } from '@/components/claim/messages-tab'
 import { GuidelinesTab } from '@/components/claim/guidelines-tab'
+import { ReportsHubTab } from '@/components/claim/reports-hub-tab'
 import { fetchGuidelineNamesBrowser } from '@/lib/supabase/insurance-guidelines'
 import { useDuplicateCheck, type DuplicateResult } from '@/lib/supabase/claim-duplicates'
 import { AssignmentSheet, triggerAssignmentSheetPrint } from '@/components/claim/assignment-sheet'
@@ -2520,6 +2521,7 @@ const CLAIM_TABS = [
   { id: 'documents', label: 'Documents', step: 10 },
   { id: 'messages', label: 'Messages', step: 13 },
   { id: 'guidelines', label: 'Guidelines', step: 14 },
+  { id: 'reports-hub', label: 'Reports', step: 15 },
 ] as const
 
 const TOOL_TABS = [
@@ -2543,6 +2545,7 @@ function tabForStep(step: number): string {
   if (step === 12) return 'reports'
   if (step === 13) return 'messages'
   if (step === 14) return 'guidelines'
+  if (step === 15) return 'reports-hub'
   return 'acv' // 2-4 stepper + 6 (Loss Search lives inside the ACV tab)
 }
 
@@ -4317,6 +4320,12 @@ function ClaimWorkspaceInner({ claimId }: { claimId: string }) {
             company. Always viewable (any state), fully read-only in the tab. */}
         {step === 14 && (
           <GuidelinesTab insuranceCompany={claim.insuranceCompany} />
+        )}
+
+        {/* Step 15: Reports Hub — entry point for all fillable/printable reports
+            attached to this claim (Invoice, Contract, Certificate of Appraisal). */}
+        {step === 15 && (
+          <ReportsHubTab onOpenInvoice={() => setStep(12)} />
         )}
       </main>
 
