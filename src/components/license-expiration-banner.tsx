@@ -1,9 +1,9 @@
 "use client"
 
 import Link from 'next/link'
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { AlertCircle, X } from 'lucide-react'
-import { fetchCurrentProfileBrowser, fetchAllProfilesBrowser } from '@/lib/supabase/profiles'
+import type { Profile } from '@/lib/supabase/profiles'
 import { fetchAllLicenses, fetchUserLicenses, getLicenseAlertLevel, isBannerLevel, type AppraiserLicense } from '@/lib/supabase/appraiser-licenses'
 
 /**
@@ -11,32 +11,33 @@ import { fetchAllLicenses, fetchUserLicenses, getLicenseAlertLevel, isBannerLeve
  * or expired, OR (for admins) when ANY user does. Dismissed via session key.
  * Cadence semantics: the banner is present whenever a license is in an
  * alerting window. No cron; just live evaluation.
+ *
+ * Takes profile + allProfiles as props so it doesn't re-run auth.getUser()
+ * or refetch the full profiles list the dashboard already loaded.
  */
-export function LicenseExpirationBanner() {
+export function LicenseExpirationBanner({ profile, allProfiles }: { profile: Profile | null; allProfiles: Profile[] }) {
   const [licenses, setLicenses] = useState<AppraiserLicense[] | null>(null)
-  const [nameById, setNameById] = useState<Map<string, string>>(new Map())
   const [dismissed, setDismissed] = useState(false)
 
   useEffect(() => {
     const key = 'license-banner-dismissed'
     if (sessionStorage.getItem(key) === '1') setDismissed(true)
-
-    fetchCurrentProfileBrowser().then(async profile => {
-      if (!profile) return
-      if (profile.role === 'admin') {
-        const [all, allUsers] = await Promise.all([
-          fetchAllLicenses(),
-          fetchAllProfilesBrowser(),
-        ])
-        const m = new Map<string, string>()
-        for (const p of allUsers) m.set(p.id, p.name || p.email)
-        setNameById(m)
-        setLicenses(all)
-      } else {
-        setLicenses(await fetchUserLicenses(profile.id))
-      }
-    })
   }, [])
+
+  useEffect(() => {
+    if (!profile) return
+    if (profile.role === 'admin') {
+      fetchAllLicenses().then(setLicenses)
+    } else {
+      fetchUserLicenses(profile.id).then(setLicenses)
+    }
+  }, [profile])
+
+  const nameById = useMemo(() => {
+    const m = new Map<string, string>()
+    for (const p of allProfiles) m.set(p.id, p.name || p.email)
+    return m
+  }, [allProfiles])
 
   if (dismissed || !licenses) return null
 
