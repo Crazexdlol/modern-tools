@@ -29,13 +29,34 @@ function esc(s: string): string {
 
 // Grabs the value that immediately follows `label`, stopping at any of
 // `stopLabels`, a newline, or end-of-string. Value is trimmed.
+// BUG 4 FIX: removed trailing \b from the stop alternation — the bare
+// substring match is safe for Eagle View labels and \b was semantically
+// incorrect for labels ending in non-word chars (e.g. "Plate#", "Claim #").
 function grabInline(text: string, label: string, stopLabels: string[]): string {
   const stop = stopLabels.length
-    ? `(?=(?:${stopLabels.map(esc).join('|')})\\b|\\n|$)`
+    ? `(?=(?:${stopLabels.map(esc).join('|')})|\\n|$)`
     : `(?=\\n|$)`
   const re = new RegExp(`${esc(label)}\\s+([\\s\\S]*?)${stop}`, 'i')
   const m = text.match(re)
   return m ? m[1].trim() : ''
+}
+
+// Eagle View blocks render phones as:
+//   Phone Numbers Mobile
+//   (702)461-6633
+// or
+//   Phone Numbers Home
+//   (765)413-6602
+// Capture the type word + the number on the next line. Returns '' if no
+// number line follows.
+// BUG 2 FIX: replaces the grabInline call for phone which only returned
+// the type word (e.g. "Mobile") because grabInline stops at \n.
+function grabPhone(block: string): string {
+  const m = block.match(/Phone Numbers\s+(Mobile|Home|Work|1st Contact|\S+)\s*\n\s*([\(\d][\d\s\-\(\)\.ext]*)/i)
+  if (!m) return ''
+  const type = m[1].trim()
+  const number = m[2].trim()
+  return type && number ? `${type} ${number}` : number || type
 }
 
 // Parses one party block (Vehicle Location / Claimant / Insured / Owner).
@@ -51,27 +72,30 @@ function parseBlock(block: string): {
     address: grabInline(block, 'Address', ['City, State Zip', ...BLOCK_LABELS.filter(l => l !== 'Address' && l !== 'City, State Zip')]),
     cityStateZip: grabInline(block, 'City, State Zip', BLOCK_LABELS.filter(l => l !== 'City, State Zip')),
     email: grabInline(block, 'Email', ['Phone Numbers', ...BLOCK_LABELS.filter(l => l !== 'Email' && l !== 'Phone Numbers')]),
-    phone: grabInline(block, 'Phone Numbers', BLOCK_LABELS.filter(l => l !== 'Phone Numbers')),
+    phone: grabPhone(block),
   }
 }
 
 // Splits the text into the 4 party blocks in fixed order:
 // [0] Vehicle Location, [1] Claimant, [2] Insured, [3] Owner.
 // Uses "Company Name" as the block-start marker and finds all 4 occurrences.
-function splitPartyBlocks(text: string): [string, string, string, string] {
+// BUG 1 + BUG 5 FIX: returns start offsets alongside blocks so the caller
+// can pass the 4th block's start offset to extractNotes; also breaks after
+// 4 starts (was incorrectly breaking at 5).
+function splitPartyBlocks(text: string): { blocks: [string, string, string, string]; starts: number[] } {
   const starts: number[] = []
   const re = /Company Name/g
   let m: RegExpExecArray | null
   while ((m = re.exec(text)) !== null) {
     starts.push(m.index)
-    if (starts.length === 5) break
+    if (starts.length === 4) break // only need 4; was erroneously 5
   }
   const empty = ''
   const b0 = starts[0] !== undefined ? text.slice(starts[0], starts[1] ?? text.length) : empty
   const b1 = starts[1] !== undefined ? text.slice(starts[1], starts[2] ?? text.length) : empty
   const b2 = starts[2] !== undefined ? text.slice(starts[2], starts[3] ?? text.length) : empty
-  const b3 = starts[3] !== undefined ? text.slice(starts[3], starts[4] ?? text.length) : empty
-  return [b0, b1, b2, b3]
+  const b3 = starts[3] !== undefined ? text.slice(starts[3], text.length) : empty
+  return { blocks: [b0, b1, b2, b3], starts }
 }
 
 function joinName(first: string, last: string): string {
@@ -88,27 +112,44 @@ function extractZip(csz: string): string {
   return m ? m[1] : ''
 }
 
-// Parses "MM/DD/YYYY [HH:MM AM]" -> "YYYY-MM-DD". Empty if unparseable.
+// Parses "MM/DD/YYYY [HH:MM AM/PM]" -> "YYYY-MM-DD". Empty if unparseable.
+// BUG 3 FIX: uses explicit regex parse rather than new Date() which is
+// implementation-defined for non-ISO strings.
 function parseDate(raw: string): string {
   if (!raw) return ''
   const cleaned = raw.replace(/\s+\d{1,2}:\d{2}(:\d{2})?\s*(AM|PM)?.*$/i, '').trim()
-  const d = new Date(cleaned)
-  return isNaN(d.getTime()) ? '' : d.toISOString().split('T')[0]
+  const m = cleaned.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/)
+  if (!m) return ''
+  const mm = m[1].padStart(2, '0')
+  const dd = m[2].padStart(2, '0')
+  return `${m[3]}-${mm}-${dd}`
 }
 
-// Returns everything after the "Notes" header, stripped of any known-label
-// lines that leaked past the header due to PDF layout quirks. Trimmed;
-// runs of 3+ blank lines collapsed to 2.
-function extractNotes(text: string): string {
-  const m = text.match(/(?:^|\n)\s*Notes\s*\n([\s\S]*)$/i)
+// Returns everything after the "Notes" header that appears at or after
+// `fromOffset`, stripped of any known-label lines that leaked past the
+// header due to PDF layout quirks. Trimmed; runs of 3+ blank lines
+// collapsed to 2.
+// BUG 1 FIX: accepts fromOffset so that a mid-document "Notes" header
+// (inside a party block in Sample 2) is ignored; also strengthens the
+// label-line filter to catch leaked "Label Value" lines.
+function extractNotes(text: string, fromOffset: number): string {
+  const searchArea = text.slice(fromOffset)
+  const m = searchArea.match(/(?:^|\n)\s*Notes\s*\n([\s\S]*)$/i)
   if (!m) return ''
   const raw = m[1]
   const labelLine = new RegExp(
     `^\\s*(?:${BLOCK_LABELS.map(esc).join('|')})(?:\\s+(?:${BLOCK_LABELS.map(esc).join('|')}))*\\s*$`
   )
+  // Catches lines like "First Name LT Peter Last Name Paris" or
+  // "Address 9735 N ATOSSA RD City, State Zip Kingman, AZ 86401" that
+  // leaked past the Notes header because it appeared before the last
+  // Company Name block in the PDF.
+  const leakedFieldLine = new RegExp(
+    `^\\s*(?:${BLOCK_LABELS.map(esc).join('|')})\\s+\\S`
+  )
   const kept = raw
     .split('\n')
-    .filter((line) => !labelLine.test(line) && !SECTION_HEADERS.includes(line.trim()))
+    .filter((line) => !labelLine.test(line) && !SECTION_HEADERS.includes(line.trim()) && !leakedFieldLine.test(line))
     .join('\n')
     .replace(/\n{3,}/g, '\n\n')
     .trim()
@@ -134,7 +175,10 @@ export function parseEagleView(text: string): ParsedClaim {
   const mileage = parseInt(mileageRaw.replace(/,/g, ''), 10) || 0
 
   // 4 party blocks in fixed order: [VehicleLocation, Claimant, Insured, Owner]
-  const [, claimantBlock, insuredBlock] = splitPartyBlocks(text)
+  // BUG 1 FIX: destructure starts alongside blocks; pass 4th block's offset
+  // to extractNotes so the mid-document Notes in Sample 2 is skipped.
+  const { blocks, starts } = splitPartyBlocks(text)
+  const [, claimantBlock, insuredBlock] = blocks
   const insured = parseBlock(insuredBlock)
   const claimant = parseBlock(claimantBlock)
 
@@ -143,7 +187,8 @@ export function parseEagleView(text: string): ParsedClaim {
 
   const zip = extractZip(insured.cityStateZip) || extractZip(claimant.cityStateZip)
 
-  const notes = extractNotes(text)
+  const notesSearchFrom = starts[3] ?? starts[2] ?? starts[1] ?? starts[0] ?? 0
+  const notes = extractNotes(text, notesSearchFrom)
 
   return {
     format: 'eagle-view',
