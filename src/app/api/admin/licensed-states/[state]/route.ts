@@ -14,15 +14,17 @@ export async function PATCH(
   const { state } = await params
   const body = await request.json().catch(() => null) as {
     required?: boolean
+    forbidden?: boolean
     notes?: string | null
   } | null
-  if (!body || (body.required === undefined && body.notes === undefined)) {
+  if (!body || (body.required === undefined && body.forbidden === undefined && body.notes === undefined)) {
     return NextResponse.json({ error: 'no fields to update' }, { status: 400 })
   }
 
   const service = createServiceClient()
   const patch: Record<string, unknown> = { updated_at: new Date().toISOString() }
   if (body.required !== undefined) patch.required = body.required
+  if (body.forbidden !== undefined) patch.forbidden = body.forbidden
   if (body.notes !== undefined) patch.notes = body.notes
 
   const { error } = await service.from('licensed_states').update(patch).eq('state', state.toUpperCase())

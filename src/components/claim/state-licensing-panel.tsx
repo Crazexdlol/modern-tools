@@ -1,9 +1,9 @@
 "use client"
 
 import { useEffect, useState } from 'react'
-import { Check, AlertTriangle, ShieldCheck } from 'lucide-react'
+import { Check, AlertTriangle, ShieldCheck, Ban } from 'lucide-react'
 import { extractLossState } from '@/lib/claim-state'
-import { fetchLicensedStates, isLicensedState, type LicensedState } from '@/lib/supabase/licensed-states'
+import { fetchLicensedStates, isLicensedState, isForbiddenState, type LicensedState } from '@/lib/supabase/licensed-states'
 import { fetchUserLicenses, fetchAllLicenses, isLicenseValid, type AppraiserLicense } from '@/lib/supabase/appraiser-licenses'
 import type { ClaimInfo } from '@/lib/acv/types'
 import type { Profile } from '@/lib/supabase/profiles'
@@ -41,7 +41,31 @@ export function StateLicensingPanel({ claim, assignedTo, profile, allProfiles }:
   // Don't render if no owner address or no licensed states configured
   if (loading || licensedStates.length === 0) return null
 
+  const stateIsForbidden = lossState ? isForbiddenState(lossState, licensedStates) : false
   const stateRequiresLicense = lossState ? isLicensedState(lossState, licensedStates) : false
+
+  // Forbidden state — highest priority, override everything else.
+  if (stateIsForbidden) {
+    const notes = licensedStates.find(s => s.state === lossState)?.notes
+    return (
+      <div className="rounded-lg border-2 border-red-500 bg-red-50 p-4 space-y-2">
+        <div className="flex items-center gap-2">
+          <Ban className="w-5 h-5 text-red-700 shrink-0" />
+          <span className="text-red-900 font-bold uppercase text-sm tracking-wide">
+            Forbidden state — Modern Appraisers cannot handle {lossState} claims
+          </span>
+        </div>
+        {notes && (
+          <div className="text-sm text-red-800 pl-7">
+            {notes}
+          </div>
+        )}
+        <div className="text-xs text-red-700 pl-7">
+          Reassign or decline this claim.
+        </div>
+      </div>
+    )
+  }
 
   if (!stateRequiresLicense) {
     // Only show if there's a state and it's not required — otherwise hide entirely

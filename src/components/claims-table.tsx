@@ -2,7 +2,7 @@
 
 import { useState, useMemo, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { Search, Trash2, X, Check, AlertTriangle } from 'lucide-react'
+import { Search, Trash2, X, Check, AlertTriangle, Ban } from 'lucide-react'
 import { deleteACVHistory, type ACVHistoryEntry } from '@/lib/supabase/history'
 import type { Profile } from '@/lib/supabase/profiles'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/button'
 import { ClaimMessagePreview } from '@/components/claim-message-preview'
 import type { LicensedState } from '@/lib/supabase/licensed-states'
 import type { AppraiserLicense } from '@/lib/supabase/appraiser-licenses'
-import { isLicensedState } from '@/lib/supabase/licensed-states'
+import { isLicensedState, isForbiddenState } from '@/lib/supabase/licensed-states'
 import { isLicenseValid } from '@/lib/supabase/appraiser-licenses'
 import { extractLossState } from '@/lib/claim-state'
 
@@ -25,14 +25,25 @@ function StateCell({
   getLicenseBadge,
 }: {
   entry: ACVHistoryEntry
-  getLicenseBadge: (entry: ACVHistoryEntry) => 'licensed' | 'not-licensed' | 'unassigned' | null
+  getLicenseBadge: (entry: ACVHistoryEntry) => 'forbidden' | 'licensed' | 'not-licensed' | 'unassigned' | null
 }) {
   const state = extractLossState(entry.claim?.ownerAddress)
   const badge = getLicenseBadge(entry)
 
   return (
     <div className="inline-flex items-center gap-1.5">
-      <span className="font-mono text-xs text-gray-600">{state ?? '—'}</span>
+      <span className={`font-mono text-xs ${badge === 'forbidden' ? 'text-red-700 font-bold' : 'text-gray-600'}`}>
+        {state ?? '—'}
+      </span>
+      {badge === 'forbidden' && (
+        <span
+          title="FORBIDDEN — Modern Appraisers cannot handle claims from this state"
+          className="inline-flex items-center gap-0.5 text-xs font-bold uppercase px-1.5 py-0.5 rounded-full border-2 border-red-600 bg-red-100 text-red-800 tracking-wide"
+        >
+          <Ban className="w-3 h-3" />
+          Forbidden
+        </span>
+      )}
       {badge === 'licensed' && (
         <span
           title="Licensed — appraiser holds a valid license for this state"
@@ -64,7 +75,7 @@ function StateCell({
   )
 }
 
-type LicenseFilter = 'all' | 'licensed-state-only' | 'not-licensed'
+type LicenseFilter = 'all' | 'forbidden' | 'licensed-state-only' | 'not-licensed'
 
 export function ClaimsTable({
   entries,
@@ -115,11 +126,14 @@ export function ClaimsTable({
     return p?.name || p?.email || 'Unknown'
   }, [profiles])
 
-  // Compute license badge status for each entry. Only meaningful when
-  // licensedStates is non-empty.
-  const getLicenseBadge = useCallback((entry: ACVHistoryEntry): 'licensed' | 'not-licensed' | 'unassigned' | null => {
+  // Compute license badge status for each entry. Forbidden overrides all other
+  // states — if the claim's state is on the forbidden list we return 'forbidden'
+  // regardless of assignment or license status.
+  const getLicenseBadge = useCallback((entry: ACVHistoryEntry): 'forbidden' | 'licensed' | 'not-licensed' | 'unassigned' | null => {
     const state = extractLossState(entry.claim?.ownerAddress)
-    if (!state || !isLicensedState(state, licensedStates)) return null
+    if (!state) return null
+    if (isForbiddenState(state, licensedStates)) return 'forbidden'
+    if (!isLicensedState(state, licensedStates)) return null
     if (!entry.assignedTo) return 'unassigned'
     const licenses = licensesByUser.get(entry.assignedTo) ?? []
     const validForState = licenses.some(l => l.state === state && isLicenseValid(l))
@@ -141,6 +155,7 @@ export function ClaimsTable({
       )) return false
       if (licenseFilter !== 'all') {
         const badge = getLicenseBadge(e)
+        if (licenseFilter === 'forbidden' && badge !== 'forbidden') return false
         if (licenseFilter === 'licensed-state-only' && badge === null) return false
         if (licenseFilter === 'not-licensed' && badge !== 'not-licensed') return false
       }
@@ -354,6 +369,7 @@ export function ClaimsTable({
             title="Filter by licensing status"
           >
             <option value="all">All states</option>
+            <option value="forbidden">Forbidden only</option>
             <option value="licensed-state-only">Licensed state only</option>
             <option value="not-licensed">Not licensed</option>
           </select>

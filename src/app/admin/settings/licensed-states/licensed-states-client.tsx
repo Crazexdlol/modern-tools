@@ -8,10 +8,11 @@ import { US_STATES } from '@/lib/us-states'
 interface Draft {
   state: string
   required: boolean
+  forbidden: boolean
   notes: string
 }
 
-const emptyDraft = (): Draft => ({ state: '', required: true, notes: '' })
+const emptyDraft = (): Draft => ({ state: '', required: true, forbidden: false, notes: '' })
 
 export function LicensedStatesClient() {
   const [rows, setRows] = useState<LicensedState[]>([])
@@ -19,7 +20,7 @@ export function LicensedStatesClient() {
   const [draft, setDraft] = useState<Draft | null>(null)
   // Which row is being inline-edited (state code as key)
   const [editingState, setEditingState] = useState<string | null>(null)
-  const [editDraft, setEditDraft] = useState<{ required: boolean; notes: string } | null>(null)
+  const [editDraft, setEditDraft] = useState<{ required: boolean; forbidden: boolean; notes: string } | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -34,7 +35,7 @@ export function LicensedStatesClient() {
 
   const startEdit = (row: LicensedState) => {
     setEditingState(row.state)
-    setEditDraft({ required: row.required, notes: row.notes ?? '' })
+    setEditDraft({ required: row.required, forbidden: row.forbidden, notes: row.notes ?? '' })
     setError(null)
   }
 
@@ -49,7 +50,7 @@ export function LicensedStatesClient() {
     const res = await fetch(`/api/admin/licensed-states/${editingState}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ required: editDraft.required, notes: editDraft.notes || null }),
+      body: JSON.stringify({ required: editDraft.required, forbidden: editDraft.forbidden, notes: editDraft.notes || null }),
     })
     setBusy(false)
     if (!res.ok) { const b = await res.json().catch(() => ({})); setError(b.error ?? 'Save failed'); return }
@@ -81,7 +82,7 @@ export function LicensedStatesClient() {
     const res = await fetch('/api/admin/licensed-states', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ state: draft.state, required: draft.required, notes: draft.notes || null }),
+      body: JSON.stringify({ state: draft.state, required: draft.required, forbidden: draft.forbidden, notes: draft.notes || null }),
     })
     setBusy(false)
     if (!res.ok) { const b = await res.json().catch(() => ({})); setError(b.error ?? 'Add failed'); return }
@@ -112,6 +113,7 @@ export function LicensedStatesClient() {
             <tr>
               <th className="text-left px-3 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider w-20">State</th>
               <th className="text-left px-3 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider w-28">Required</th>
+              <th className="text-left px-3 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider w-32">Forbidden</th>
               <th className="text-left px-3 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">Notes</th>
               <th className="text-right px-3 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider w-28">Actions</th>
             </tr>
@@ -136,6 +138,17 @@ export function LicensedStatesClient() {
                         </label>
                       </td>
                       <td className="px-3 py-2">
+                        <label className="inline-flex items-center gap-2 text-sm cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={editDraft.forbidden}
+                            onChange={e => setEditDraft({ ...editDraft, forbidden: e.target.checked })}
+                            className="w-4 h-4 rounded border-gray-300 text-red-600"
+                          />
+                          Forbidden
+                        </label>
+                      </td>
+                      <td className="px-3 py-2">
                         <input
                           value={editDraft.notes}
                           onChange={e => setEditDraft({ ...editDraft, notes: e.target.value })}
@@ -152,11 +165,18 @@ export function LicensedStatesClient() {
                     </>
                   ) : (
                     <>
-                      <td className="px-3 py-2 font-mono text-xs font-bold">{row.state}</td>
+                      <td className={`px-3 py-2 font-mono text-xs font-bold ${row.forbidden ? 'text-red-700' : ''}`}>{row.state}</td>
                       <td className="px-3 py-2">
                         <span className={`text-xs font-semibold px-2 py-0.5 rounded-full border ${row.required ? 'text-blue-700 bg-blue-50 border-blue-200' : 'text-gray-500 bg-gray-50 border-gray-200'}`}>
                           {row.required ? 'Required' : 'Not required'}
                         </span>
+                      </td>
+                      <td className="px-3 py-2">
+                        {row.forbidden ? (
+                          <span className="text-xs font-semibold px-2 py-0.5 rounded-full border text-red-700 bg-red-50 border-red-200">
+                            FORBIDDEN
+                          </span>
+                        ) : <span className="text-xs text-gray-300">—</span>}
                       </td>
                       <td className="px-3 py-2 text-gray-500 text-xs">{row.notes || '—'}</td>
                       <td className="px-3 py-2 text-right">
@@ -196,6 +216,17 @@ export function LicensedStatesClient() {
                   </label>
                 </td>
                 <td className="px-3 py-2">
+                  <label className="inline-flex items-center gap-2 text-sm cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={draft.forbidden}
+                      onChange={e => setDraft({ ...draft, forbidden: e.target.checked })}
+                      className="w-4 h-4 rounded border-gray-300 text-red-600"
+                    />
+                    Forbidden
+                  </label>
+                </td>
+                <td className="px-3 py-2">
                   <input
                     value={draft.notes}
                     onChange={e => setDraft({ ...draft, notes: e.target.value })}
@@ -212,7 +243,7 @@ export function LicensedStatesClient() {
               </tr>
             )}
             {rows.length === 0 && !draft && (
-              <tr><td colSpan={4} className="px-3 py-6 text-center text-sm text-gray-400 italic">No licensed states configured. Click &quot;Add State&quot; to require licensing for a state.</td></tr>
+              <tr><td colSpan={5} className="px-3 py-6 text-center text-sm text-gray-400 italic">No licensed states configured. Click &quot;Add State&quot; to require licensing for a state.</td></tr>
             )}
           </tbody>
         </table>
