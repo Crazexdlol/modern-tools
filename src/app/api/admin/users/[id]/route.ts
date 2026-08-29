@@ -19,6 +19,12 @@ export async function PATCH(
     canEditClaimInfo?: boolean
     canCreateClaims?: boolean
     autoStatusRequestsOverride?: boolean | null
+    phone?: string | null
+    addressStreet?: string | null
+    addressCity?: string | null
+    addressState?: string | null
+    addressZip?: string | null
+    isActive?: boolean
   } | null
   if (
     !body ||
@@ -27,7 +33,13 @@ export async function PATCH(
       body.canReassignClaims === undefined &&
       body.canEditClaimInfo === undefined &&
       body.canCreateClaims === undefined &&
-      body.autoStatusRequestsOverride === undefined)
+      body.autoStatusRequestsOverride === undefined &&
+      body.phone === undefined &&
+      body.addressStreet === undefined &&
+      body.addressCity === undefined &&
+      body.addressState === undefined &&
+      body.addressZip === undefined &&
+      body.isActive === undefined)
   ) {
     return NextResponse.json({ error: 'no fields to update' }, { status: 400 })
   }
@@ -50,6 +62,12 @@ export async function PATCH(
   if (body.canEditClaimInfo !== undefined) patch.can_edit_claim_info = body.canEditClaimInfo
   if (body.canCreateClaims !== undefined) patch.can_create_claims = body.canCreateClaims
   if (body.autoStatusRequestsOverride !== undefined) patch.auto_status_requests_override = body.autoStatusRequestsOverride
+  if (body.phone !== undefined) patch.phone = body.phone
+  if (body.addressStreet !== undefined) patch.address_street = body.addressStreet
+  if (body.addressCity !== undefined) patch.address_city = body.addressCity
+  if (body.addressState !== undefined) patch.address_state = body.addressState
+  if (body.addressZip !== undefined) patch.address_zip = body.addressZip
+  if (body.isActive !== undefined) patch.is_active = body.isActive
 
   const { error } = await service.from('profiles').update(patch).eq('id', id)
   if (error) return NextResponse.json({ error: error.message }, { status: 400 })
