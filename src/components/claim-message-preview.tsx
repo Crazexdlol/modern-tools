@@ -12,11 +12,15 @@ interface LastMessage {
   createdAt: string
 }
 
-type CacheValue = LastMessage | 'empty' | 'error' | Promise<LastMessage | 'empty' | 'error'>
+type Resolved = LastMessage | 'empty' | 'error'
+type CacheValue = { value: Resolved; ts: number } | { promise: Promise<Resolved> }
 
-// ─── Module-level cache (session-scoped, deduplicated) ────────────────────────
+// ─── Module-level cache (session-scoped, deduplicated, 30s TTL) ──────────────
+// TTL keeps hover previews fresh after new messages are posted in the same
+// session; 'empty' and 'error' expire so a subsequent hover refetches.
 
 const cache = new Map<string, CacheValue>()
+const TTL_MS = 30_000
 
 // ─── Relative time helper ────────────────────────────────────────────────────
 
@@ -99,21 +103,22 @@ export function ClaimMessagePreview({ claimId }: { claimId: string }) {
 
   const resolveCache = async () => {
     const cached = cache.get(claimId)
-    if (cached !== undefined && !(cached instanceof Promise)) {
-      setResult(cached)
+    const now = Date.now()
+    if (cached && 'value' in cached && now - cached.ts < TTL_MS) {
+      setResult(cached.value)
       return
     }
-    // Either a promise in flight (dedup) or not yet started.
-    setResult('loading')
-    let promise: Promise<LastMessage | 'empty' | 'error'>
-    if (cached instanceof Promise) {
-      promise = cached
-    } else {
-      promise = fetchLastMessage(claimId)
-      cache.set(claimId, promise)
+    if (cached && 'promise' in cached) {
+      setResult('loading')
+      const value = await cached.promise
+      setResult(value)
+      return
     }
+    setResult('loading')
+    const promise = fetchLastMessage(claimId)
+    cache.set(claimId, { promise })
     const value = await promise
-    cache.set(claimId, value)
+    cache.set(claimId, { value, ts: Date.now() })
     setResult(value)
   }
 

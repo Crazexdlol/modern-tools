@@ -175,7 +175,7 @@ export function MessagesTab({ claimId }: { claimId: string }) {
   }
 
   return (
-    <div className="flex flex-col h-[calc(100vh-320px)] min-h-[500px] bg-white border border-gray-200 rounded-lg overflow-hidden">
+    <div className="flex flex-col h-[calc(100vh-260px)] min-h-[600px] bg-white border border-gray-200 rounded-lg">
       {/* Thread header */}
       <div className="flex items-center justify-between px-4 py-2 border-b border-gray-200 bg-gray-50">
         <div className="text-sm text-gray-600">
@@ -255,7 +255,7 @@ export function MessagesTab({ claimId }: { claimId: string }) {
               </button>
             </span>
           ))}
-          <div className="relative flex-1 min-w-[120px]" ref={pickerRef}>
+          <div className="relative flex-1 min-w-[180px]" ref={pickerRef}>
             <input
               value={pickerQuery}
               onFocus={() => setPickerOpen(true)}
@@ -264,13 +264,13 @@ export function MessagesTab({ claimId }: { claimId: string }) {
               className="w-full bg-white border border-gray-200 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
             {pickerOpen && pickerOptions.length > 0 && (
-              <div className="absolute left-0 top-full mt-1 w-full max-h-96 overflow-y-auto bg-white border border-gray-200 rounded-lg shadow-lg z-30">
+              <div className="absolute left-0 bottom-full mb-1 w-72 max-h-[420px] overflow-y-auto bg-white border border-gray-200 rounded-lg shadow-lg z-30">
                 {pickerOptions.map(p => (
                   <button
                     key={p.id}
                     type="button"
                     onClick={() => addRecipient(p.id)}
-                    className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                    className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 border-b border-gray-50 last:border-b-0"
                   >
                     <div className="font-semibold">{p.name || p.email}</div>
                     {p.name && <div className="text-xs text-gray-500">{p.email}</div>}
@@ -279,7 +279,7 @@ export function MessagesTab({ claimId }: { claimId: string }) {
               </div>
             )}
             {pickerOpen && pickerOptions.length === 0 && pickerQuery && (
-              <div className="absolute left-0 top-full mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg z-30 px-3 py-2 text-sm text-gray-400 italic">
+              <div className="absolute left-0 bottom-full mb-1 w-72 bg-white border border-gray-200 rounded-lg shadow-lg z-30 px-3 py-2 text-sm text-gray-400 italic">
                 No users found
               </div>
             )}
@@ -294,8 +294,8 @@ export function MessagesTab({ claimId }: { claimId: string }) {
             onChange={(e) => setBody(e.target.value)}
             onKeyDown={onKeyDown}
             placeholder="Write a message… (Ctrl+Enter to send)"
-            rows={3}
-            className="flex-1 bg-white border border-gray-200 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none min-h-[80px] max-h-[50vh] overflow-y-auto"
+            rows={7}
+            className="flex-1 bg-white border border-gray-200 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-y min-h-[160px] max-h-[60vh] overflow-y-auto"
           />
           <Button
             onClick={doSend}
