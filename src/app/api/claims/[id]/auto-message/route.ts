@@ -1,0 +1,59 @@
+import { NextRequest, NextResponse } from 'next/server'
+import { createClient } from '@supabase/supabase-js'
+import { requireClaimAccess } from '@/lib/auth/require-claim-access'
+
+export const runtime = 'nodejs'
+
+const MAX_BODY_LEN = 4000
+
+// POST /api/claims/[id]/auto-message
+// Body: { body: string, senderName: string }
+// Inserts an informational auto-message on the claim's thread:
+// sender_id=null, recipient_ids=[] (no unread badge for anyone),
+// is_auto_request=true (renders with the amber "Auto" badge).
+// Requires SUPABASE_SERVICE_ROLE_KEY at runtime.
+export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { id: claimId } = await params
+  const { errorResponse } = await requireClaimAccess(claimId)
+  if (errorResponse) return errorResponse
+
+  const body = await request.json().catch(() => null) as {
+    body?: unknown; senderName?: unknown
+  } | null
+  if (!body) return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
+
+  const text = typeof body.body === 'string' ? body.body.trim() : ''
+  if (!text) return NextResponse.json({ error: 'Message body is required' }, { status: 400 })
+  if (text.length > MAX_BODY_LEN) {
+    return NextResponse.json({ error: `Message is too long (max ${MAX_BODY_LEN} characters)` }, { status: 400 })
+  }
+  const senderName = typeof body.senderName === 'string' && body.senderName.trim()
+    ? body.senderName.trim()
+    : 'Modern Tools (Auto)'
+
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+  if (!serviceKey || !url) {
+    console.error('auto-message: SUPABASE_SERVICE_ROLE_KEY or NEXT_PUBLIC_SUPABASE_URL missing')
+    return NextResponse.json({ error: 'Server misconfigured' }, { status: 500 })
+  }
+  const service = createClient(url, serviceKey, { auth: { persistSession: false } })
+
+  const id = crypto.randomUUID()
+  const { error } = await service.from('messages').insert({
+    id,
+    claim_id: claimId,
+    sender_id: null,
+    sender_name: senderName,
+    recipient_ids: [],
+    recipient_names: [],
+    body: text,
+    is_auto_request: true,
+  })
+  if (error) {
+    console.error('auto-message insert failed:', error)
+    return NextResponse.json({ error: error.message }, { status: 400 })
+  }
+
+  return NextResponse.json({ ok: true, id })
+}
