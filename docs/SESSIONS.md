@@ -18,6 +18,92 @@ Read `CLAUDE.md` first if you haven't. Then read the top entry here before touch
 
 ---
 
+## 2026-08-29 (session 5) — Phase UI polish, license Type, Reports hub + Contract fill, description sweep
+
+**Worked on:** Long iteration session on top of session 4. Roughly chronological:
+
+1. **Dashboard row phase editing + admin-only guard.** Reused the workspace `PhaseSelector` inline in the dashboard Status column for admins so they can set/change phases without opening the claim. API tightened to `requireAdmin()` (was `requireClaimAccess`).
+2. **Phase config admin CRUD + polish.** Full admin editor at `/admin/settings/status-phases` (add/edit/archive/delete, 5-color picker, DELETE refuses when in use). Seeded a new **Hold** phase (blue) via `migration-phase-configs-hold.sql`; changed **Umpire** color from red → amber (so Rush stays the only red). Phase pill got: no icon, "No Phase" placeholder (nowrap), stacked-vertical label+age layout. Filter buttons always use the phase color (was gray when inactive).
+3. **License Type field.** New nullable `license_type` text column on `appraiser_licenses` via `migration-license-type.sql`. Admin-only free-text — surfaced only in Settings → Users → Licenses tab, never in the claim workspace's licensing badges. Also earlier in the session: license status pill sizing, State dropdown replaced free-text input, dropped Issued column.
+4. **State licensing UX overhaul.** Top badge centered between Print and workflow buttons, no state code, just LICENSED (green) / NOT LICENSED (red) / FORBIDDEN (red). Dashboard row shows green dot when handler licensed, red dot when not (was always red). License filter dropdown removed from the claims-table search bar.
+5. **Danger Zone add + revert.** Added a big red "Delete Claim" card at the bottom of the Claim Info tab, then reverted per Henry — kept the existing small toolbar Delete button.
+6. **Icon sweep.** Removed decorative Lucide icons from claim workspace status pills, inline warnings (duplicate/PDF/decode error), and comp cards (Gauge/MapPin). Kept AlertCircle in bigger banners + all functional button icons.
+7. **Bigger bolder toolbar phase pill.** Added `size="lg"` variant to `PhaseSelector` — text-lg font-black label, border-2, larger padding. Then Henry moved it: workspace toolbar pill retired entirely, dashboard row bumped to `size="lg"` instead.
+8. **Reports hub tab.** New "Reports" tab in the CLAIM_TABS row next to Guidelines (step 15). Cards for Invoice / ACV Contract / Certificate of Appraisal. Invoice routes to the existing invoice tab (step 12), which was pulled out of the TOOL_TABS row since it's now surfaced via the hub. Two new PDF templates copied to `public/` (`acv-contract-template.pdf`, `certificate-of-appraisal-template.pdf`).
+9. **ACV Contract fill flow.** New `/claims/[id]/contract` route with server page + client. Grid of inputs for all 47 form fields (labeled by generic field name — the template's fields don't have semantic names yet). Auto-populates a few obvious defaults (today's date, best-guess mappings for insured/vin/vehicle). New API `/api/acv/generate-contract-pdf` fills the template and returns the PDF for download. See PDF field-mapping punch-list item #1 below — until Henry renames fields in Acrobat, the fill flow's inputs are labeled by generic names like "Text Box 1_5".
+10. **Certificate of Appraisal — NOT fillable yet.** The PDF has zero AcroForm fields. Hub card still opens the blank template. Needs Henry to add form fields in Acrobat before we can build the fill flow.
+11. **Perf fix for phase configs.** Was firing one identical Supabase query per admin's PhaseSelector row (~40+ concurrent), stacking behind cold connections and blanking the phase column for ~15s after navigating back from a claim. Added 60s TTL cache + in-flight promise dedup to `fetchStatusPhaseConfigs`; admin editor busts the cache on load.
+12. **Description sweep.** Removed helper-text descriptions across the app per Henry's ask (this is supposed to be professional): estimate/estimate-review "Results save to this claim" lines, invoice template note, documents dropzone description, mileage rate description, summary auto-save note, report-selection card description, reports hub top paragraph + per-card descriptions.
+
+**Changed (30+ commits since 56917ff):**
+
+Migrations:
+- `supabase/migration-phase-configs-hold.sql` (+ rollback) — NEW: adds Hold phase (blue), sets Umpire → amber
+- `supabase/migration-license-type.sql` (+ rollback) — NEW: adds `license_type` column to `appraiser_licenses`
+
+New pages / routes:
+- `src/app/admin/settings/status-phases/page.tsx` + `status-phases-client.tsx` — NEW: phase configs admin CRUD
+- `src/app/api/admin/status-phase-configs/route.ts` + `[code]/route.ts` — NEW: phase config CRUD API (delete refuses when in use)
+- `src/app/api/admin/users/[id]/reset-password/route.ts` + `change-email/route.ts` — NEW: admin password/email actions
+- `src/app/claims/[id]/contract/page.tsx` + `contract-client.tsx` — NEW: Contract fill flow (server page + client)
+- `src/app/api/acv/generate-contract-pdf/route.ts` — NEW: fills `public/acv-contract-template.pdf` with per-field try/catch, flattens, returns as download
+
+New components:
+- `src/components/claim/reports-hub-tab.tsx` — NEW: Reports hub with 3 cards
+- `public/acv-contract-template.pdf` + `public/certificate-of-appraisal-template.pdf` — NEW: copied from Henry's Dropbox
+
+Modified (highlights):
+- `src/components/claim/ClaimWorkspace.tsx` — retired workspace PhaseSelector, dropped Invoice from TOOL_TABS, added Reports step 15 + `<ReportsHubTab>` render, cleaned up decorative icons in duplicate/PDF/decode warnings + comp cards, dropped unused Gauge/MapPin imports
+- `src/components/claims-table.tsx` — dashboard row PhaseSelector size='lg', license filter dropdown removed
+- `src/components/claim/phase-selector.tsx` — added `size` prop with 'sm'/'lg' variants, no Tag icon, "No Phase" placeholder, stacked label+age, whitespace-nowrap, active state uses phase-color bg + black text
+- `src/app/page.tsx` — colored filter buttons w/ black text, phase-configs fetch logged
+- `src/lib/supabase/status-phase-configs.ts` — 60s TTL cache + in-flight dedup + `invalidateStatusPhaseConfigsCache()`
+- `src/lib/supabase/appraiser-licenses.ts` — added `licenseType` field
+- `src/app/api/admin/appraiser-licenses/{route,[id]/route}.ts` — accept `licenseType`
+- `src/app/admin/settings/users/[id]/_tabs/licenses-tab.tsx` — Type column + input, dropped Issued, State dropdown, proper Save/Cancel buttons, wider layout
+- `src/app/admin/settings/users/[id]/_tabs/info-tab.tsx` — Change Email + Reset Password modal actions
+- `src/app/admin/settings/_settings-nav.tsx` — added "Status Phases" nav entry with Tag icon
+- `src/app/api/claims/[id]/phase/route.ts` — tightened to `requireAdmin()`
+- `src/components/claim/state-licensing-top-badge.tsx` — dropped state code + decorative icons, LICENSED/NOT LICENSED/FORBIDDEN only
+- `src/components/claim/handling-appraiser-license-summary.tsx` — dropped decorative Check/AlertTriangle
+- Description sweep touched: `estimate-tab.tsx`, `estimate-review-tab.tsx`, `invoice-fields.tsx`, `documents-tab.tsx`, `ClaimWorkspace.tsx` (mileage/summary/report-selection notes)
+
+**Deploy status:**
+
+- **LIVE now:** `dpl_vv52dT8pirUjEgLW3qwUvdmBTo69` → `https://modern-tools-qcvvec6ij-henry-as-projects-88caed67.vercel.app`. Alias `modern-tools-rho.vercel.app` flipped, `● Ready`.
+- **Rollback (one step back, pre-description-sweep):** `npx vercel promote https://modern-tools-<pre-88f5a98-url> --scope henry-as-projects-88caed67 --yes` — capture from `vercel inspect` history if needed. Practically, session 4's ship (`dpl_ACT9SVnXsmaU3wobPgNrTzaCgtWE`) is a stable point.
+
+**Migrations RUN this session (confirmed / assumed):**
+- `migration-phase-configs-hold.sql` — assumed run since Henry set phases from dashboard
+- `migration-license-type.sql` — **STATUS UNKNOWN** — verify before assuming Type field will persist
+- `migration-status-phases.sql` — from earlier today, confirmed run
+
+**In progress / broken / unknowns:**
+
+- **HENRY OWES US: PDF field mapping for the Contract + Certificate.** This is why the Contract fill form shows inputs labeled "Text Box 1_5" etc. — the PDF's form fields don't have semantic names. Steps:
+  1. Open `public/acv-contract-template.pdf` in Adobe Acrobat
+  2. Click each field and rename to something meaningful like `insured_name`, `claim_number`, `date_of_loss`, `vin`, `year_make_model`, etc.
+  3. Save the file, re-copy over `public/acv-contract-template.pdf`
+  4. Send me the list of field names (or just push the updated PDF)
+  5. Same procedure for `public/certificate-of-appraisal-template.pdf` — BUT that PDF has ZERO form fields, so first ADD form fields via Acrobat's Prepare Form tool at the right positions, then name them semantically
+  6. Once field names are in, I'll wire the fill flow to auto-populate everything from claim data and hide the generic-name banner
+- **License Type migration may not have been run** — if the Type column doesn't save, that's why. See migrations-run block above.
+- **Existing uncommitted files in `git status`** (assignment sheet, guidelines tab, insurance-guidelines lib, admin export/import, business-days, etc.) untouched this session — still inherited debt from earlier sessions.
+
+**Next (punch list):**
+
+1. **[NEEDS HENRY] Rename PDF form fields for Contract and add fields to Certificate.** (See "In progress" above.) Once done, wire auto-fill from claim data on both flows.
+2. Loss of Use report — new report type, design TBD (carryover).
+3. Umpire branch of appraisal-clause process (carryover).
+4. Messages for summary page — thread messaging attached to a summary (carryover).
+5. RTA declaration — new document/report type, design TBD (carryover).
+6. Estimate dispute rework — the `/estimate-dispute` flow needs rework (carryover).
+7. Email notifications — SMTP via Bluehost, pending Henry providing SMTP creds (carryover). Would unlock license expiration email alerts + phase-change emails.
+8. Consolidate `/profile` and `/my-profile` — one profile page with editable name/password + read-only fees/licenses/docs (carryover from session 2).
+9. Automation page cleanup was already handled by consolidating per-user permission toggles into the profile.
+
+---
+
 ## 2026-08-29 (session 4) — Status phase feature: phase configs, dashboard pill+filter, workspace selector+delete
 
 **Worked on:** Full status phase feature. Claims can now be tagged with a status phase (pending_payment / rush / umpire, admin-configurable). Phases show as colored pills on the dashboard. Admin can filter the dashboard to phased claims. Phase changes from inside the claim workspace post an auto-message. Elapsed time since phase was set is shown. Delete button moved from the dashboard row into the claim workspace toolbar (admin only).
