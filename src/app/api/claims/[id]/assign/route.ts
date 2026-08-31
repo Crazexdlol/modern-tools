@@ -19,6 +19,23 @@ export async function POST(
 
   const service = createServiceClient()
 
+  // Validate target: assignedTo must be null (unassign) OR reference an
+  // active profile. Prevents accidental (or malicious) reassignment to a
+  // random / non-existent user id.
+  if (body.assignedTo !== null) {
+    const { data: targetProfile } = await service
+      .from('profiles')
+      .select('id, is_active')
+      .eq('id', body.assignedTo)
+      .maybeSingle()
+    if (!targetProfile) {
+      return NextResponse.json({ error: 'Target user not found' }, { status: 400 })
+    }
+    if (targetProfile.is_active === false) {
+      return NextResponse.json({ error: 'Target user is inactive' }, { status: 400 })
+    }
+  }
+
   // Authorization: admins can reassign any claim. Non-admins need the
   // per-user `can_reassign_claims` grant AND the claim must currently be
   // assigned to them.
@@ -51,12 +68,16 @@ export async function POST(
       .maybeSingle()
     newHandlingName = (targetProf?.name || targetProf?.email || '').trim()
   }
+  // Fetch the current row (also used to 404 admin-path reassigns of
+  // non-existent ids — the UPDATE below would otherwise silently touch 0
+  // rows and the caller would see {ok:true} despite the id being bogus).
   const { data: currentRow } = await service
     .from('acv_history')
     .select('claim')
     .eq('id', id)
     .maybeSingle()
-  const currentClaim = (currentRow?.claim ?? {}) as Record<string, unknown>
+  if (!currentRow) return NextResponse.json({ error: 'Claim not found' }, { status: 404 })
+  const currentClaim = (currentRow.claim ?? {}) as Record<string, unknown>
   const nextClaim = { ...currentClaim, handlingAppraiser: newHandlingName }
 
   // Also reset last_status_request_at so the new appraiser gets a fresh

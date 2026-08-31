@@ -18,7 +18,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   if (errorResponse) return errorResponse
 
   const body = await request.json().catch(() => null) as {
-    body?: unknown; senderName?: unknown
+    body?: unknown
   } | null
   if (!body) return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
 
@@ -27,9 +27,11 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   if (text.length > MAX_BODY_LEN) {
     return NextResponse.json({ error: `Message is too long (max ${MAX_BODY_LEN} characters)` }, { status: 400 })
   }
-  const senderName = typeof body.senderName === 'string' && body.senderName.trim()
-    ? body.senderName.trim()
-    : 'Modern Tools (Auto)'
+  // Sender name is a fixed literal — the route writes with service role and
+  // sender_id=null, so accepting a caller-supplied name would let any
+  // authenticated user with claim access post spoofed messages ("Admin -
+  // Henry", "System", etc.). Ignore whatever the client sends.
+  const senderName = 'Modern Tools (Auto)'
 
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
