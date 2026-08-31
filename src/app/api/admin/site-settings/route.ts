@@ -4,10 +4,12 @@ import { requireAdmin } from '@/lib/auth/require-admin'
 
 export const runtime = 'nodejs'
 
-const ALLOWED_KEYS = new Set([
-  'allow_regular_create_claims',
-  'auto_status_requests_enabled',
-])
+// Both legacy keys ('allow_regular_create_claims', 'auto_status_requests_enabled')
+// were superseded by per-user profile columns in the appraiser-profiles
+// migration. Any admin UI still pointing here should have been retired;
+// keeping the set empty means the route returns 400 rather than silently
+// writing junk that nothing reads.
+const ALLOWED_KEYS = new Set<string>([])
 
 export async function PATCH(request: NextRequest) {
   const { caller, errorResponse } = await requireAdmin()

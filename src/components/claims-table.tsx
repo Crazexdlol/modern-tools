@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useMemo, useCallback } from 'react'
+import { useState, useMemo, useCallback, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { Search, X, Ban, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react'
 import { type ACVHistoryEntry, deleteACVHistory } from '@/lib/supabase/history'
@@ -183,6 +183,24 @@ export function ClaimsTable({
   }, [entries, searchQuery, nameFor, phaseFilter, sortBy])
 
   const filteredIds = useMemo(() => filtered.map(e => e.id), [filtered])
+
+  // If the user filters/sorts away claims they've selected, prune those
+  // ids so the "N selected" counter matches what's actually visible and
+  // bulk actions don't operate on hidden rows.
+  useEffect(() => {
+    if (selectedIds.size === 0) return
+    const visible = new Set(filteredIds)
+    let changed = false
+    for (const id of selectedIds) if (!visible.has(id)) { changed = true; break }
+    if (changed) {
+      setSelectedIds(prev => {
+        const next = new Set<string>()
+        for (const id of prev) if (visible.has(id)) next.add(id)
+        return next
+      })
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- selectedIds intentionally omitted; we only want this to fire on filter/sort change
+  }, [filteredIds])
   const allFilteredSelected =
     filteredIds.length > 0 && filteredIds.every(id => selectedIds.has(id))
   const someFilteredSelected =
@@ -222,7 +240,10 @@ export function ClaimsTable({
     setBulkBusy(true)
     setBulkError(null)
     const ids = Array.from(selectedIds)
-    const assignedTo = bulkAssignee || null
+    // '' would be the empty pick (Confirm is disabled in that state); the
+    // sentinel '__unassign__' maps to explicit null, everything else is a
+    // real user id.
+    const assignedTo = bulkAssignee === '__unassign__' ? null : bulkAssignee
     const results = await Promise.all(
       ids.map(id =>
         fetch(`/api/claims/${id}/assign`, {
@@ -368,14 +389,15 @@ export function ClaimsTable({
               disabled={bulkBusy}
               className="bg-white border border-gray-200 rounded px-2 py-1.5 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
-              <option value="">— Unassigned —</option>
+              <option value="">— Pick a person —</option>
+              <option value="__unassign__">— Unassigned —</option>
               {profiles.map(p => (
                 <option key={p.id} value={p.id}>{p.name || p.email}</option>
               ))}
             </select>
             <Button
               onClick={() => setBulkReassignConfirmOpen(true)}
-              disabled={bulkBusy}
+              disabled={bulkBusy || !bulkAssignee}
               className="bg-blue-600 hover:bg-blue-500 text-white text-sm"
             >
               {bulkBusy ? 'Reassigning…' : 'Confirm'}
@@ -597,6 +619,18 @@ export function ClaimsTable({
       <ConfirmDialog
         open={bulkReassignConfirmOpen}
         title={`Reassign ${selectedCount} claim${selectedCount === 1 ? '' : 's'}?`}
+        message={
+          <>
+            Reassign {selectedCount} claim{selectedCount === 1 ? '' : 's'} to{' '}
+            <b>
+              {bulkAssignee === '__unassign__'
+                ? 'Unassigned'
+                : (profiles.find(p => p.id === bulkAssignee)?.name
+                    || profiles.find(p => p.id === bulkAssignee)?.email
+                    || 'Unknown')}
+            </b>?
+          </>
+        }
         confirmLabel="Reassign"
         variant="primary"
         busy={bulkBusy}

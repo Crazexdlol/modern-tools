@@ -3,6 +3,10 @@ import { fillAwardPdf } from '@/lib/acv/award-pdf-filler'
 import type { AwardPdfData } from '@/lib/acv/award-pdf-filler'
 import { requireAuth } from '@/lib/auth/require-admin'
 
+// pdf-lib + fs.readFileSync require the Node runtime; keep this explicit
+// so a future edge default flip doesn't silently break the route.
+export const runtime = 'nodejs'
+
 export async function POST(request: NextRequest) {
   const { errorResponse } = await requireAuth()
   if (errorResponse) return errorResponse

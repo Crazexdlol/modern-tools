@@ -10,10 +10,12 @@ export interface DuplicateMatch {
 
 export interface DuplicateResult {
   vinMatches: DuplicateMatch[]
+  vinCount: number
   claimNumberMatches: DuplicateMatch[]
+  claimNumberCount: number
 }
 
-const EMPTY: DuplicateResult = { vinMatches: [], claimNumberMatches: [] }
+const EMPTY: DuplicateResult = { vinMatches: [], vinCount: 0, claimNumberMatches: [], claimNumberCount: 0 }
 
 export async function fetchClaimDuplicates(params: {
   vin?: string

@@ -4,6 +4,10 @@ import { requireAuth } from '@/lib/auth/require-admin'
 
 export const runtime = 'nodejs'
 
+// Response includes both `count` (always the true number of matches) and
+// `matches` (per-row detail — admins only; non-admins get an empty array
+// so they can't enumerate the whole book by VIN or claim number).
+
 // GET /api/claims/duplicates?vin=X&claimNumber=Y&excludeId=Z
 //
 // Returns any OTHER claims (not `excludeId`) that share the same VIN and/or
@@ -43,7 +47,7 @@ function rowToMatch(r: AcvRow): Match {
 }
 
 export async function GET(request: NextRequest) {
-  const { errorResponse } = await requireAuth()
+  const { caller, errorResponse } = await requireAuth()
   if (errorResponse) return errorResponse
 
   const url = new URL(request.url)
@@ -52,10 +56,11 @@ export async function GET(request: NextRequest) {
   const excludeId = url.searchParams.get('excludeId') ?? null
 
   if (!vin && !claimNumber) {
-    return NextResponse.json({ vinMatches: [], claimNumberMatches: [] })
+    return NextResponse.json({ vinMatches: [], claimNumberMatches: [], vinCount: 0, claimNumberCount: 0 })
   }
 
   const service = createServiceClient()
+  const isAdmin = caller!.role === 'admin'
 
   let vinMatches: Match[] = []
   if (vin) {
@@ -81,5 +86,13 @@ export async function GET(request: NextRequest) {
     claimNumberMatches = ((data as AcvRow[]) ?? []).map(rowToMatch)
   }
 
-  return NextResponse.json({ vinMatches, claimNumberMatches })
+  // Redact per-row detail for non-admins: they still get the count (so the
+  // "duplicate VIN" warning still fires) but not the MA# / insured name /
+  // vehicle of claims they don't otherwise have access to.
+  return NextResponse.json({
+    vinMatches: isAdmin ? vinMatches : [],
+    vinCount: vinMatches.length,
+    claimNumberMatches: isAdmin ? claimNumberMatches : [],
+    claimNumberCount: claimNumberMatches.length,
+  })
 }

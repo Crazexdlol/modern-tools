@@ -33,10 +33,21 @@ export function ConfirmDialog({
     if (!open) return
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && !busy) onCancel()
+      // Enter confirms — matches native browser confirm() ergonomics and lets
+      // keyboard users complete/dismiss dialogs without tabbing to the button.
+      // Skip if the focus is inside a textarea (so multi-line message inputs
+      // don't accidentally submit on newline).
+      if (e.key === 'Enter' && !busy) {
+        const target = e.target as HTMLElement | null
+        if (target?.tagName !== 'TEXTAREA') {
+          e.preventDefault()
+          onConfirm()
+        }
+      }
     }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
-  }, [open, busy, onCancel])
+  }, [open, busy, onCancel, onConfirm])
 
   if (!open) return null
 

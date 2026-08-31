@@ -15,6 +15,36 @@ export interface ClaimDocument {
 
 const BUCKET = 'claim-documents'
 
+// 25 MB per file — Modern Appraisers docs are typically photo scans and
+// small PDFs; anything larger is almost certainly wrong (bulk upload,
+// malformed export, adversarial payload).
+export const MAX_DOCUMENT_BYTES = 25 * 1024 * 1024
+
+// Everything an admin/appraiser might legitimately attach: PDFs, common
+// office docs, images, plus the storage-bucket fallback for MIME-less
+// uploads. Extending this is fine, but keep the allowlist tight.
+const ALLOWED_MIME = new Set<string>([
+  'application/pdf',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.ms-excel',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'application/vnd.ms-powerpoint',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  'application/rtf',
+  'application/zip',
+  'application/x-zip-compressed',
+  'text/plain',
+  'text/csv',
+  'image/png',
+  'image/jpeg',
+  'image/gif',
+  'image/webp',
+  'image/heic',
+  'image/heif',
+  'image/tiff',
+])
+
 function sanitizeName(name: string): string {
   return name.replace(/[^a-zA-Z0-9._ ()-]+/g, '_').slice(0, 120)
 }
@@ -25,11 +55,20 @@ export async function uploadClaimDocument(
   name: string,
   source: ClaimDocument['source'],
 ): Promise<ClaimDocument | null> {
+  if (file.size > MAX_DOCUMENT_BYTES) {
+    console.error(`Upload rejected: ${file.size} bytes exceeds cap`)
+    return null
+  }
+  const mime = (file.type || 'application/octet-stream').toLowerCase()
+  if (!ALLOWED_MIME.has(mime)) {
+    console.error(`Upload rejected: content-type ${mime} not allowed`)
+    return null
+  }
   const supabase = createClient()
   const clean = sanitizeName(name)
   const path = `${claimId}/${Date.now()}-${clean}`
   const { error } = await supabase.storage.from(BUCKET).upload(path, file, {
-    contentType: file.type || 'application/octet-stream',
+    contentType: mime,
     upsert: false,
   })
   if (error) {

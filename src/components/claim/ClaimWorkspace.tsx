@@ -61,7 +61,6 @@ import { SummaryPrintDoc } from '@/app/summary-page/SummaryPrintDoc'
 import { AppHeader } from '@/components/app-header'
 import { StateLicensingTopBadge } from '@/components/claim/state-licensing-top-badge'
 import { HandlingAppraiserLicenseSummary } from '@/components/claim/handling-appraiser-license-summary'
-import { PhaseSelector } from '@/components/claim/phase-selector'
 
 async function saveToHistory(
   claim: ClaimInfo,
@@ -168,14 +167,20 @@ function MileageRateInput({
 }
 
 // ── Duplicate warning (inline under VIN / Claim # fields) ────────────────────
+// `count` is authoritative for the header text; `matches` is the per-row
+// detail, which the API only returns for admins (non-admins get an empty
+// array + the true count so the warning still fires but doesn't leak
+// unrelated claim details).
 function DuplicateWarning({
   matches,
+  count,
   field,
 }: {
   matches: Array<{ id: string; maNumber: string; insuredName: string; vehicle: string; date: string }>
+  count: number
   field: string
 }) {
-  if (!matches || matches.length === 0) return null
+  if (count === 0) return null
   const fmt = (iso: string) => {
     if (!iso) return ''
     const d = new Date(iso)
@@ -184,26 +189,32 @@ function DuplicateWarning({
   return (
     <div className="mt-2 p-2 rounded border border-amber-200 bg-amber-50 text-xs text-amber-800">
       <div className="font-semibold mb-1">
-        Duplicate {field}: matches {matches.length} other claim{matches.length === 1 ? '' : 's'}
+        Duplicate {field}: matches {count} other claim{count === 1 ? '' : 's'}
       </div>
-      <ul className="pl-4 list-disc space-y-0.5">
-        {matches.slice(0, 5).map(m => (
-          <li key={m.id}>
-            <a
-              href={`/claims/${m.id}`}
-              target="_blank"
-              rel="noreferrer"
-              className="text-amber-900 underline hover:text-amber-950"
-            >
-              MA# {m.maNumber || m.id}
-            </a>
-            {m.insuredName && <> · {m.insuredName}</>}
-            {m.vehicle && <> · {m.vehicle}</>}
-            {m.date && <> · {fmt(m.date)}</>}
-          </li>
-        ))}
-        {matches.length > 5 && <li>and {matches.length - 5} more…</li>}
-      </ul>
+      {matches.length > 0 ? (
+        <ul className="pl-4 list-disc space-y-0.5">
+          {matches.slice(0, 5).map(m => (
+            <li key={m.id}>
+              <a
+                href={`/claims/${m.id}`}
+                target="_blank"
+                rel="noreferrer"
+                className="text-amber-900 underline hover:text-amber-950"
+              >
+                MA# {m.maNumber || m.id}
+              </a>
+              {m.insuredName && <> · {m.insuredName}</>}
+              {m.vehicle && <> · {m.vehicle}</>}
+              {m.date && <> · {fmt(m.date)}</>}
+            </li>
+          ))}
+          {matches.length > 5 && <li>and {matches.length - 5} more…</li>}
+        </ul>
+      ) : (
+        <div className="text-amber-800/80">
+          Contact an admin for details.
+        </div>
+      )}
     </div>
   )
 }
@@ -489,7 +500,7 @@ function ClaimInfoForm({
           <div>
             <label className={labelCls}>Insurance Claim #</label>
             <input className={inputCls} placeholder="CLM-00001" value={claim.claimNumber} onChange={(e) => set('claimNumber', e.target.value)} />
-            <DuplicateWarning matches={duplicates.claimNumberMatches} field="claim #" />
+            <DuplicateWarning matches={duplicates.claimNumberMatches} count={duplicates.claimNumberCount} field="claim #" />
           </div>
           <div>
             <label className={labelCls}>Date of Loss</label>
@@ -708,7 +719,7 @@ function SearchParametersPanel({
             {decodeError}
           </p>
         )}
-        <DuplicateWarning matches={duplicates.vinMatches} field="VIN" />
+        <DuplicateWarning matches={duplicates.vinMatches} count={duplicates.vinCount} field="VIN" />
       </div>
 
       {/* Vehicle fields grid */}

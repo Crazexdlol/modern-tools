@@ -85,15 +85,23 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   const supabase = await getSupabaseFromCookies()
 
   // Look up sender + recipient profiles for the captured display names.
+  // Also fetch role for recipient authorization — recipients must either be
+  // admins (who can see every claim) or the current assignee. Otherwise
+  // the recipient can't actually read the message anyway (RLS hides it),
+  // and their display name gets stamped onto the row unnecessarily.
   const allIds = Array.from(new Set([caller!.userId, ...recipientIds]))
   const { data: profs, error: profErr } = await supabase
     .from('profiles')
-    .select('id, name, email')
+    .select('id, name, email, role')
     .in('id', allIds)
   if (profErr) return NextResponse.json({ error: profErr.message }, { status: 400 })
 
-  const profMap = new Map<string, { name: string; email: string }>()
-  for (const p of profs ?? []) profMap.set(p.id as string, { name: (p.name as string) || '', email: (p.email as string) || '' })
+  const profMap = new Map<string, { name: string; email: string; role: string }>()
+  for (const p of profs ?? []) profMap.set(p.id as string, {
+    name: (p.name as string) || '',
+    email: (p.email as string) || '',
+    role: (p.role as string) || 'appraiser',
+  })
 
   const senderProf = profMap.get(caller!.userId)
   if (!senderProf) return NextResponse.json({ error: 'Sender profile not found' }, { status: 403 })
@@ -102,6 +110,24 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   const missing = recipientIds.filter(rid => !profMap.has(rid))
   if (missing.length > 0) {
     return NextResponse.json({ error: `Unknown recipient(s): ${missing.join(', ')}` }, { status: 400 })
+  }
+
+  // Restrict recipients to admins + the current assignee (the only users
+  // who can actually SEE the message under acv_select RLS).
+  const { data: claimRow } = await supabase
+    .from('acv_history')
+    .select('assigned_to')
+    .eq('id', claimId)
+    .maybeSingle()
+  const assigneeId = (claimRow?.assigned_to as string | null) ?? null
+  const invalidRecipients = recipientIds.filter(rid => {
+    const p = profMap.get(rid)!
+    return p.role !== 'admin' && rid !== assigneeId
+  })
+  if (invalidRecipients.length > 0) {
+    return NextResponse.json({
+      error: 'Recipients must be admins or the claim\'s current assignee.',
+    }, { status: 400 })
   }
 
   const senderName = senderProf.name || senderProf.email || 'Unknown'

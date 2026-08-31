@@ -4,6 +4,10 @@ import { calculateACV } from '@/lib/acv/calculations'
 import type { ClaimInfo, SelectedComp, ACVAdjustments } from '@/lib/acv/types'
 import { requireAuth } from '@/lib/auth/require-admin'
 
+// pdf-lib + fs.readFileSync require the Node runtime; keep this explicit
+// so a future edge default flip doesn't silently break the route.
+export const runtime = 'nodejs'
+
 export async function POST(request: NextRequest) {
   const { errorResponse } = await requireAuth()
   if (errorResponse) return errorResponse
