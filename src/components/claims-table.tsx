@@ -320,7 +320,7 @@ export function ClaimsTable({
     setBulkError(null)
     const ids = Array.from(selectedIds)
     const results = await Promise.all(
-      ids.map(id => deleteACVHistory(id).then(() => true).catch(() => false)),
+      ids.map(id => deleteACVHistory(id).catch(() => false)),
     )
     setBulkBusy(false)
     const failed = results.filter(ok => !ok).length

@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Loader2, Printer, AlertCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -56,7 +56,11 @@ export function ReportsTab({
   onChange: (next: InvoiceReportState) => void
   onGenerated?: (blob: Blob, name: string) => void
 }) {
-  const state = invoice ?? defaultInvoiceReportState(claim)
+  // Memoize the default so unedited fields don't silently follow the current
+  // claim (or `new Date()`) on every render. Once the user edits anything,
+  // `invoice` becomes non-null and the memo is bypassed.
+  const memoedDefault = useMemo(() => defaultInvoiceReportState(claim), [claim])
+  const state = invoice ?? memoedDefault
   const set = (patch: Partial<InvoiceReportState>) => onChange({ ...state, ...patch })
 
   const [downloading, setDownloading] = useState(false)

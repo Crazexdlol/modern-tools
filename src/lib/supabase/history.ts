@@ -221,13 +221,26 @@ export async function saveACVHistory(entry: ACVHistoryEntry, editId?: string | n
   const { error: insertError } = await supabase
     .from('acv_history')
     .insert(insertPayload)
-  if (insertError) console.error('Failed to insert ACV history:', insertError)
+  if (insertError) {
+    // Throw so the caller can surface a real error state (toast, retry, etc)
+    // instead of leaving the "unsaved changes" pill stuck without explanation.
+    console.error('Failed to insert ACV history:', insertError)
+    throw new Error(insertError.message)
+  }
 }
 
-export async function deleteACVHistory(id: string) {
+// Returns true on success, false on failure. Callers (e.g. bulk delete)
+// need this so they can distinguish "actually deleted" from "RLS blocked
+// but we swallowed the error"; a silent success reload would leave the
+// user thinking rows were removed when they weren't.
+export async function deleteACVHistory(id: string): Promise<boolean> {
   const supabase = createClient()
   const { error } = await supabase.from('acv_history').delete().eq('id', id)
-  if (error) console.error('Failed to delete ACV history:', error)
+  if (error) {
+    console.error('Failed to delete ACV history:', error)
+    return false
+  }
+  return true
 }
 
 // ── Estimate History ─────────────────────────────────────────────────────────

@@ -3223,8 +3223,15 @@ function ClaimWorkspaceInner({ claimId }: { claimId: string }) {
       alert((b as { error?: string }).error ?? 'Reassign failed')
       return
     }
+    // Also re-hydrate claim jsonb — the assign route now writes
+    // claim.handlingAppraiser server-side to keep printed docs in sync,
+    // and if we don't refresh here the 2s autosave will overwrite it
+    // with the stale name from local state.
     const fresh = await fetchACVEntry(editingId)
-    if (fresh) setAssignedTo(fresh.assignedTo ?? null)
+    if (fresh) {
+      setAssignedTo(fresh.assignedTo ?? null)
+      setClaim(fresh.claim)
+    }
   }
 
   const handleVinDecoded = async (updatedClaim: ClaimInfo) => {
@@ -3270,9 +3277,13 @@ function ClaimWorkspaceInner({ claimId }: { claimId: string }) {
   const runDeleteClaim = async () => {
     if (!editingId) return
     setDeleteBusy(true)
-    await deleteACVHistory(editingId)
+    const ok = await deleteACVHistory(editingId)
     setDeleteBusy(false)
     setDeleteConfirmOpen(false)
+    if (!ok) {
+      alert('Delete failed. You may not have permission, or the claim may be referenced elsewhere. Refresh and try again.')
+      return
+    }
     router.push('/')
   }
 
