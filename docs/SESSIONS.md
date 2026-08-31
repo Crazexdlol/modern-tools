@@ -56,13 +56,15 @@ Read `CLAUDE.md` first if you haven't. Then read the top entry here before touch
 
 **GitHub:** committed everything in 5 commits (baseline + 4 fix batches) but `git push` failed — `xsfabot-boop` isn't authorized on `Crazexdlol/modern-tools`. Push queue is stuck locally until Henry either adds the user as a collaborator on GitHub or switches the git remote to an account with push access. Prod is unaffected (Vercel builds from local).
 
+**Migrations RUN this session (confirmed by Henry):**
+- `supabase/migration-audit-trigger-hardening.sql` — RUN. S6 (profile permission-column guard) + S7 (acv_history BEFORE INSERT trigger) now active at the DB layer, matching the code-level protections shipped in Batch B.
+
 **In progress / broken / unknowns:**
-- **Migration for S6/S7 needs Henry to run it in Supabase SQL editor** — `supabase/migration-audit-trigger-hardening.sql`. Until it runs, the profile-permission and acv_history-INSERT protections are code-only (the routes S1/S8/S9 fixes are already live).
 - **License Type migration status still unknown** (`supabase/migration-license-type.sql`, from session 5).
 - Two audit findings deliberately not shipped as too risky vs benefit: **S15** (auto-save `useEffect` missing `builtComps` dep — fixing risks an infinite re-save loop) and **S16** (`RichField` mount-only effect — fixing risks breaking the standalone editor's `resetKey` remount pattern). Both are low-frequency edge cases; leaving them for a future session with a proper test plan.
-- **GitHub push access** needs resolution before local repo can push (see above).
+- **GitHub push access** still blocked — `xsfabot-boop` denied on `Crazexdlol/modern-tools`. 6 commits queued locally (baseline + 4 fix batches + SESSIONS log). Prod is unaffected (Vercel builds from local).
 
-**Next:** Run the trigger-hardening migration in Supabase. Resolve GitHub push access. Consider a follow-up session to tackle S15/S16 with tests.
+**Next:** Resolve GitHub push access. Consider a follow-up session to tackle S15/S16 with tests. Verify License Type field actually persists (session 5's unknown).
 
 ---
 
