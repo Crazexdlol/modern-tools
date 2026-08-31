@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { requireAuth } from '@/lib/auth/require-admin'
 
 async function getAvgPrice(
   make: string,
@@ -32,6 +33,8 @@ async function getAvgPrice(
 }
 
 export async function GET(request: NextRequest) {
+  const { errorResponse } = await requireAuth()
+  if (errorResponse) return errorResponse
   const p = request.nextUrl.searchParams
   const make = p.get('make')
   const model = p.get('model')

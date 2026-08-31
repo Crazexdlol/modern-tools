@@ -3,6 +3,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { extractTextFromPDF } from "@/lib/pdf-extractor";
 import { extractTextFromImage } from "@/lib/image-extractor";
 import { detectSoftware } from "@/lib/estimate-parser";
+import { requireAuth } from '@/lib/auth/require-admin'
 
 const client = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
@@ -22,6 +23,8 @@ async function extractText(file: File): Promise<string> {
 }
 
 export async function POST(request: NextRequest) {
+  const { errorResponse } = await requireAuth()
+  if (errorResponse) return errorResponse
   try {
     const formData = await request.formData();
     const estimateA = formData.get("estimateA") as File | null;

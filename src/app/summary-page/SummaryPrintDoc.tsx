@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
+import DOMPurify from "isomorphic-dompurify";
 import { SavedSummary } from "./lib";
 
 /**
@@ -111,7 +112,13 @@ export function SummaryPrintDoc({ summary }: { summary: SavedSummary }) {
                       </h2>
                       <div
                         className="print-state-law-content"
-                        dangerouslySetInnerHTML={{ __html: law.content }}
+                        // Sanitize on render: state law content is user-supplied
+                        // HTML from a contentEditable, which could otherwise
+                        // carry <script> / <iframe> / event-handler payloads
+                        // planted by any team member with summaries UPDATE
+                        // access. Save-side sanitization also happens in
+                        // SummaryFields.emit — defense in depth.
+                        dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(law.content) }}
                       />
                     </div>
                   </div>

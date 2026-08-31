@@ -204,9 +204,23 @@ export async function saveACVHistory(entry: ACVHistoryEntry, editId?: string | n
   // else's private claim we can't see. Attempt insert; on unique-violation
   // (23505) the row exists but is RLS-hidden from us — surface that as an
   // error rather than looping.
+  //
+  // Non-admins must self-assign on insert: acv_select RLS only exposes rows
+  // where assigned_to = auth.uid(), so an unassigned insert would succeed
+  // but leave the appraiser unable to read (or re-save) their own claim.
+  // Admin inserts stay unassigned so the existing create-then-assign flow
+  // in the admin UI is preserved.
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('role')
+    .eq('id', user.id)
+    .maybeSingle()
+  const insertPayload: Record<string, unknown> = { id, user_id: user.id, ...payload }
+  if (profile?.role !== 'admin') insertPayload.assigned_to = user.id
+
   const { error: insertError } = await supabase
     .from('acv_history')
-    .insert({ id, user_id: user.id, ...payload })
+    .insert(insertPayload)
   if (insertError) console.error('Failed to insert ACV history:', insertError)
 }
 

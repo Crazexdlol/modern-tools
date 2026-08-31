@@ -2,8 +2,11 @@ import { NextRequest, NextResponse } from 'next/server'
 import { fillACVPdf } from '@/lib/acv/pdf-filler'
 import { calculateACV } from '@/lib/acv/calculations'
 import type { ClaimInfo, SelectedComp, ACVAdjustments } from '@/lib/acv/types'
+import { requireAuth } from '@/lib/auth/require-admin'
 
 export async function POST(request: NextRequest) {
+  const { errorResponse } = await requireAuth()
+  if (errorResponse) return errorResponse
   try {
     const body = await request.json()
     const {

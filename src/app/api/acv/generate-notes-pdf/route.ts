@@ -1,8 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { fillNotesPdf } from '@/lib/acv/notes-pdf-filler'
 import type { NotesPdfData } from '@/lib/acv/notes-pdf-filler'
+import { requireAuth } from '@/lib/auth/require-admin'
 
 export async function POST(request: NextRequest) {
+  const { errorResponse } = await requireAuth()
+  if (errorResponse) return errorResponse
   try {
     const body: NotesPdfData = await request.json()
     const pdfBytes = await fillNotesPdf(body)

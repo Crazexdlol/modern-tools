@@ -16,6 +16,7 @@ interface MessageRow {
   recipient_names: string[]
   body: string
   created_at: string
+  is_auto_request?: boolean | null
 }
 
 function rowToMessage(r: MessageRow) {
@@ -28,6 +29,7 @@ function rowToMessage(r: MessageRow) {
     recipientNames: r.recipient_names,
     body: r.body,
     createdAt: r.created_at,
+    isAutoRequest: r.is_auto_request === true,
   }
 }
 

@@ -251,7 +251,6 @@ export function DVTab({
               </div>
             </div>
           </div>
-          <p className="text-xs text-gray-400">Claim info, owner, insurance, and vehicle details fill automatically from the Claim Info tab.</p>
         </CardContent>
       </Card>
 

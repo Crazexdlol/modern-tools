@@ -420,40 +420,24 @@ function ClaimInfoForm({
         </div>
       )}
 
-      {/* Lock / Edit toggle — only on existing claims. Admins and users with
-          the can_edit_claim_info permission can flip to Edit mode; everyone
-          else sees a passive locked notice. */}
-      {!isNew && (
-        <div className="flex items-center gap-3 p-3 rounded-lg border border-gray-200 bg-gray-50">
-          {locked ? (
-            <>
-              <Lock className="w-4 h-4 text-gray-500" />
-              <div className="text-sm text-gray-700 flex-1">
-                Claim Info is locked.
-                {!canEdit && ' Only admins or users granted edit permission can unlock it.'}
-                {' '}Handling Appraiser can still be edited by anyone.
-              </div>
-              {canEdit && (
-                <Button size="sm" variant="outline" onClick={() => setEditMode(true)}>
-                  <Pencil className="w-3.5 h-3.5 mr-1" /> Edit
-                </Button>
-              )}
-            </>
-          ) : (
-            <>
-              <Pencil className="w-4 h-4 text-blue-600" />
-              <div className="text-sm text-gray-700 flex-1">Editing enabled. Changes save automatically.</div>
+      {/* Handling Appraiser — always editable (feeds Award / Closing Notes).
+          Header row also carries the Edit / Done toggle on the right for
+          admins or users with the can_edit_claim_info permission. */}
+      <div>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-sm font-bold text-gray-900">Handling Appraiser</h3>
+          {!isNew && canEdit && (
+            locked ? (
+              <Button size="sm" variant="outline" onClick={() => setEditMode(true)}>
+                <Pencil className="w-3.5 h-3.5 mr-1" /> Edit
+              </Button>
+            ) : (
               <Button size="sm" variant="outline" onClick={() => setEditMode(false)}>
                 <Lock className="w-3.5 h-3.5 mr-1" /> Done
               </Button>
-            </>
+            )
           )}
         </div>
-      )}
-
-      {/* Handling Appraiser — always editable (feeds Award / Closing Notes). */}
-      <div>
-        <h3 className="text-sm font-bold text-gray-900 mb-4">Handling Appraiser</h3>
         <HandlingAppraiserLicenseSummary
           claim={claim}
           handlingAppraiserName={claim.handlingAppraiser ?? ''}
@@ -3126,8 +3110,9 @@ function ClaimWorkspaceInner({ claimId }: { claimId: string }) {
     setHasUnsavedChanges(false)
   }
 
-  // Task 11 workflow: Submit / Approve / Send Back / Reopen. Writes go through
+  // Task 11 workflow: Submit / Approve (Close) / Reopen. Writes go through
   // dedicated API routes so the column-guard trigger enforces role-based rules.
+  // Send Back was removed 2026-08-30 — Reassign now un-submits via /assign.
   // After each action we refetch the entry to sync the local UI with whatever
   // the server actually persisted.
   //
@@ -3168,22 +3153,15 @@ function ClaimWorkspaceInner({ claimId }: { claimId: string }) {
   const handleSubmit = () => setPendingWorkflow({
     path: 'submit',
     title: 'Submit this claim for admin review?',
-    message: 'You will not be able to edit the claim after submitting. Only an admin can then approve it or send it back.',
+    message: 'You will not be able to edit the claim after submitting. Only an admin can then close it or reassign it to another appraiser.',
     confirmLabel: 'Submit',
     variant: 'primary',
   })
   const handleApprove = () => setPendingWorkflow({
     path: 'approve',
-    title: 'Approve and close this claim?',
-    message: 'The claim will be marked closed and move to the All Claims list.',
-    confirmLabel: 'Approve',
-    variant: 'primary',
-  })
-  const handleSendBack = () => setPendingWorkflow({
-    path: 'send-back',
-    title: 'Send this claim back to the appraiser?',
-    message: 'The appraiser will be able to edit the claim again and re-submit.',
-    confirmLabel: 'Send Back',
+    title: 'Close this claim?',
+    message: 'The claim will be marked closed and move to the All Claims list. Reopen from the workspace if you need to.',
+    confirmLabel: 'Close Claim',
     variant: 'primary',
   })
   const handleReopen = () => setPendingWorkflow({
@@ -3396,24 +3374,14 @@ function ClaimWorkspaceInner({ claimId }: { claimId: string }) {
                 </Button>
               )}
               {isAdmin && isSubmitted && !isClosed && (
-                <>
-                  <Button
-                    onClick={handleApprove}
-                    disabled={workflowBusy}
-                    size="sm"
-                    className="bg-emerald-600 hover:bg-emerald-500 text-white"
-                  >
-                    Approve
-                  </Button>
-                  <Button
-                    onClick={handleSendBack}
-                    disabled={workflowBusy}
-                    size="sm"
-                    variant="outline"
-                  >
-                    Send Back
-                  </Button>
-                </>
+                <Button
+                  onClick={handleApprove}
+                  disabled={workflowBusy}
+                  size="sm"
+                  className="bg-emerald-600 hover:bg-emerald-500 text-white"
+                >
+                  Close Claim
+                </Button>
               )}
               {isAdmin && isClosed && (
                 <Button
@@ -3550,11 +3518,11 @@ function ClaimWorkspaceInner({ claimId }: { claimId: string }) {
         )}
 
         {/* Task 11: submitted read-only banner for non-admins. Admins still see
-            Approve / Send Back in the toolbar so they don't need this notice. */}
+            Close Claim in the toolbar so they don't need this notice. */}
         {isSubmitted && !isAdmin && submittedAt && (
           <div className="mb-4 p-3 rounded-lg bg-blue-50 border border-blue-200 text-blue-700 text-sm">
             Submitted on {new Date(submittedAt).toLocaleString()}. Waiting on admin review.
-            This claim is read-only until an admin sends it back or approves it.
+            This claim is read-only until an admin closes it or reassigns it to another appraiser.
           </div>
         )}
 
@@ -4305,7 +4273,7 @@ function ClaimWorkspaceInner({ claimId }: { claimId: string }) {
         )}
 
         {/* Step 15: Reports Hub — entry point for all fillable/printable reports
-            attached to this claim (Invoice, Contract, Certificate of Appraisal). */}
+            attached to this claim (Invoice, ACV Modern Contract). */}
         {step === 15 && (
           <ReportsHubTab claimId={editingId ?? claimId} onOpenInvoice={() => setStep(12)} />
         )}

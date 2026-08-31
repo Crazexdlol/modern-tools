@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { requireAuth } from '@/lib/auth/require-admin'
 
 function normalizeFuelType(raw: string): string {
   const s = (raw || '').toLowerCase()
@@ -38,6 +39,8 @@ type AutoDevListing = {
 }
 
 export async function GET(request: NextRequest) {
+  const { errorResponse } = await requireAuth()
+  if (errorResponse) return errorResponse
   const p = request.nextUrl.searchParams
   const year = p.get('year')
   const make = p.get('make')

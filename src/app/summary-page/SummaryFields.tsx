@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
+import DOMPurify from "isomorphic-dompurify";
 import {
   ClipboardList,
   User,
@@ -396,7 +397,9 @@ function RichField({
 
   useEffect(() => {
     if (ref.current) {
-      ref.current.innerHTML = initialHtml || "";
+      // Sanitize existing content too — older rows may predate the
+      // save-side sanitization added below.
+      ref.current.innerHTML = DOMPurify.sanitize(initialHtml || "");
       setIsEmpty(!ref.current.textContent);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -404,7 +407,9 @@ function RichField({
 
   const emit = useCallback(() => {
     if (!ref.current) return;
-    onChange(ref.current.innerHTML);
+    // Sanitize on save so stored HTML is always clean. Print-side render
+    // also sanitizes as a belt-and-suspenders check.
+    onChange(DOMPurify.sanitize(ref.current.innerHTML));
     setIsEmpty(!ref.current.textContent);
   }, [onChange]);
 

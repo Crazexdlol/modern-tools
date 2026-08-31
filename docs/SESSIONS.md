@@ -18,6 +18,79 @@ Read `CLAUDE.md` first if you haven't. Then read the top entry here before touch
 
 ---
 
+## 2026-08-30 — Fix appraiser-create 404 + reassign clears completed + admin Close/Reassign inline
+
+**Worked on:** Three rolling fixes from Henry's live-ops feedback.
+
+1. **Appraiser-create 404.** Appraiser creates a claim → row created, but they immediately hit the Next.js 404 error page; admin could see the row. Root cause: `migration-roles.sql`'s `acv_select` RLS only exposes `acv_history` rows to non-admins where `assigned_to = auth.uid()`, but `saveACVHistory` inserted without setting `assigned_to`. The insert passed (INSERT policy allowed null) but the follow-up SELECT in `/claims/[id]/page.tsx:32` returned null → `notFound()`. Same bug also caused the 2s-debounced auto-save to try re-INSERTing and hitting 23505. Fix: on INSERT, look up creator's role and set `assigned_to = user.id` for non-admins. Admin creates stay unassigned so the existing admin-create-then-assign UI flow is preserved. No migration — RLS INSERT policy already permitted `assigned_to = auth.uid()` for appraisers.
+
+2. **Reassigning a submitted claim didn't remove it from the Completed queue.** Henry reassigned a submitted claim; it stayed in `/completed-assignments` because `submitted_at` was still set. Fix: `POST /api/claims/[id]/assign` now also clears `submitted_at` + `submitted_by` in the update — no-op when the claim wasn't submitted, correct behavior when it was. Mirrors the send-back route's un-submit shape. Also updated the row-reassign confirm dialog copy (previously said "the claim stays submitted"; now says the claim goes back to active work for the new appraiser).
+
+3. **Remove Send Back button + rename Approve → Close Claim + inline Close/Reassign from lists.** Per Henry: kill Send Back (Reassign is now the un-submit path), rename Approve → Close Claim, and let admins close+reassign without opening the claim. Close now works on any open claim (dropped the `must be submitted` guard on `/api/claims/[id]/approve`). Added a per-row Close button to the completed queue AND the dashboard, alongside the existing per-row Reassign dropdown (dashboard was previously bulk-only). Kept `/api/claims/[id]/send-back` intact per Henry — button-only removal.
+
+4. **Reassign polish + handling-appraiser sync.** On reassign, also sync `claim.handlingAppraiser` (the text field embedded in the claim jsonb that drives the printed assignment sheet + signature block) to the new assignee's display name — otherwise printed docs kept showing the prior appraiser. Fetches the target's profile name/email server-side and merges into the claim jsonb inside the same UPDATE. Also trimmed the row-reassign confirm dialog to just "Reassign claim X to Y?" (dropped the "will drop out of completed queue" explanation Henry didn't want). Added a confirmation dialog to the bulk reassign flow (previously fired immediately when clicking Confirm — now shows "Reassign N claims to X?" first).
+
+5. **Descriptive-text sweep + Certificate of Appraisal removal + ACV Contract labeling + table polish.** Henry: "remove all these stupid descriptions that tell you what to do or define what buttons do what." Stripped helper text from `/reports`, `/rules-laws/appraisal-clause`, `/rules-laws/diminished-value`, `/admin/settings/fee-catalog`, `/admin/settings/status-phases`, `/admin/settings/licensed-states`, `src/components/claim/guidelines-tab.tsx` (empty-state hint + footer), and the ClaimWorkspace Claim Info lock/unlock notice (the box now shows just an icon + Edit/Done button, no text). Removed the Certificate of Appraisal card from the in-claim Reports Hub. Rewrote `/claims/[id]/contract` with real per-field labels (Owner Email, Vehicle Status, Insurance Company ACV Offer, etc.) grouped into six sections that match the printed template; mapping derived by dumping every AcroForm field's page+position via `scripts/inspect-contract-pdf.mjs` and pairing them against the PDF's visible labels. Fixed the auto-populate defaults that were writing claim data into the wrong fields (Text Box 1 was getting the claim number, but it's actually Owner Email; VIN was going into what's actually the Insurance ACV Offer box, etc.). Removed the amber "field names are auto-generated — Henry rename them in Acrobat" banner.
+
+6. **Dashboard table polish + Phase pill fixes + bulk actions rework.** Henry screenshot-driven fixes:
+   - Phase pill: dropped the ChevronDown icon (didn't want a "dropdown" affordance), gave the button a min-height so rows with an active phase don't render taller than "No Phase" rows, forced the label + age text to explicit black (was picking up phase color like red-800 for Rush), bumped the age text from 10px → 12/14px.
+   - Column headers: gray-500 → gray-900, made "Assigned To" (and every data cell in that column) whitespace-nowrap so "Henry Aleksanyan" stops wrapping to two lines.
+   - Body cell colors: gray-500/700 → gray-900 across the board; only "Unassigned" and "—" empty placeholders stay gray-400.
+   - Removed the per-row Reassign dropdown column AND the per-row Close button column from both the dashboard and the completed queue — bulk toolbar covers both actions now.
+   - Bulk toolbar: added Close + Delete buttons alongside Reassign. Both trigger confirm dialogs (Close counts already-closed as skipped; Delete uses the danger variant and warns the action is permanent).
+   - Sortable columns: click any header (MA #, Insured, Client, Vehicle, VIN, State, Date, Ins. Co., Assigned To) to sort asc → desc → clear. Sort chevron shown in blue when active. Small `SortableTh` helper handles rendering.
+
+7. **Follow-up UI polish (workspace + phase pill sizing).**
+   - Claim workspace: killed the empty "lock" bubble entirely; the Edit/Done toggle now sits inline on the right side of the "Handling Appraiser" section heading (same vertical spot as before, no gray bar).
+   - Handling-appraiser license summary: stripped the bg + border on both variants (green when licensed, red when not). Now it's just colored text, no boxes.
+   - Rush pill still showed red text after fix #6 because Tailwind class ordering had `text-red-800` (from `phaseColorClasses`) winning the cascade over the child span's `text-black`. Escalated the child color to `!text-black` (Tailwind's `!important` prefix) — cascade race resolved.
+   - Phase pill sizing (fix #6 attempt didn't visibly land because the dashboard passes `size="lg"` to PhaseSelector and I'd been tweaking the `sm` variant, D'oh): rewrote the `lg` variant with `w-full` + fixed `h-[68px]`, so every pill fills the Phase column and is the same height whether it shows "No Phase" or a two-line "Umpire\n1d". Label bumped to `text-xl font-black`. Phase column widened to 220px.
+
+**Deploy status:** Live. Latest deploy `dpl_C7jdRNjzNGe6B2SDNhhs8Jug6mBN` (`modern-tools-9irr4vzlq-henry-as-projects-88caed67.vercel.app`), ● Ready, alias verified. Session shipped 7 total prod deploys over ~90 minutes:
+1. `dpl_E5Fx5CqT6yaRkMpetibvAHncLGQc` — fix #1 (appraiser-create 404).
+2. `dpl_86KjAZc165Xanbj3TVT4tvdFoEgG` — fix #2 (reassign clears submitted_at).
+3. `dpl_FEWsWZL19i9fVwmpHH35M72TM9uh` — fix #3 (Send Back removed, Approve → Close, inline actions).
+4. `dpl_BQrAGAPDkatgopiuntiYZdLhShNn` — fix #4 (handling-appraiser sync, dialog polish).
+5. `dpl_EKYeC3XzsxTBVez9QTXRCJBuCXCe` — fixes #5 + #6 (description sweep, CoA removed, contract relabeled, dashboard table rework).
+6. `dpl_3YZvKiceG5KYEbRhF5AoKjshhT2X` — fix #7 partial (`!text-black` on Rush, workspace bubble removed, license summary un-boxed, wider Phase column).
+7. `dpl_C7jdRNjzNGe6B2SDNhhs8Jug6mBN` (current) — fix #7 finale (lg variant sizing + w-full + h-[68px] so pills are uniform + bigger).
+
+Rollback for the current build: `npx vercel promote https://modern-tools-7u0ltwhpl-henry-as-projects-88caed67.vercel.app --scope henry-as-projects-88caed67 --yes` (dpl_3YZvKiceG5KYEbRhF5AoKjshhT2X). Pre-session baseline was `dpl_vv52dT8pirUjEgLW3qwUvdmBTo69`.
+
+Verified via `npx tsc --noEmit` (clean) + `npm run build` (succeeded) before each deploy; alias re-checked after each. No end-to-end browser testing — Henry drove UI verification in real time, which caught the `size="lg"` vs `size="sm"` mixup that would have slipped past a code-only review.
+
+**In progress / broken / unknowns:**
+- One claim from earlier this session is still in a limbo state (reassigned before fix #2 landed): `assigned_to` = new appraiser, `submitted_at` still set from the previous appraiser. Recovery: re-select the same assignee on it via the completed queue or click the new bulk Close.
+- ACV Contract labels are best-effort — Text Box 1_15 ("Claim Number") and Text Box 1_8 ("ACV Offer secondary") were guessed from position; Henry to verify by generating a test PDF and correcting any mislabels.
+- Dashboard column count is now high (~13 for admins). If it looks cramped on smaller laptops, either drop a low-value column or make the header more compact.
+
+**Next:** Nothing outstanding. Watch for feedback on the phase pill sizing and the contract fill mapping. If a "close without reassign" workflow ever comes back, the send-back API route is still intact even though the workspace button is gone.
+
+**Changed:**
+- `src/lib/supabase/history.ts` — self-assign on INSERT for non-admin creators (fix #1).
+- `src/app/api/claims/[id]/assign/route.ts` — clear `submitted_at`/`submitted_by` on every reassign (fix #2).
+- `src/app/api/claims/[id]/approve/route.ts` — drop the "must be submitted" guard; refuse only if already closed (fix #3).
+- `src/components/claim/ClaimWorkspace.tsx` — remove Send Back button + `handleSendBack`; rename Approve toolbar button to "Close Claim" + rewrite its confirm dialog; update the submit-confirm and read-only-banner copy to mention "close or reassign" instead of "approve or send back" (fix #3).
+- `src/components/claims-table.tsx` — new `perRowClose` prop that renders a green Close button per row with a confirm dialog + service-role `POST /api/claims/[id]/approve`; fixed stale Reassign confirm copy (fix #3).
+- `src/app/completed-assignments/completed-client.tsx` — pass `perRowClose`.
+- `src/app/page.tsx` — pass `perRowReassign={isAdmin}` and `perRowClose={isAdmin}` to the dashboard's open-claims table.
+
+**Deploy status:** Live. Three deploys total this session:
+- Final (current): `dpl_FEWsWZL19i9fVwmpHH35M72TM9uh` (`modern-tools-91jh2zuxg-henry-as-projects-88caed67.vercel.app`), ● Ready, alias `modern-tools-rho.vercel.app` verified.
+- Rollback command for the current build:
+  `npx vercel promote https://modern-tools-930pk83yw-henry-as-projects-88caed67.vercel.app --scope henry-as-projects-88caed67 --yes` (dpl_86KjAZc165Xanbj3TVT4tvdFoEgG — the mid-session deploy, has fix #1 + #2 only).
+- Earlier good build (pre-session): `dpl_vv52dT8pirUjEgLW3qwUvdmBTo69` (`modern-tools-qcvvec6ij…`).
+
+Verified via `npx tsc --noEmit` (clean) + `npm run build` (succeeded) before each deploy. Alias re-checked after each. Browser end-to-end not run.
+
+**In progress / broken / unknowns:**
+- The specific claim Henry reassigned before fix #2 shipped is still stuck: `assigned_to` = new appraiser, `submitted_at` = old appraiser's timestamp. Simplest recovery now that fix #2 is live: re-select the same assignee in the completed queue's per-row Reassign dropdown — the API will now clear `submitted_at` and the claim will drop out of the queue. Alternative: hit the new per-row Close button.
+- Dashboard column count now ~13 for admins (checkbox + 8 base + Assigned To + Reassign + Close + Phase). Fine on wide screens; possibly cramped on smaller laptops. If Henry flags, consolidate Reassign + Close into a single Actions column.
+
+**Next:** Watch for feedback on the new dashboard columns; if any live edge case surfaces where an admin needs to un-submit *without* reassigning, that's the case for un-hiding a Send Back path (route is still in place).
+
+---
+
 ## 2026-08-29 (session 5) — Phase UI polish, license Type, Reports hub + Contract fill, description sweep
 
 **Worked on:** Long iteration session on top of session 4. Roughly chronological:

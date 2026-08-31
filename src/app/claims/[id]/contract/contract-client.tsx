@@ -7,60 +7,90 @@ import { Button } from '@/components/ui/button'
 import { AppHeader } from '@/components/app-header'
 import type { ACVHistoryEntry } from '@/lib/supabase/history'
 
-// The 47 field names from the acv-contract-template.pdf AcroForm.
-// These are the auto-generated names from the PDF authoring tool —
-// there is no semantic mapping yet. Henry: open the PDF in Acrobat,
-// rename each field to a meaningful name (e.g. 'insured_name'), then
-// update the CONTRACT_FIELDS array and the DEFAULT_VALUES seeding below.
-const CONTRACT_FIELDS = [
-  'List Box 1',
-  'Text Box 1',
-  'Text Box 1_2',
-  'Text Box 1_3',
-  'Text Box 1_4',
-  'Text Box 1_5',
-  'Text Box 1_6',
-  'Text Box 1_7',
-  'Text Box 2',
-  'List Box 2',
-  'List Box 2_2',
-  'Text Box 1_8',
-  'Text Box 1_9',
-  'Text Box 1_10',
-  'Text Box 1_11',
-  'Text Box 1_12',
-  'Text Box 1_13',
-  'Text Box 1_14',
-  'Text Box 3',
-  'Text Box 1_15',
-  'Date Field 1',
-  'Text Box 1_16',
-  'Text Box 1_17',
-  'Text Box 1_18',
-  'Text Box 1_19',
-  'Text Box 1_20',
-  'Text Box 1_21',
-  'Text Box 1_22',
-  'Text Box 1_23',
-  'Text Box 1_24',
-  'Text Box 1_25',
-  'Text Box 1_26',
-  'Text Box 1_27',
-  'List Box 3',
-  'List Box 4',
-  'List Box 5',
-  'List Box 6',
-  'Text Box 1_28',
-  'Text Box 1_29',
-  'Text Box 1_30',
-  'Text Box 1_31',
-  'Text Box 1_32',
-  'List Box 2_3',
-  'Check Box 1',
-  'Text Box 4',
-  'Text Box 4_2',
-  'Text Box 5',
-] as const
+// Labels + section grouping for the ACV Modern Contract fill flow. Field
+// names are the auto-generated AcroForm names from the PDF template; the
+// visual mapping (which name corresponds to which labeled box) was derived
+// by running scripts/inspect-contract-pdf.mjs and matching field positions
+// against the printed template. If a label ever looks wrong on the generated
+// PDF, regenerate the position dump and update this mapping.
+
+type SectionType = 'section'
+type FieldType = 'text' | 'dropdown' | 'checkbox'
+
+interface FieldSpec {
+  kind: 'field'
+  name: string
+  label: string
+  type: FieldType
+  colSpan?: 1 | 2
+}
+interface SectionSpec {
+  kind: SectionType
+  label: string
+}
+type LayoutItem = FieldSpec | SectionSpec
+
+const LAYOUT: LayoutItem[] = [
+  { kind: 'section', label: 'Cover Letter' },
+  { kind: 'field', name: 'List Box 1',    label: 'How did you hear about Modern Appraisers?', type: 'dropdown', colSpan: 2 },
+
+  { kind: 'section', label: 'Vehicle Owner' },
+  { kind: 'field', name: 'Text Box 1',    label: 'Owner Email',                    type: 'text' },
+  { kind: 'field', name: 'Text Box 1_2',  label: 'Vehicle Status (Lease / Buy / Paid Off)', type: 'text' },
+  { kind: 'field', name: 'Text Box 1_3',  label: 'Owner First Name',               type: 'text' },
+  { kind: 'field', name: 'Text Box 1_7',  label: 'Owner Last Name',                type: 'text' },
+  { kind: 'field', name: 'Text Box 1_4',  label: 'Owner Address',                  type: 'text', colSpan: 2 },
+  { kind: 'field', name: 'Text Box 2',    label: 'Owner City',                     type: 'text' },
+  { kind: 'field', name: 'List Box 2',    label: 'Owner State',                    type: 'dropdown' },
+  { kind: 'field', name: 'Text Box 1_5',  label: 'Owner Phone 1',                  type: 'text' },
+  { kind: 'field', name: 'Text Box 1_6',  label: 'Owner Phone 2',                  type: 'text' },
+
+  { kind: 'section', label: 'Insurance Company' },
+  { kind: 'field', name: 'Text Box 1_15', label: 'Claim Number',                   type: 'text' },
+  { kind: 'field', name: 'Text Box 3',    label: 'Insurance Company ACV Offer',    type: 'text' },
+  { kind: 'field', name: 'Text Box 1_8',  label: 'ACV Offer (secondary)',          type: 'text' },
+  { kind: 'field', name: 'Text Box 1_9',  label: 'Insurance Company',              type: 'text' },
+  { kind: 'field', name: 'Text Box 1_10', label: 'Adjuster Email',                 type: 'text' },
+  { kind: 'field', name: 'Text Box 1_11', label: 'Adjuster Full Name',             type: 'text' },
+  { kind: 'field', name: 'Text Box 1_12', label: 'Insurance Address',              type: 'text', colSpan: 2 },
+  { kind: 'field', name: 'List Box 2_2',  label: 'Insurance State',                type: 'dropdown' },
+  { kind: 'field', name: 'Text Box 1_13', label: 'Insurance City',                 type: 'text' },
+  { kind: 'field', name: 'Text Box 1_14', label: 'Insurance Phone',                type: 'text' },
+
+  { kind: 'section', label: 'Accident' },
+  { kind: 'field', name: 'Date Field 1',  label: 'Date of Loss',                   type: 'text' },
+  { kind: 'field', name: 'Text Box 1_16', label: 'Cause of Damage',                type: 'text' },
+  { kind: 'field', name: 'Text Box 1_17', label: 'Point of Impact',                type: 'text' },
+  { kind: 'field', name: 'Text Box 1_18', label: 'Party at Fault',                 type: 'text' },
+  { kind: 'field', name: 'Text Box 1_19', label: 'Repair Status',                  type: 'text' },
+  { kind: 'field', name: 'Text Box 1_20', label: 'Accident History',               type: 'text', colSpan: 2 },
+
+  { kind: 'section', label: 'Vehicle' },
+  { kind: 'field', name: 'Text Box 1_21', label: 'Year',                           type: 'text' },
+  { kind: 'field', name: 'Text Box 1_22', label: 'Make',                           type: 'text' },
+  { kind: 'field', name: 'Text Box 1_23', label: 'Model',                          type: 'text' },
+  { kind: 'field', name: 'Text Box 1_24', label: 'Special Packages',              type: 'text' },
+  { kind: 'field', name: 'Text Box 1_25', label: '17-Character VIN',              type: 'text', colSpan: 2 },
+  { kind: 'field', name: 'List Box 3',    label: 'Condition',                      type: 'dropdown' },
+  { kind: 'field', name: 'Text Box 1_26', label: 'Mileage',                        type: 'text' },
+  { kind: 'field', name: 'Text Box 1_27', label: 'Color',                          type: 'text' },
+  { kind: 'field', name: 'List Box 4',    label: 'Prior Damages',                  type: 'dropdown' },
+
+  { kind: 'section', label: 'Payment (Optional)' },
+  { kind: 'field', name: 'List Box 6',    label: 'Card Type',                      type: 'dropdown' },
+  { kind: 'field', name: 'Text Box 1_28', label: 'Card Number',                    type: 'text' },
+  { kind: 'field', name: 'Text Box 4',    label: 'Expiration Month',              type: 'text' },
+  { kind: 'field', name: 'Text Box 4_2',  label: 'Expiration Year',               type: 'text' },
+  { kind: 'field', name: 'Text Box 5',    label: 'CVV',                            type: 'text' },
+  { kind: 'field', name: 'Text Box 1_29', label: 'Name on Card',                   type: 'text' },
+  { kind: 'field', name: 'Text Box 1_30', label: 'Billing Address',                type: 'text', colSpan: 2 },
+  { kind: 'field', name: 'Text Box 1_31', label: 'Billing Address 2',              type: 'text', colSpan: 2 },
+  { kind: 'field', name: 'Text Box 1_32', label: 'Billing City',                   type: 'text' },
+  { kind: 'field', name: 'List Box 2_3',  label: 'Billing State',                  type: 'dropdown' },
+  { kind: 'field', name: 'Check Box 1',   label: 'I authorize a charge to my card', type: 'checkbox', colSpan: 2 },
+]
+
+const ALL_FIELDS = LAYOUT.filter((i): i is FieldSpec => i.kind === 'field')
 
 function todayMMDDYYYY(): string {
   const d = new Date()
@@ -70,15 +100,36 @@ function todayMMDDYYYY(): string {
   return `${mm}/${dd}/${yyyy}`
 }
 
+function splitName(full: string): { first: string; last: string } {
+  const parts = full.trim().split(/\s+/)
+  if (parts.length <= 1) return { first: parts[0] ?? '', last: '' }
+  return { first: parts[0], last: parts.slice(1).join(' ') }
+}
+
 function buildDefaults(entry: ACVHistoryEntry): Record<string, string> {
   const c = entry.claim
-  const vehicle = [c.year, c.make, c.model].filter(Boolean).join(' ')
+  const owner = splitName(c.insuredName ?? '')
   return {
-    'Date Field 1': todayMMDDYYYY(),
-    'Text Box 1': c.claimNumber ?? '',
-    'Text Box 2': c.insuredName ?? '',
-    'Text Box 3': c.vin ?? '',
-    'Text Box 4': vehicle,
+    // Vehicle Owner
+    'Text Box 1':    c.ownerEmail ?? '',
+    'Text Box 1_3':  owner.first,
+    'Text Box 1_7':  owner.last,
+    'Text Box 1_4':  c.ownerAddress ?? '',
+    'Text Box 1_5':  c.ownerPhone ?? '',
+    // Insurance
+    'Text Box 1_15': c.claimNumber ?? '',
+    'Text Box 1_9':  c.insuranceCompany ?? '',
+    'Text Box 1_10': c.adjusterEmail ?? '',
+    'Text Box 1_11': c.adjuster ?? '',
+    'Text Box 1_14': c.adjusterPhone ?? '',
+    // Accident
+    'Date Field 1':  c.dateOfLoss ?? todayMMDDYYYY(),
+    // Vehicle
+    'Text Box 1_21': c.year ? String(c.year) : '',
+    'Text Box 1_22': c.make ?? '',
+    'Text Box 1_23': c.model ?? '',
+    'Text Box 1_25': c.vin ?? '',
+    'Text Box 1_26': c.mileage ? String(c.mileage) : '',
   }
 }
 
@@ -90,12 +141,9 @@ export function ContractClient({ entry }: Props) {
   const router = useRouter()
   const defaults = buildDefaults(entry)
 
-  // All field values, keyed by PDF field name
   const [values, setValues] = useState<Record<string, string>>(() => {
     const init: Record<string, string> = {}
-    for (const f of CONTRACT_FIELDS) {
-      init[f] = defaults[f] ?? ''
-    }
+    for (const f of ALL_FIELDS) init[f.name] = defaults[f.name] ?? ''
     return init
   })
 
@@ -136,11 +184,58 @@ export function ContractClient({ entry }: Props) {
   const c = entry.claim
   const vehicleLabel = [c.year, c.make, c.model].filter(Boolean).join(' ')
 
+  const inputCls = 'w-full border border-gray-200 rounded-md px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white'
+  const labelCls = 'block text-xs font-medium text-gray-600'
+
+  function renderField(f: FieldSpec) {
+    const colClass = f.colSpan === 2 ? 'sm:col-span-2' : ''
+    if (f.type === 'checkbox') {
+      return (
+        <div key={f.name} className={`flex items-center gap-3 ${colClass}`}>
+          <input
+            type="checkbox"
+            id={`field-${f.name}`}
+            checked={values[f.name] === 'true'}
+            onChange={e => setValue(f.name, e.target.checked ? 'true' : '')}
+            className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+          />
+          <label htmlFor={`field-${f.name}`} className="text-sm text-gray-700">
+            {f.label}
+          </label>
+        </div>
+      )
+    }
+    return (
+      <div key={f.name} className={`space-y-1 ${colClass}`}>
+        <label htmlFor={`field-${f.name}`} className={labelCls}>{f.label}</label>
+        <input
+          id={`field-${f.name}`}
+          type="text"
+          value={values[f.name]}
+          onChange={e => setValue(f.name, e.target.value)}
+          className={inputCls}
+          placeholder="—"
+        />
+      </div>
+    )
+  }
+
+  // Group layout into sections for rendering.
+  const sections: { label: string; fields: FieldSpec[] }[] = []
+  let current: { label: string; fields: FieldSpec[] } | null = null
+  for (const item of LAYOUT) {
+    if (item.kind === 'section') {
+      current = { label: item.label, fields: [] }
+      sections.push(current)
+    } else if (current) {
+      current.fields.push(item)
+    }
+  }
+
   return (
     <>
       <AppHeader />
       <div className="max-w-4xl mx-auto px-4 py-8 space-y-6">
-        {/* Back */}
         <button
           type="button"
           onClick={() => router.back()}
@@ -150,7 +245,6 @@ export function ContractClient({ entry }: Props) {
           Back to claim
         </button>
 
-        {/* Header */}
         <div className="flex items-start justify-between gap-4 flex-wrap">
           <div>
             <h1 className="text-xl font-bold text-gray-900">ACV Modern Contract</h1>
@@ -165,79 +259,21 @@ export function ContractClient({ entry }: Props) {
           </Button>
         </div>
 
-        {/* Field-mapping notice */}
-        <div className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-          Fields are labeled by their PDF field name. Henry — open the PDF in Acrobat and rename fields to semantic names (e.g. &quot;insured_name&quot;) so we can auto-populate them from claim data.
-        </div>
-
         {error && (
           <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
             {error}
           </div>
         )}
 
-        {/* Field grid */}
-        <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-6">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-4">
-            {CONTRACT_FIELDS.map(field => {
-              const isCheckBox = field === 'Check Box 1'
-              const isListBox = field.startsWith('List Box')
-
-              if (isCheckBox) {
-                return (
-                  <div key={field} className="flex items-center gap-3">
-                    <input
-                      type="checkbox"
-                      id={`field-${field}`}
-                      checked={values[field] === 'true'}
-                      onChange={e => setValue(field, e.target.checked ? 'true' : '')}
-                      className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                    />
-                    <label htmlFor={`field-${field}`} className="text-sm text-gray-700 font-mono">
-                      {field}
-                    </label>
-                  </div>
-                )
-              }
-
-              if (isListBox) {
-                return (
-                  <div key={field} className="space-y-1">
-                    <label htmlFor={`field-${field}`} className="block text-xs font-medium text-gray-500 font-mono">
-                      {field}
-                    </label>
-                    <input
-                      id={`field-${field}`}
-                      type="text"
-                      value={values[field]}
-                      onChange={e => setValue(field, e.target.value)}
-                      className="w-full border border-gray-200 rounded-md px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
-                      placeholder="—"
-                    />
-                  </div>
-                )
-              }
-
-              return (
-                <div key={field} className="space-y-1">
-                  <label htmlFor={`field-${field}`} className="block text-xs font-medium text-gray-500 font-mono">
-                    {field}
-                  </label>
-                  <input
-                    id={`field-${field}`}
-                    type="text"
-                    value={values[field]}
-                    onChange={e => setValue(field, e.target.value)}
-                    className="w-full border border-gray-200 rounded-md px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
-                    placeholder="—"
-                  />
-                </div>
-              )
-            })}
+        {sections.map(section => (
+          <div key={section.label} className="bg-white border border-gray-200 rounded-lg shadow-sm p-6 space-y-4">
+            <h2 className="text-sm font-bold text-gray-900 uppercase tracking-wide">{section.label}</h2>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-4">
+              {section.fields.map(renderField)}
+            </div>
           </div>
-        </div>
+        ))}
 
-        {/* Bottom generate button */}
         <div className="flex justify-end">
           <Button onClick={handleGenerate} disabled={generating}>
             {generating

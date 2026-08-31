@@ -16,6 +16,7 @@ import {
 import { AppHeader } from "@/components/app-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import {
   SavedSummary,
   deleteSummary,
@@ -31,6 +32,7 @@ export default function SummaryDashboardPage() {
   const router = useRouter();
   const [summaries, setSummaries] = useState<SavedSummary[]>([]);
   const [loaded, setLoaded] = useState(false);
+  const [pendingDelete, setPendingDelete] = useState<{ id: string; title: string } | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -54,8 +56,10 @@ export default function SummaryDashboardPage() {
     router.push(`/summary-page/${id}`);
   };
 
-  const handleDelete = async (id: string, title: string) => {
-    if (!confirm(`Delete "${title}"? This cannot be undone.`)) return;
+  const confirmDelete = async () => {
+    if (!pendingDelete) return;
+    const { id } = pendingDelete;
+    setPendingDelete(null);
     await deleteSummary(id);
     setSummaries(await listSummaries());
   };
@@ -159,7 +163,7 @@ export default function SummaryDashboardPage() {
                         onClick={(e) => {
                           e.preventDefault();
                           e.stopPropagation();
-                          handleDelete(s.id, title);
+                          setPendingDelete({ id: s.id, title });
                         }}
                         className="p-2 text-gray-400 hover:text-red-600 opacity-60 group-hover:opacity-100 transition-opacity"
                         title="Delete summary"
@@ -174,6 +178,20 @@ export default function SummaryDashboardPage() {
           })}
         </div>
       </main>
+
+      <ConfirmDialog
+        open={!!pendingDelete}
+        title="Delete this summary?"
+        message={
+          pendingDelete ? (
+            <>Delete <b>&quot;{pendingDelete.title}&quot;</b>? This cannot be undone.</>
+          ) : null
+        }
+        confirmLabel="Delete"
+        variant="danger"
+        onConfirm={confirmDelete}
+        onCancel={() => setPendingDelete(null)}
+      />
     </div>
   );
 }

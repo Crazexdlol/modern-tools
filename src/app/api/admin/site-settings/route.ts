@@ -4,7 +4,10 @@ import { requireAdmin } from '@/lib/auth/require-admin'
 
 export const runtime = 'nodejs'
 
-const ALLOWED_KEYS = new Set(['allow_regular_create_claims'])
+const ALLOWED_KEYS = new Set([
+  'allow_regular_create_claims',
+  'auto_status_requests_enabled',
+])
 
 export async function PATCH(request: NextRequest) {
   const { caller, errorResponse } = await requireAdmin()

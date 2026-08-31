@@ -1,12 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { fillInvoicePdf } from '@/lib/invoice/invoice-pdf-filler'
 import type { InvoiceVariant, InvoicePdfData } from '@/lib/invoice/types'
+import { requireAuth } from '@/lib/auth/require-admin'
 
 export const runtime = 'nodejs'
 
 const VARIANTS: InvoiceVariant[] = ['long', 'very-long']
 
 export async function POST(request: NextRequest) {
+  const { errorResponse } = await requireAuth()
+  if (errorResponse) return errorResponse
   try {
     const body = await request.json()
     const variant = body.variant as InvoiceVariant

@@ -2,8 +2,8 @@
 
 import { useState, useMemo, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { Search, X, Ban } from 'lucide-react'
-import { type ACVHistoryEntry } from '@/lib/supabase/history'
+import { Search, X, Ban, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react'
+import { type ACVHistoryEntry, deleteACVHistory } from '@/lib/supabase/history'
 import type { Profile } from '@/lib/supabase/profiles'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { Button } from '@/components/ui/button'
@@ -80,7 +80,6 @@ export function ClaimsTable({
   profiles = [],
   showSubmittedColumn = false,
   onAssignmentChanged,
-  perRowReassign = false,
   licensedStates = [],
   licensesByUser = new Map(),
   statusPhaseConfigs = [],
@@ -95,7 +94,6 @@ export function ClaimsTable({
   profiles?: Profile[]
   showSubmittedColumn?: boolean
   onAssignmentChanged?: () => void
-  perRowReassign?: boolean
   licensedStates?: LicensedState[]
   licensesByUser?: Map<string, AppraiserLicense[]>
   statusPhaseConfigs?: StatusPhaseConfig[]
@@ -109,12 +107,20 @@ export function ClaimsTable({
   const [bulkBusy, setBulkBusy] = useState(false)
   const [bulkError, setBulkError] = useState<string | null>(null)
   const [submitConfirmOpen, setSubmitConfirmOpen] = useState(false)
-  // Per-row reassign state — used by the Completed Assignments page so an
-  // admin can hand a submitted claim to another appraiser without opening it.
-  const [pendingRowReassign, setPendingRowReassign] = useState<
-    { entry: ACVHistoryEntry; targetId: string | null; targetLabel: string } | null
-  >(null)
-  const [rowReassignBusy, setRowReassignBusy] = useState(false)
+  const [bulkReassignConfirmOpen, setBulkReassignConfirmOpen] = useState(false)
+  const [bulkDeleteConfirmOpen, setBulkDeleteConfirmOpen] = useState(false)
+  const [bulkCloseConfirmOpen, setBulkCloseConfirmOpen] = useState(false)
+
+  // Column sort — Henry wants click-to-sort on Date, Insured, Client, Assigned To.
+  type SortCol = 'ma' | 'insured' | 'client' | 'vehicle' | 'vin' | 'state' | 'date' | 'insco' | 'assignee'
+  const [sortBy, setSortBy] = useState<{ col: SortCol; dir: 'asc' | 'desc' } | null>(null)
+  const toggleSort = (col: SortCol) => {
+    setSortBy(prev => {
+      if (!prev || prev.col !== col) return { col, dir: 'asc' }
+      if (prev.dir === 'asc') return { col, dir: 'desc' }
+      return null
+    })
+  }
 
   // Look up an assignee's display name by profile id.
   const nameFor = useCallback((id: string | null | undefined): string => {
@@ -139,7 +145,7 @@ export function ClaimsTable({
 
   const filtered = useMemo(() => {
     const q = searchQuery.toLowerCase().trim()
-    return entries.filter(e => {
+    const base = entries.filter(e => {
       if (q && !(
         e.maNumber?.toLowerCase().includes(q) ||
         e.vin?.toLowerCase().includes(q) ||
@@ -153,7 +159,28 @@ export function ClaimsTable({
       if (phaseFilter !== null && e.statusPhase !== phaseFilter) return false
       return true
     })
-  }, [entries, searchQuery, nameFor, phaseFilter])
+    if (!sortBy) return base
+    const dir = sortBy.dir === 'asc' ? 1 : -1
+    const key = (e: ACVHistoryEntry): string | number => {
+      switch (sortBy.col) {
+        case 'ma':       return (e.maNumber ?? '').toLowerCase()
+        case 'insured':  return (e.claim?.insuredName ?? '').toLowerCase()
+        case 'client':   return (e.claim?.clientName ?? '').toLowerCase()
+        case 'vehicle':  return (e.vehicle ?? '').toLowerCase()
+        case 'vin':      return (e.vin ?? '').toLowerCase()
+        case 'state':    return (extractLossState(e.claim?.ownerAddress) ?? '').toLowerCase()
+        case 'date':     return new Date(e.date).getTime()
+        case 'insco':    return (e.claim?.insuranceCompany ?? '').toLowerCase()
+        case 'assignee': return nameFor(e.assignedTo).toLowerCase()
+      }
+    }
+    return [...base].sort((a, b) => {
+      const ka = key(a), kb = key(b)
+      if (ka < kb) return -1 * dir
+      if (ka > kb) return  1 * dir
+      return 0
+    })
+  }, [entries, searchQuery, nameFor, phaseFilter, sortBy])
 
   const filteredIds = useMemo(() => filtered.map(e => e.id), [filtered])
   const allFilteredSelected =
@@ -191,6 +218,7 @@ export function ClaimsTable({
   // Bulk reassign — POSTs to /api/claims/[id]/assign for each selected id in
   // parallel, then reloads the page so the caller sees fresh assignments.
   const runBulkReassign = async () => {
+    setBulkReassignConfirmOpen(false)
     setBulkBusy(true)
     setBulkError(null)
     const ids = Array.from(selectedIds)
@@ -253,24 +281,56 @@ export function ClaimsTable({
     window.location.reload()
   }
 
-  const runRowReassign = async () => {
-    if (!pendingRowReassign) return
-    const { entry, targetId } = pendingRowReassign
-    setRowReassignBusy(true)
-    const res = await fetch(`/api/claims/${entry.id}/assign`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ assignedTo: targetId }),
-    })
-    setRowReassignBusy(false)
-    setPendingRowReassign(null)
-    if (!res.ok) {
-      const b = await res.json().catch(() => ({}))
-      setBulkError((b as { error?: string }).error ?? 'Reassign failed')
+  const runBulkClose = async () => {
+    setBulkCloseConfirmOpen(false)
+    setBulkBusy(true)
+    setBulkError(null)
+    const ids = Array.from(selectedIds)
+    const results = await Promise.all(
+      ids.map(id =>
+        fetch(`/api/claims/${id}/approve`, { method: 'POST' })
+          .then(async r => {
+            if (r.ok) return 'ok' as const
+            const body = await r.json().catch(() => ({ error: '' }))
+            const msg = (body?.error ?? '').toString().toLowerCase()
+            if (msg.includes('already closed')) return 'skipped' as const
+            return 'failed' as const
+          })
+          .catch(() => 'failed' as const),
+      ),
+    )
+    setBulkBusy(false)
+    const ok = results.filter(r => r === 'ok').length
+    const skipped = results.filter(r => r === 'skipped').length
+    const failed = results.filter(r => r === 'failed').length
+    if (failed > 0 || skipped > 0) {
+      const parts = [`Closed ${ok}`]
+      if (skipped > 0) parts.push(`${skipped} skipped (already closed)`)
+      if (failed > 0) parts.push(`${failed} failed`)
+      setBulkError(parts.join(' · ') + '. Refresh to see current state.')
+      onAssignmentChanged?.()
       return
     }
-    // Reload so the queue reflects the new assignment (assignee may now be
-    // out-of-scope for this admin's view depending on filters).
+    window.location.reload()
+  }
+
+  const runBulkDelete = async () => {
+    setBulkDeleteConfirmOpen(false)
+    setBulkBusy(true)
+    setBulkError(null)
+    const ids = Array.from(selectedIds)
+    const results = await Promise.all(
+      ids.map(id => deleteACVHistory(id).then(() => true).catch(() => false)),
+    )
+    setBulkBusy(false)
+    const failed = results.filter(ok => !ok).length
+    if (failed > 0) {
+      setBulkError(
+        `Deleted ${results.length - failed} of ${results.length} claims. ${failed} failed — refresh to see current state.`,
+      )
+      onAssignmentChanged?.()
+      return
+    }
     window.location.reload()
   }
 
@@ -280,7 +340,6 @@ export function ClaimsTable({
     (adminView ? 1 : 0) + // Assigned To (read-only text now)
     (showStatus ? 1 : 0) +
     (showSubmittedColumn ? 1 : 0) +
-    (perRowReassign ? 1 : 0) + // Reassign action column
     (statusPhaseConfigs.length > 0 ? 1 : 0) // Phase status column
 
   const selectedCount = selectedIds.size
@@ -315,11 +374,26 @@ export function ClaimsTable({
               ))}
             </select>
             <Button
-              onClick={runBulkReassign}
+              onClick={() => setBulkReassignConfirmOpen(true)}
               disabled={bulkBusy}
               className="bg-blue-600 hover:bg-blue-500 text-white text-sm"
             >
               {bulkBusy ? 'Reassigning…' : 'Confirm'}
+            </Button>
+            <span className="mx-2 h-6 w-px bg-blue-200" aria-hidden />
+            <Button
+              onClick={() => setBulkCloseConfirmOpen(true)}
+              disabled={bulkBusy}
+              className="bg-emerald-600 hover:bg-emerald-500 text-white text-sm"
+            >
+              Close
+            </Button>
+            <Button
+              onClick={() => setBulkDeleteConfirmOpen(true)}
+              disabled={bulkBusy}
+              className="bg-red-600 hover:bg-red-500 text-white text-sm"
+            >
+              Delete
             </Button>
             <button
               onClick={clearSelection}
@@ -369,28 +443,25 @@ export function ClaimsTable({
                   />
                 </th>
               )}
-              <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">MA #</th>
-              <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Insured</th>
-              <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Client</th>
-              <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Vehicle</th>
-              <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">VIN</th>
-              <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">State</th>
-              <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Date</th>
-              <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Ins. Co.</th>
+              <SortableTh label="MA #"      col="ma"       sortBy={sortBy} onClick={toggleSort} />
+              <SortableTh label="Insured"   col="insured"  sortBy={sortBy} onClick={toggleSort} />
+              <SortableTh label="Client"    col="client"   sortBy={sortBy} onClick={toggleSort} />
+              <SortableTh label="Vehicle"   col="vehicle"  sortBy={sortBy} onClick={toggleSort} />
+              <SortableTh label="VIN"       col="vin"      sortBy={sortBy} onClick={toggleSort} />
+              <SortableTh label="State"     col="state"    sortBy={sortBy} onClick={toggleSort} />
+              <SortableTh label="Date"      col="date"     sortBy={sortBy} onClick={toggleSort} />
+              <SortableTh label="Ins. Co."  col="insco"    sortBy={sortBy} onClick={toggleSort} />
               {adminView && (
-                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Assigned To</th>
+                <SortableTh label="Assigned To" col="assignee" sortBy={sortBy} onClick={toggleSort} nowrap />
               )}
               {showStatus && (
-                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
+                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-900 uppercase tracking-wider">Status</th>
               )}
               {showSubmittedColumn && (
-                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Submitted</th>
-              )}
-              {perRowReassign && (
-                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Reassign</th>
+                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-900 uppercase tracking-wider">Submitted</th>
               )}
               {statusPhaseConfigs.length > 0 && (
-                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Phase</th>
+                <th className="text-left px-2 py-3 text-xs font-semibold text-gray-900 uppercase tracking-wider w-[220px]">Phase</th>
               )}
             </tr>
           </thead>
@@ -436,17 +507,17 @@ export function ClaimsTable({
                         <ClaimMessagePreview claimId={entry.id} />
                       </div>
                     </td>
-                    <td className="px-4 py-3 text-gray-700">{entry.claim?.insuredName || '—'}</td>
-                    <td className="px-4 py-3 text-gray-700">{entry.claim?.clientName || '—'}</td>
-                    <td className="px-4 py-3 text-gray-700">{entry.vehicle || '—'}</td>
-                    <td className="px-4 py-3 text-gray-500 font-mono text-xs">{entry.vin || '—'}</td>
+                    <td className="px-4 py-3 text-gray-900">{entry.claim?.insuredName || <span className="text-gray-400">—</span>}</td>
+                    <td className="px-4 py-3 text-gray-900">{entry.claim?.clientName || <span className="text-gray-400">—</span>}</td>
+                    <td className="px-4 py-3 text-gray-900">{entry.vehicle || <span className="text-gray-400">—</span>}</td>
+                    <td className="px-4 py-3 text-gray-900 font-mono text-xs">{entry.vin || <span className="text-gray-400">—</span>}</td>
                     <td className="px-4 py-3">
                       <StateCell entry={entry} getLicenseBadge={getLicenseBadge} />
                     </td>
-                    <td className="px-4 py-3 text-gray-500">{fmtDate(entry.date)}</td>
-                    <td className="px-4 py-3 text-gray-700">{entry.claim?.insuranceCompany || '—'}</td>
+                    <td className="px-4 py-3 text-gray-900 whitespace-nowrap">{fmtDate(entry.date)}</td>
+                    <td className="px-4 py-3 text-gray-900">{entry.claim?.insuranceCompany || <span className="text-gray-400">—</span>}</td>
                     {adminView && (
-                      <td className="px-4 py-3 text-gray-700">
+                      <td className="px-4 py-3 text-gray-900 whitespace-nowrap">
                         {entry.assignedTo
                           ? nameFor(entry.assignedTo)
                           : <span className="text-gray-400 italic">Unassigned</span>}
@@ -473,41 +544,8 @@ export function ClaimsTable({
                         ) : <span className="text-gray-300">—</span>}
                       </td>
                     )}
-                    {perRowReassign && (
-                      <td className="px-4 py-3">
-                        <select
-                          value=""
-                          onClick={(e) => e.stopPropagation()}
-                          onChange={(e) => {
-                            const val = e.target.value
-                            e.currentTarget.value = ''  // reset so the same choice can be re-picked
-                            if (val === '') return
-                            if (val === '__unassign__') {
-                              setPendingRowReassign({ entry, targetId: null, targetLabel: 'Unassigned' })
-                              return
-                            }
-                            const p = profiles.find(x => x.id === val)
-                            setPendingRowReassign({
-                              entry,
-                              targetId: val,
-                              targetLabel: p ? (p.name || p.email) : 'Unknown',
-                            })
-                          }}
-                          className="text-xs bg-white border border-gray-200 rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        >
-                          <option value="">Reassign to…</option>
-                          <option value="__unassign__">— Unassigned —</option>
-                          {profiles.map(p => (
-                            <option key={p.id} value={p.id}>
-                              {(p.name || p.email)}
-                              {p.id === entry.assignedTo ? '  (current)' : ''}
-                            </option>
-                          ))}
-                        </select>
-                      </td>
-                    )}
                     {statusPhaseConfigs.length > 0 && (
-                      <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                      <td className="px-2 py-3" onClick={(e) => e.stopPropagation()}>
                         {adminView ? (
                           <PhaseSelector
                             claimId={entry.id}
@@ -557,24 +595,65 @@ export function ClaimsTable({
       />
 
       <ConfirmDialog
-        open={!!pendingRowReassign}
-        title="Reassign this claim?"
-        message={
-          pendingRowReassign ? (
-            <>
-              Reassign claim <b>{pendingRowReassign.entry.maNumber || pendingRowReassign.entry.id}</b> to{' '}
-              <b>{pendingRowReassign.targetLabel}</b>? The claim stays submitted — the new appraiser
-              picks up review responsibility.
-            </>
-          ) : null
-        }
+        open={bulkReassignConfirmOpen}
+        title={`Reassign ${selectedCount} claim${selectedCount === 1 ? '' : 's'}?`}
         confirmLabel="Reassign"
         variant="primary"
-        busy={rowReassignBusy}
-        onConfirm={runRowReassign}
-        onCancel={() => setPendingRowReassign(null)}
+        busy={bulkBusy}
+        onConfirm={runBulkReassign}
+        onCancel={() => setBulkReassignConfirmOpen(false)}
+      />
+
+      <ConfirmDialog
+        open={bulkCloseConfirmOpen}
+        title={`Close ${selectedCount} claim${selectedCount === 1 ? '' : 's'}?`}
+        confirmLabel="Close"
+        variant="primary"
+        busy={bulkBusy}
+        onConfirm={runBulkClose}
+        onCancel={() => setBulkCloseConfirmOpen(false)}
+      />
+
+      <ConfirmDialog
+        open={bulkDeleteConfirmOpen}
+        title={`Delete ${selectedCount} claim${selectedCount === 1 ? '' : 's'}?`}
+        message="This permanently removes the claim(s) from the database. This cannot be undone."
+        confirmLabel="Delete"
+        variant="danger"
+        busy={bulkBusy}
+        onConfirm={runBulkDelete}
+        onCancel={() => setBulkDeleteConfirmOpen(false)}
       />
 
     </div>
+  )
+}
+
+function SortableTh({
+  label,
+  col,
+  sortBy,
+  onClick,
+  nowrap = false,
+}: {
+  label: string
+  col: 'ma' | 'insured' | 'client' | 'vehicle' | 'vin' | 'state' | 'date' | 'insco' | 'assignee'
+  sortBy: { col: string; dir: 'asc' | 'desc' } | null
+  onClick: (col: 'ma' | 'insured' | 'client' | 'vehicle' | 'vin' | 'state' | 'date' | 'insco' | 'assignee') => void
+  nowrap?: boolean
+}) {
+  const active = sortBy?.col === col
+  const Icon = !active ? ArrowUpDown : sortBy?.dir === 'asc' ? ArrowUp : ArrowDown
+  return (
+    <th className={`text-left px-4 py-3 ${nowrap ? 'whitespace-nowrap' : ''}`}>
+      <button
+        type="button"
+        onClick={() => onClick(col)}
+        className="inline-flex items-center gap-1 text-xs font-semibold text-gray-900 uppercase tracking-wider hover:text-blue-700"
+      >
+        {label}
+        <Icon className={`w-3 h-3 ${active ? 'text-blue-600' : 'text-gray-400'}`} />
+      </button>
+    </th>
   )
 }

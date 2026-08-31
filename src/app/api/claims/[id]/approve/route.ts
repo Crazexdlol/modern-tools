@@ -14,10 +14,13 @@ export async function POST(
   const { id } = await params
   const claim = await fetchClaim(id)
   if (!claim) return NextResponse.json({ error: 'Claim not found' }, { status: 404 })
-  if (!claim.submittedAt) return NextResponse.json({ error: 'Claim is not submitted' }, { status: 400 })
+  if (claim.status === 'closed') return NextResponse.json({ error: 'Claim is already closed' }, { status: 400 })
 
   const service = createServiceClient()
-  // Approve = set status=closed. Leave submitted_at/by set for audit trail.
+  // Close = set status=closed. Admin can close from any active state — no
+  // "must be submitted" guard, since admins now close open+in-progress claims
+  // directly from the dashboard as well as reviewed submissions from the
+  // completed queue. submitted_at/by stays intact for audit trail when set.
   const { error } = await service
     .from('acv_history')
     .update({ status: 'closed' })

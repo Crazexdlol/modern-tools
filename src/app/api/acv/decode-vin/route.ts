@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { requireAuth } from '@/lib/auth/require-admin'
 
 // VINs never contain I, O, or Q — auto-correct common typos
 function sanitizeVin(vin: string): string {
@@ -66,6 +67,8 @@ function normalizeFuelType(raw: string): string {
 }
 
 export async function GET(request: NextRequest) {
+  const { errorResponse } = await requireAuth()
+  if (errorResponse) return errorResponse
   let vin = request.nextUrl.searchParams.get('vin')
   if (!vin || vin.length !== 17) {
     return NextResponse.json({ error: 'Invalid VIN' }, { status: 400 })

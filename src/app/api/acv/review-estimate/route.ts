@@ -16,6 +16,7 @@ import {
   type ReferenceAttachment,
 } from '@/lib/estimate-review/prompt'
 import type { EstimateReview } from '@/lib/estimate-review/types'
+import { requireAuth } from '@/lib/auth/require-admin'
 
 export const runtime = 'nodejs'
 export const maxDuration = 300 // allow long AI streams
@@ -119,6 +120,8 @@ async function processInBatches<T, R>(
 }
 
 export async function POST(request: NextRequest) {
+  const { errorResponse } = await requireAuth()
+  if (errorResponse) return errorResponse
   try {
     const formData = await request.formData()
     const estimates = formData

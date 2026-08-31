@@ -65,39 +65,35 @@ export function HandlingAppraiserLicenseSummary({
 
   if (handlerMatch) {
     return (
-      <div className="mb-3 inline-flex items-center px-3 py-2 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 text-sm">
-        <span>
-          <strong>{handlerMatch.name}</strong> — {state} License{' '}
-          <span className="font-mono">#{handlerMatch.licenseNumber}</span>
-        </span>
+      <div className="mb-3 text-sm text-emerald-700">
+        <strong>{handlerMatch.name}</strong> — {state} License{' '}
+        <span className="font-mono">#{handlerMatch.licenseNumber}</span>
       </div>
     )
   }
 
   // Handler not licensed (or no handler yet). Show the roster.
   return (
-    <div className="mb-3 p-3 rounded-lg bg-red-50 border border-red-200 text-sm space-y-2">
-      <div className="text-red-800 font-semibold">
-        <span>
-          {handlerName ? `${handlerName} is not licensed in ${state}.` : `A ${state} license is required for this claim.`}
-        </span>
+    <div className="mb-3 text-sm text-red-700 space-y-1">
+      <div className="font-semibold">
+        {handlerName ? `${handlerName} is not licensed in ${state}.` : `A ${state} license is required for this claim.`}
       </div>
       {licensedForState.length > 0 ? (
-        <div className="text-red-800">
-          <div className="text-xs font-semibold uppercase tracking-wide mb-1 text-red-700">
+        <div>
+          <div className="text-xs font-semibold uppercase tracking-wide">
             Licensed in {state}:
           </div>
           <ul className="space-y-0.5 pl-1">
             {licensedForState.map(x => (
-              <li key={x.userId} className="text-sm">
+              <li key={x.userId}>
                 <span className="font-semibold">{x.name}</span>{' '}
-                <span className="font-mono text-xs text-red-700">#{x.licenseNumber}</span>
+                <span className="font-mono text-xs">#{x.licenseNumber}</span>
               </li>
             ))}
           </ul>
         </div>
       ) : (
-        <div className="text-xs text-red-700 italic">
+        <div className="text-xs italic">
           No appraisers currently hold an active {state} license.
         </div>
       )}

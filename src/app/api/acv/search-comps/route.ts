@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { requireAuth } from '@/lib/auth/require-admin'
 
 // Module-level cache: which Auto.dev keys have hit their monthly quota.
 // Resets when Vercel cycles the lambda (cold start).
@@ -160,6 +161,8 @@ function normalizeAutodev(items: AutoDevListing[]): NormalizedListing[] {
 }
 
 export async function GET(request: NextRequest) {
+  const { errorResponse } = await requireAuth()
+  if (errorResponse) return errorResponse
   const p = request.nextUrl.searchParams
   const year = p.get('year')
   const make = p.get('make')

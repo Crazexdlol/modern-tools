@@ -1,7 +1,6 @@
 "use client"
 
 import { useEffect, useRef, useState } from 'react'
-import { ChevronDown } from 'lucide-react'
 import {
   fetchStatusPhaseConfigs,
   formatPhaseAge,
@@ -76,15 +75,17 @@ export function PhaseSelector({ claimId, currentPhase, currentSetAt, onChanged, 
 
   // Sizing tokens per variant. Active-phase button always uses phase-tinted
   // background with BLACK text so the label is legible and prominent.
+  // min-h keeps every pill the same height whether or not an age is shown.
+  // Dashboard uses size="lg". w-full + fixed min-h keeps every pill the
+  // same width and height whether it says "No Phase" or "Umpire\n1d".
   const buttonSize = isLg
-    ? 'px-5 py-2.5 gap-2 rounded-lg border-2'
-    : 'px-2.5 py-1.5 gap-1.5 rounded-lg border'
-  const activeLabelSize = isLg ? 'text-lg font-black' : 'text-xs font-bold'
-  const activeAgeSize = isLg ? 'text-xs' : 'text-[10px]'
-  const emptyLabelSize = isLg ? 'text-lg font-bold' : 'text-xs font-semibold'
-  const chevronSize = isLg ? 'w-5 h-5' : 'w-3 h-3'
+    ? 'px-4 py-3 rounded-lg border-2 min-h-[68px] h-[68px] justify-center w-full'
+    : 'px-3 py-2 rounded-lg border-2 min-h-[52px] h-[52px] justify-center w-full'
+  const activeLabelSize = isLg ? 'text-xl font-black !text-black leading-tight' : 'text-sm font-bold !text-black'
+  const activeAgeSize = isLg ? 'text-sm !text-black' : 'text-xs !text-black'
+  const emptyLabelSize = isLg ? 'text-xl font-bold' : 'text-sm font-semibold'
   const activeBg = activeConfig
-    ? `${phaseColorClasses(activeConfig.color)} text-gray-900`
+    ? phaseColorClasses(activeConfig.color)
     : 'bg-white border-gray-200 text-gray-600 hover:border-gray-300'
 
   return (
@@ -99,12 +100,11 @@ export function PhaseSelector({ claimId, currentPhase, currentSetAt, onChanged, 
         {activeConfig ? (
           <span className="flex flex-col items-center leading-tight">
             <span className={activeLabelSize}>{activeConfig.label}</span>
-            {age && <span className={`opacity-70 font-normal ${activeAgeSize}`}>{age}</span>}
+            {age && <span className={`font-normal ${activeAgeSize}`}>{age}</span>}
           </span>
         ) : (
-          <span className={`text-gray-500 whitespace-nowrap ${emptyLabelSize}`}>No Phase</span>
+          <span className={`whitespace-nowrap ${emptyLabelSize}`}>No Phase</span>
         )}
-        <ChevronDown className={`${chevronSize} shrink-0 opacity-60`} />
       </button>
 
       {open && (

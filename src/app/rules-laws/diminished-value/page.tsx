@@ -251,11 +251,10 @@ export default function DiminishedValuePage() {
       <AppHeader />
 
       <main className="max-w-4xl mx-auto px-6 py-8">
-        <div className="flex items-center gap-3 mb-1">
+        <div className="flex items-center gap-3 mb-6">
           <Link href="/rules-laws" className="text-gray-400 hover:text-gray-900 transition-colors"><ArrowLeft className="w-5 h-5" /></Link>
           <h1 className="text-2xl font-bold text-gray-900">Diminished Value Laws</h1>
         </div>
-        <p className="text-sm text-gray-500 mb-6 ml-8">State-by-state DV laws, accepted & criticized methodologies, landmark court cases, and claim types.</p>
 
         {/* Tabs */}
         <div className="flex items-center gap-1 bg-white border border-gray-200 rounded-lg overflow-hidden shadow-sm mb-6 w-fit">

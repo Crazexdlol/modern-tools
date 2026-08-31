@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { AppHeader } from "@/components/app-header";
 import { Button } from "@/components/ui/button";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { SummaryFields } from "../SummaryFields";
 import { SummaryPrintDoc } from "../SummaryPrintDoc";
 import {
@@ -33,6 +34,8 @@ export default function SummaryEditorPage({
   const [notFound, setNotFound] = useState(false);
   const [saved, setSaved] = useState(false);
   const [resetKey, setResetKey] = useState(0);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [confirmingClear, setConfirmingClear] = useState(false);
   // "Back" returns to wherever this summary was opened from (e.g. the ACV Tools
   // tab that created it, restored via the comp-finder draft), else the ACV list.
   const [backHref] = useState(() =>
@@ -81,16 +84,18 @@ export default function SummaryEditorPage({
     setTimeout(() => setSaved(false), 1800);
   };
 
-  const handleDelete = async () => {
+  const handleDelete = () => setConfirmingDelete(true);
+  const confirmDelete = async () => {
     if (!summary) return;
-    if (!confirm("Delete this summary? This cannot be undone.")) return;
+    setConfirmingDelete(false);
     await deleteSummary(summary.id);
     router.push("/summary-page");
   };
 
-  const handleClear = async () => {
+  const handleClear = () => setConfirmingClear(true);
+  const confirmClear = async () => {
     if (!summary) return;
-    if (!confirm("Clear all fields on this summary? This cannot be undone.")) return;
+    setConfirmingClear(false);
     const cleared: SavedSummary = {
       ...newEmptyForm(),
       id: summary.id,
@@ -193,6 +198,25 @@ export default function SummaryEditorPage({
       {/* Print layout — mirrors the Modern Appraiser Summary Page.docx.
           Shared with the summary list so both surfaces print identically. */}
       <SummaryPrintDoc summary={summary} />
+
+      <ConfirmDialog
+        open={confirmingDelete}
+        title="Delete this summary?"
+        message="This will permanently delete this summary. This cannot be undone."
+        confirmLabel="Delete"
+        variant="danger"
+        onConfirm={confirmDelete}
+        onCancel={() => setConfirmingDelete(false)}
+      />
+      <ConfirmDialog
+        open={confirmingClear}
+        title="Clear all fields?"
+        message="This will clear every field on this summary. The saved record stays but all content is wiped. This cannot be undone."
+        confirmLabel="Clear"
+        variant="danger"
+        onConfirm={confirmClear}
+        onCancel={() => setConfirmingClear(false)}
+      />
     </div>
   );
 }
