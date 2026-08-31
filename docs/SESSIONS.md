@@ -18,6 +18,54 @@ Read `CLAUDE.md` first if you haven't. Then read the top entry here before touch
 
 ---
 
+## 2026-08-30 (late) — Full security + bug audit sweep (4 fix batches shipped)
+
+**Worked on:** Henry asked for a full security + bug audit of the site. Dispatched 3 parallel review agents (security audit, API/data-layer bug hunt, client/UI bug hunt) — 20 unique findings across Critical / High / Medium / Low. Then blasted through the fix list autonomously (Henry: "stop asking me and proceed until all is fixed").
+
+**Findings shipped as 4 batches, one prod deploy each so we can rollback independently:**
+
+- **Batch A — Recovery commit + Batch A fixes (S2, S3, S4).** `dpl_CMeCrZfkFqp777TnksfrMAnB88bn`.
+  - S2: `/api/claims/[id]/phase` auto-message insert was silently failing every phase change because `messages.id` (PK, no default) and `messages.recipient_names` (NOT NULL) were missing from the insert. Route always returned 200 because insert was fire-and-forget. Added `crypto.randomUUID()` + `recipient_names: []`.
+  - S3: Contract fill dropdowns rendered as text inputs — 7 fields declared `type: 'dropdown'` fell through to `<input type="text">`. Added a real `<select>` branch with option lists inlined from the PDF (extracted via `scripts/inspect-contract-pdf.mjs`). Also swapped `List Box 4` (empty-options stub) for `List Box 5` (Yes/No dropdown) as the Prior Damages surface. Updated `/api/acv/generate-contract-pdf` to prefer `.select()` on PDFDropdowns.
+  - S4: `<strong>{...linkifyChunk(...)}</strong>` in `guidelines-tab.tsx` spread an array as JSX props — every `**bold**` in an insurance guideline rendered empty. One-char fix.
+
+- **Batch B — Auth/RLS hardening (S1, S6, S7, S8, S9).** `dpl_4aS5Yq7wG7biQrhVFFGnT85zGsNC` + new migration.
+  - S1: `/api/claims/[id]/auto-message` accepted caller-supplied `senderName`, letting any authenticated user post spoofed messages ("Admin — Henry") signed with `sender_id=null`. Server now ignores the field and always writes `'Modern Tools (Auto)'`.
+  - S6: `profiles_role_guard` trigger didn't cover the newer permission columns (`can_reassign_claims`, `can_edit_claim_info`, `can_create_claims`, `auto_status_requests_override`, `is_active`). Combined with `profiles_update_self` allowing browser writes, any appraiser could self-grant permissions. Migration extends the trigger to reject writes on those columns unless caller is admin or service role. Uses `to_jsonb(new/old)->>` so the guard is idempotent when a column doesn't exist yet.
+  - S7: `acv_history_appraiser_guard` ran only BEFORE UPDATE. An appraiser INSERT could self-set `status='closed'`, `submitted_at`, `submitted_by`. New matching BEFORE INSERT trigger force-nulls the workflow columns and forces `user_id = auth.uid()` for non-admin inserts.
+  - S8: `/api/claims/[id]/assign` had no target validation. A `can_reassign_claims` holder could dump a claim onto any user id. Added a profile lookup — `assignedTo` must be null or map to an existing, active profile.
+  - S9: Admin-branch of assign route skipped `fetchClaim`; a bad id returned `{ok:true}` with 0 rows touched. Added existence check → 404 if the row doesn't exist.
+  - **Migration file: `supabase/migration-audit-trigger-hardening.sql` (+ rollback). Needs to be run in Supabase SQL editor for S6/S7 to activate at the DB layer.**
+
+- **Batch C — Silent failures + autosave clobbering (S5, S10, S11, S12).** `dpl_37mc4cfDk7zWtjWNUex1QxrbVsg9`.
+  - S5: Bulk Delete reported success on every failure (`deleteACVHistory` swallowed errors, always resolved). Changed helper to return `Promise<boolean>`; bulk runner + workspace both now surface a real alert.
+  - S10: In-workspace reassign was clobbered by the 2s autosave (assign route wrote `claim.handlingAppraiser` server-side, `runReassign` only refreshed `assignedTo`, autosave then wrote stale name back). Now re-hydrates the full `claim` jsonb from the refreshed entry.
+  - S11: `saveACVHistory` insert errors only `console.error`'d — auto-save left a stale "Unsaved changes" pill. Now throws so the awaiter surfaces the error.
+  - S12: Invoice defaults regenerated every render (`new Date()` tick + drift from claim edits). Wrapped in `useMemo(..., [claim])`.
+
+- **Batch D — Data leak + upload validation + UX polish (S13, S14, S17-S20 + LOW cleanup).** `dpl_49gQkCFTMRncASEv6CmZGLAfo6TT`.
+  - S13: `/api/claims/duplicates` leaked the entire claim book to any authenticated user (MA#, insured, vehicle, date returned for every match). Non-admins now get counts only; matches array empty. UI shows "Contact an admin for details" instead of per-row rows.
+  - S14: File uploads (`lib/supabase/documents.ts`) had no MIME allowlist or size cap. Added 25 MB cap + tight MIME allowlist (PDF, Office, images, text/csv, zip).
+  - S17: Bulk Reassign could accidentally mass-unassign because the picker defaulted to `''` which resolved to `null`. Added explicit `— Unassigned —` sentinel option, disabled Confirm until a target is picked, confirm dialog shows the resolved name.
+  - S18: `/api/claims/[id]/messages` accepted any profile id as recipient; recipient display names got stamped even though RLS would hide the message from them. Now restricts to admins + current assignee (the users who can actually SEE the claim under `acv_select`).
+  - S19: `/api/insurance-guidelines/[id]` DELETE didn't 404 on unknown id (silent no-op). Added existence check.
+  - S20: `site_settings` PATCH still accepted both legacy keys even though the appraiser-profiles migration deleted the rows. Emptied `ALLOWED_KEYS` so the route 400s.
+  - LOW: dropped unused `PhaseSelector` import; added `export const runtime = 'nodejs'` to two ACV PDF routes (siblings had it, these two were oversights); ClaimsTable now prunes `selectedIds` on filter/sort change so the "N selected" counter matches what's visible; `ConfirmDialog` Enter-to-confirm (matches native `confirm()` ergonomics; skips textareas).
+
+**Deploy status:** All 4 batches live in prod on `modern-tools-rho.vercel.app`. Current alias: `dpl_49gQkCFTMRncASEv6CmZGLAfo6TT`. Each batch was verified via `npx tsc --noEmit` (clean) + `npm run build` (succeeded) before deploy; each deploy re-verified via `vercel inspect`. Every commit message carries its own rollback URL to the immediately-preceding batch.
+
+**GitHub:** committed everything in 5 commits (baseline + 4 fix batches) but `git push` failed — `xsfabot-boop` isn't authorized on `Crazexdlol/modern-tools`. Push queue is stuck locally until Henry either adds the user as a collaborator on GitHub or switches the git remote to an account with push access. Prod is unaffected (Vercel builds from local).
+
+**In progress / broken / unknowns:**
+- **Migration for S6/S7 needs Henry to run it in Supabase SQL editor** — `supabase/migration-audit-trigger-hardening.sql`. Until it runs, the profile-permission and acv_history-INSERT protections are code-only (the routes S1/S8/S9 fixes are already live).
+- **License Type migration status still unknown** (`supabase/migration-license-type.sql`, from session 5).
+- Two audit findings deliberately not shipped as too risky vs benefit: **S15** (auto-save `useEffect` missing `builtComps` dep — fixing risks an infinite re-save loop) and **S16** (`RichField` mount-only effect — fixing risks breaking the standalone editor's `resetKey` remount pattern). Both are low-frequency edge cases; leaving them for a future session with a proper test plan.
+- **GitHub push access** needs resolution before local repo can push (see above).
+
+**Next:** Run the trigger-hardening migration in Supabase. Resolve GitHub push access. Consider a follow-up session to tackle S15/S16 with tests.
+
+---
+
 ## 2026-08-30 — Fix appraiser-create 404 + reassign clears completed + admin Close/Reassign inline
 
 **Worked on:** Three rolling fixes from Henry's live-ops feedback.
