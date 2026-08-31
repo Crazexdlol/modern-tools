@@ -31,16 +31,28 @@ export async function POST(request: NextRequest) {
           const cb = field as any
           if (rawValue) cb.check()
           else cb.uncheck()
+        } else if (fieldType === 'PDFDropdown') {
+          // Dropdown: prefer .select() so the write validates against the
+          // option list. Falls back to setText() (an off-list value) so a
+          // user's free-text answer still lands in the PDF rather than
+          // silently dropping.
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const dd = field as any
+          const value = String(rawValue)
+          if (!value) continue
+          try {
+            dd.select(value)
+          } catch {
+            if (typeof dd.setText === 'function') dd.setText(value)
+          }
         } else if (fieldType === 'PDFOptionList') {
           // Best-effort — skip option lists (they need setOptions before select)
         } else {
-          // PDFTextField, PDFDropdown
+          // PDFTextField
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const tf = field as any
           if (typeof tf.setText === 'function') {
             tf.setText(String(rawValue))
-          } else if (typeof tf.select === 'function') {
-            try { tf.select(String(rawValue)) } catch { /* ignore invalid option */ }
           }
         }
       } catch {

@@ -50,14 +50,19 @@ export async function POST(
   // Auto-message. Fire-and-forget style — if this fails, we still return ok
   // because the phase change already succeeded. Empty recipient list so it
   // doesn't hit anyone's unread queue (informational).
+  // messages.id has no default and messages.recipient_names is NOT NULL —
+  // both must be provided or the insert silently 500s and no history entry
+  // is written for the phase change.
   const msgBody = body.phase === null
     ? 'Phase removed from claim'
     : `Claim has been phased: ${label}`
   await service.from('messages').insert({
+    id: crypto.randomUUID(),
     claim_id: id,
     sender_id: null,
     sender_name: 'Modern Tools (Auto)',
     recipient_ids: [],
+    recipient_names: [],
     body: msgBody,
     is_auto_request: true,
   }).then(({ error }) => {

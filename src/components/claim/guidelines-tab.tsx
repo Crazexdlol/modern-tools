@@ -118,7 +118,7 @@ function renderInline(text: string): React.ReactNode[] {
   for (const m of text.matchAll(BOLD_RE)) {
     const start = m.index ?? 0
     if (start > cursor) parts.push(...linkifyChunk(text.slice(cursor, start), `t${idx++}`))
-    parts.push(<strong key={`b${idx++}`}>{...linkifyChunk(m[1], `bi${idx++}`)}</strong>)
+    parts.push(<strong key={`b${idx++}`}>{linkifyChunk(m[1], `bi${idx++}`)}</strong>)
     cursor = start + m[0].length
   }
   if (cursor < text.length) parts.push(...linkifyChunk(text.slice(cursor), `t${idx++}`))
