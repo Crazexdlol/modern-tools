@@ -149,22 +149,18 @@ function build6MonthTotals(days: Day[]): { label: string; seconds: number }[] {
     const key = d.date.slice(0, 7)  // YYYY-MM
     buckets.set(key, (buckets.get(key) ?? 0) + d.activeSeconds)
   }
-  const today = laCalendarDate()
+  const today = laCalendarDate()  // YYYY-MM-DD in LA
+  const [yStr, mStr] = today.slice(0, 7).split('-')
+  let year = parseInt(yStr, 10)
+  let month = parseInt(mStr, 10)  // 1-12
   const out: { label: string; seconds: number }[] = []
   for (let i = 0; i < 6; i++) {
-    const target = laMinusDays(today, i * 30)
-    const key = target.slice(0, 7)
-    if (out.find(o => o.label.endsWith(key.slice(0, 4)) && labelKey(o.label) === key)) continue
+    const key = `${year}-${String(month).padStart(2, '0')}`
     out.push({ label: monthLabel(key), seconds: buckets.get(key) ?? 0 })
+    month--
+    if (month === 0) { month = 12; year-- }
   }
   return out
-}
-
-function labelKey(label: string): string {
-  // Convert "Aug 2026" -> "2026-08"
-  const [mon, year] = label.split(' ')
-  const monthIdx = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'].indexOf(mon)
-  return `${year}-${String(monthIdx + 1).padStart(2, '0')}`
 }
 
 function monthLabel(yyyymm: string): string {
