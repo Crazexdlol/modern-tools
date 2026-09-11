@@ -7,6 +7,7 @@ import { createServiceClient } from '@/lib/supabase/service'
 interface CallerContext {
   userId: string
   role: Role
+  isSuperAdmin: boolean
 }
 
 // Reads the session from cookies (via @supabase/ssr), then reads the caller's
@@ -50,13 +51,33 @@ async function getCaller(): Promise<
   }
   const { data: profile } = await supabase
     .from('profiles')
-    .select('id, role')
+    .select('id, role, is_super_admin')
     .eq('id', user.id)
     .maybeSingle()
   if (!profile) {
     return { caller: null, errorResponse: NextResponse.json({ error: 'No profile' }, { status: 403 }) }
   }
-  return { caller: { userId: profile.id, role: profile.role as Role }, errorResponse: null }
+  return {
+    caller: {
+      userId: profile.id,
+      role: profile.role as Role,
+      isSuperAdmin: (profile as { is_super_admin?: boolean }).is_super_admin === true,
+    },
+    errorResponse: null,
+  }
+}
+
+// Same as requireAdmin but also requires is_super_admin = true. Use for
+// routes that expose cross-user analytics that regular admins shouldn't see.
+export async function requireSuperAdmin(): Promise<
+  { caller: CallerContext; errorResponse: null } | { caller: null; errorResponse: NextResponse }
+> {
+  const authed = await requireAdmin()
+  if (!authed.caller) return authed
+  if (!authed.caller.isSuperAdmin) {
+    return { caller: null, errorResponse: NextResponse.json({ error: 'Super-admin only' }, { status: 403 }) }
+  }
+  return authed
 }
 
 export interface WorkflowClaim {
@@ -64,6 +85,7 @@ export interface WorkflowClaim {
   status: 'open' | 'closed'
   assignedTo: string | null
   submittedAt: string | null
+  statusPhase: string | null
   userId: string
 }
 
@@ -71,7 +93,7 @@ export async function fetchClaim(id: string): Promise<WorkflowClaim | null> {
   const service = createServiceClient()
   const { data, error } = await service
     .from('acv_history')
-    .select('id, status, assigned_to, submitted_at, user_id')
+    .select('id, status, assigned_to, submitted_at, status_phase, user_id')
     .eq('id', id)
     .maybeSingle()
   if (error || !data) return null
@@ -80,6 +102,7 @@ export async function fetchClaim(id: string): Promise<WorkflowClaim | null> {
     status: (data.status === 'closed' ? 'closed' : 'open'),
     assignedTo: data.assigned_to,
     submittedAt: data.submitted_at,
+    statusPhase: data.status_phase,
     userId: data.user_id,
   }
 }

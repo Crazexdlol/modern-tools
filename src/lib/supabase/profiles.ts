@@ -18,6 +18,12 @@ export interface Profile {
   addressState: string | null
   addressZip: string | null
   isActive: boolean
+  // Whether this profile appears in the Claim Info "Handling Appraiser"
+  // <select>. Independent from isActive — a profile with this=false is
+  // still fully assignable via the reassign UI, but doesn't show up in
+  // the dropdown that populates the printed-doc handling-appraiser name.
+  showInHandlingAppraiserList: boolean
+  isSuperAdmin: boolean
   createdAt: string
   updatedAt: string
 }
@@ -37,6 +43,8 @@ interface ProfileRow {
   address_state?: string | null
   address_zip?: string | null
   is_active?: boolean | null
+  show_in_handling_appraiser_list?: boolean | null
+  is_super_admin?: boolean | null
   created_at: string
   updated_at: string
 }
@@ -62,6 +70,8 @@ function rowToProfile(row: ProfileRow): Profile {
     addressState: row.address_state ?? null,
     addressZip: row.address_zip ?? null,
     isActive: row.is_active !== false,
+    showInHandlingAppraiserList: row.show_in_handling_appraiser_list !== false,
+    isSuperAdmin: row.is_super_admin === true,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   }

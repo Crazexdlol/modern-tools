@@ -17,3 +17,23 @@ export async function AdminGuard() {
   if (!data || data.role !== 'admin') notFound()
   return null
 }
+
+// Server component only. Renders nothing when the caller is super-admin;
+// calls notFound() (404) for anyone else — including regular admins.
+export async function SuperAdminGuard() {
+  const cookieStore = await cookies()
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    { cookies: { getAll() { return cookieStore.getAll() }, setAll() {} } }
+  )
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) notFound()
+  const { data } = await supabase
+    .from('profiles')
+    .select('role, is_super_admin')
+    .eq('id', user.id)
+    .maybeSingle()
+  if (!data || data.role !== 'admin' || data.is_super_admin !== true) notFound()
+  return null
+}
