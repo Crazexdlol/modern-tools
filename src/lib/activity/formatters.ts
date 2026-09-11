@@ -18,6 +18,7 @@ export function formatRelativeTime(iso: string | null): string {
   const then = new Date(iso).getTime()
   if (Number.isNaN(then)) return 'never'
   const diffMs = Date.now() - then
+  if (diffMs < 0) return 'just now'
   const diffSec = Math.floor(diffMs / 1000)
   if (diffSec < 60) return `${diffSec}s ago`
   const diffMin = Math.floor(diffSec / 60)
@@ -27,8 +28,10 @@ export function formatRelativeTime(iso: string | null): string {
   const diffDay = Math.floor(diffHr / 24)
   if (diffDay === 1) return 'yesterday'
   if (diffDay < 30) return `${diffDay} days ago`
-  const diffMonth = Math.floor(diffDay / 30)
-  if (diffMonth < 12) return `${diffMonth} month${diffMonth === 1 ? '' : 's'} ago`
+  if (diffDay < 365) {
+    const diffMonth = Math.floor(diffDay / 30)
+    return `${diffMonth} month${diffMonth === 1 ? '' : 's'} ago`
+  }
   const diffYear = Math.floor(diffDay / 365)
   return `${diffYear} year${diffYear === 1 ? '' : 's'} ago`
 }
