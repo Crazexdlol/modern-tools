@@ -2,26 +2,30 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Users, Database, BookOpen, DollarSign, ShieldCheck, Tag } from 'lucide-react'
+import { Users, Database, BookOpen, DollarSign, ShieldCheck, Tag, Activity } from 'lucide-react'
+import { useCurrentProfile } from '@/lib/supabase/profiles'
 
 const SECTIONS = [
-  { href: '/admin/settings/users',           label: 'Users',            Icon: Users },
-  { href: '/admin/settings/fee-catalog',     label: 'Fee Catalog',      Icon: DollarSign },
-  { href: '/admin/settings/status-phases',   label: 'Status Phases',    Icon: Tag },
-  { href: '/admin/settings/licensed-states', label: 'Licensed States',  Icon: ShieldCheck },
-  { href: '/admin/settings/guidelines',      label: 'Guidelines',       Icon: BookOpen },
-  { href: '/admin/settings/data',            label: 'Data',             Icon: Database },
+  { href: '/admin/settings/users',           label: 'Users',            Icon: Users,        superAdminOnly: false },
+  { href: '/admin/settings/fee-catalog',     label: 'Fee Catalog',      Icon: DollarSign,   superAdminOnly: false },
+  { href: '/admin/settings/status-phases',   label: 'Status Phases',    Icon: Tag,          superAdminOnly: false },
+  { href: '/admin/settings/licensed-states', label: 'Licensed States',  Icon: ShieldCheck,  superAdminOnly: false },
+  { href: '/admin/settings/guidelines',      label: 'Guidelines',       Icon: BookOpen,     superAdminOnly: false },
+  { href: '/admin/settings/data',            label: 'Data',             Icon: Database,     superAdminOnly: false },
+  { href: '/admin/settings/activity',        label: 'Activity',         Icon: Activity,     superAdminOnly: true  },
 ]
 
 export function SettingsNav() {
   const pathname = usePathname()
+  const { profile } = useCurrentProfile()
+  const visible = SECTIONS.filter(s => !s.superAdminOnly || profile?.isSuperAdmin === true)
   return (
     <nav className="w-56 shrink-0">
       <div className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider px-3 mb-2">
         Settings
       </div>
       <ul className="space-y-1">
-        {SECTIONS.map(({ href, label, Icon }) => {
+        {visible.map(({ href, label, Icon }) => {
           const active = pathname === href || pathname.startsWith(href + '/')
           return (
             <li key={href}>
