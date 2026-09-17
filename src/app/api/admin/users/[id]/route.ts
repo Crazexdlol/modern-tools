@@ -25,6 +25,8 @@ export async function PATCH(
     addressState?: string | null
     addressZip?: string | null
     isActive?: boolean
+    showInHandlingAppraiserList?: boolean
+    marketingAccess?: boolean
   } | null
   if (
     !body ||
@@ -39,7 +41,9 @@ export async function PATCH(
       body.addressCity === undefined &&
       body.addressState === undefined &&
       body.addressZip === undefined &&
-      body.isActive === undefined)
+      body.isActive === undefined &&
+      body.showInHandlingAppraiserList === undefined &&
+      body.marketingAccess === undefined)
   ) {
     return NextResponse.json({ error: 'no fields to update' }, { status: 400 })
   }
@@ -68,6 +72,8 @@ export async function PATCH(
   if (body.addressState !== undefined) patch.address_state = body.addressState
   if (body.addressZip !== undefined) patch.address_zip = body.addressZip
   if (body.isActive !== undefined) patch.is_active = body.isActive
+  if (body.showInHandlingAppraiserList !== undefined) patch.show_in_handling_appraiser_list = body.showInHandlingAppraiserList
+  if (body.marketingAccess !== undefined) patch.marketing_access = body.marketingAccess
 
   const { error } = await service.from('profiles').update(patch).eq('id', id)
   if (error) return NextResponse.json({ error: error.message }, { status: 400 })
@@ -87,6 +93,19 @@ export async function DELETE(
   }
 
   const service = createServiceClient()
+  // Guard: acv_history.user_id is ON DELETE CASCADE. Deleting a user with
+  // open claims destroys those claims silently. Force the admin to reassign
+  // first — return 409 with the count so the UI can show it.
+  const { count } = await service
+    .from('acv_history')
+    .select('id', { count: 'exact', head: true })
+    .eq('user_id', id)
+  if ((count ?? 0) > 0) {
+    return NextResponse.json({
+      error: `Cannot delete: user has ${count} claim(s). Reassign them first.`,
+      claimCount: count,
+    }, { status: 409 })
+  }
   const { error } = await service.auth.admin.deleteUser(id)
   if (error) return NextResponse.json({ error: error.message }, { status: 400 })
   // profiles cascades via ON DELETE CASCADE. Existing claims' assigned_to

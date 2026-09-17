@@ -11,6 +11,7 @@ import {
   type Message,
 } from "@/lib/supabase/messages"
 import { fetchAllProfilesBrowser, useCurrentProfile, type Profile } from "@/lib/supabase/profiles"
+import { safeHref } from "@/lib/safe-href"
 
 // Regex for detecting http(s) URLs and app-relative paths in message bodies.
 // Kept intentionally simple — real message bodies with pathological punctuation
@@ -24,7 +25,7 @@ function LinkifiedBody({ text }: { text: string }) {
     const idx = m.index ?? 0
     if (idx > last) parts.push(text.slice(last, idx))
     const url = m[0]
-    const href = url.startsWith("/") ? url : url
+    const href = safeHref(url)
     parts.push(
       <a
         key={idx}
@@ -148,7 +149,9 @@ export function MessagesTab({ claimId }: { claimId: string }) {
   }
   const removeRecipient = (id: string) => setRecipientIds(prev => prev.filter(x => x !== id))
 
-  const canSend = body.trim().length > 0 && recipientIds.length > 0 && !sending
+  // Recipients are optional. A message with no recipients is a note-to-thread —
+  // it still posts on the claim but doesn't notify anyone.
+  const canSend = body.trim().length > 0 && !sending
 
   const doSend = async () => {
     if (!canSend) return
@@ -260,7 +263,7 @@ export function MessagesTab({ claimId }: { claimId: string }) {
               value={pickerQuery}
               onFocus={() => setPickerOpen(true)}
               onChange={(e) => { setPickerQuery(e.target.value); setPickerOpen(true) }}
-              placeholder={recipientIds.length === 0 ? "Add recipient…" : "Add another…"}
+              placeholder={recipientIds.length === 0 ? "Add recipient (optional)…" : "Add another…"}
               className="w-full bg-white border border-gray-200 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
             {pickerOpen && pickerOptions.length > 0 && (

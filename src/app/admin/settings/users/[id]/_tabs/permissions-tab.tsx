@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import type { Profile } from '@/lib/supabase/profiles'
 
-type PermField = 'canCreateClaims' | 'canReassignClaims' | 'canEditClaimInfo' | 'autoStatusRequestsOverride'
+type PermField = 'canCreateClaims' | 'canReassignClaims' | 'canEditClaimInfo' | 'autoStatusRequestsOverride' | 'showInHandlingAppraiserList' | 'marketingAccess'
 
 const TOGGLES: { field: PermField; label: string; description: string }[] = [
   {
@@ -26,6 +26,16 @@ const TOGGLES: { field: PermField; label: string; description: string }[] = [
     label: 'Auto status requests',
     description: 'Receive automatic 48-hour status-request messages on assigned claims.',
   },
+  {
+    field: 'showInHandlingAppraiserList',
+    label: 'Show in handling-appraiser list',
+    description: 'Appears in the Claim Info "Handling Appraiser" dropdown. Still fully assignable to claims when off.',
+  },
+  {
+    field: 'marketingAccess',
+    label: 'Marketing access',
+    description: 'Grants access to the Marketing tab and the shared client / contact database. Flag-only — admin role alone does NOT grant access.',
+  },
 ]
 
 export function PermissionsTab({ profile, onSaved }: { profile: Profile; onSaved: () => void }) {
@@ -34,6 +44,8 @@ export function PermissionsTab({ profile, onSaved }: { profile: Profile; onSaved
     canReassignClaims: profile.canReassignClaims,
     canEditClaimInfo: profile.canEditClaimInfo,
     autoStatusRequestsOverride: profile.autoStatusRequestsOverride === true,
+    showInHandlingAppraiserList: profile.showInHandlingAppraiserList,
+    marketingAccess: profile.marketingAccess,
   })
   const [busyField, setBusyField] = useState<PermField | null>(null)
   const [error, setError] = useState<string | null>(null)

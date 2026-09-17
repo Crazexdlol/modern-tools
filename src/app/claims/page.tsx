@@ -1,18 +1,30 @@
 "use client"
 
 import { useState, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 import { AppHeader } from "@/components/app-header";
 import { ClaimsTable } from "@/components/claims-table";
 import { fetchACVHistory, type ACVHistoryEntry } from '@/lib/supabase/history'
 import { useCurrentProfile, fetchAllProfilesBrowser, type Profile } from '@/lib/supabase/profiles'
 
 // All Claims — every claim regardless of status, with an Open/Closed column.
+// Admin-only: non-admins are redirected to the dashboard. The top-nav link is
+// hidden for non-admins in app-header.tsx, and RLS on acv_history would still
+// filter the fetch, but the redirect keeps the URL from resolving to an empty
+// page for anyone who deep-links here.
 export default function AllClaimsPage() {
+  const router = useRouter()
   const [entries, setEntries] = useState<ACVHistoryEntry[]>([])
   const [profiles, setProfiles] = useState<Profile[]>([])
   const [fetchError, setFetchError] = useState(false)
-  const { profile } = useCurrentProfile()
+  const { profile, loading: profileLoading } = useCurrentProfile()
   const isAdmin = profile?.role === 'admin'
+
+  // Route-level guard: bounce non-admins as soon as their profile resolves.
+  useEffect(() => {
+    if (profileLoading) return
+    if (profile && !isAdmin) router.replace('/')
+  }, [profile, profileLoading, isAdmin, router])
 
   const load = () => {
     fetchACVHistory().then(result => {
@@ -22,10 +34,10 @@ export default function AllClaimsPage() {
     fetchAllProfilesBrowser().then(setProfiles)
   }
 
-  useEffect(() => { load() }, [])
-
-  const openCount = entries.filter(e => e.status !== 'closed').length
-  const closedCount = entries.length - openCount
+  useEffect(() => {
+    if (!isAdmin) return
+    load()
+  }, [isAdmin])
 
   return (
     <div className="min-h-screen bg-gray-50 text-gray-900">
@@ -34,9 +46,7 @@ export default function AllClaimsPage() {
       <main className="max-w-[1600px] mx-auto px-6 py-8">
         <div className="mb-6">
           <h2 className="text-2xl font-bold text-gray-900">All Claims</h2>
-          <p className="text-sm text-gray-400">
-            {entries.length} claims — {openCount} open, {closedCount} closed
-          </p>
+          <p className="text-sm text-gray-400">{entries.length} claims</p>
         </div>
 
         {fetchError && (
@@ -52,6 +62,9 @@ export default function AllClaimsPage() {
           adminView={isAdmin}
           profiles={profiles}
           onAssignmentChanged={load}
+          onStarChanged={(id, starred) => setEntries(prev =>
+            prev.map(e => e.id === id ? { ...e, starred } : e)
+          )}
         />
       </main>
     </div>

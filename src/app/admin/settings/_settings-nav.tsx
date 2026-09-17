@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Users, Database, BookOpen, DollarSign, ShieldCheck, Tag, Activity } from 'lucide-react'
+import { Users, Database, BookOpen, DollarSign, ShieldCheck, Tag, Activity, HelpCircle } from 'lucide-react'
 import { useCurrentProfile } from '@/lib/supabase/profiles'
 
 const SECTIONS = [
@@ -11,6 +11,7 @@ const SECTIONS = [
   { href: '/admin/settings/status-phases',   label: 'Status Phases',    Icon: Tag,          superAdminOnly: false },
   { href: '/admin/settings/licensed-states', label: 'Licensed States',  Icon: ShieldCheck,  superAdminOnly: false },
   { href: '/admin/settings/guidelines',      label: 'Guidelines',       Icon: BookOpen,     superAdminOnly: false },
+  { href: '/admin/settings/help',            label: 'Help Articles',    Icon: HelpCircle,   superAdminOnly: true  },
   { href: '/admin/settings/data',            label: 'Data',             Icon: Database,     superAdminOnly: false },
   { href: '/admin/settings/activity',        label: 'Activity',         Icon: Activity,     superAdminOnly: true  },
 ]

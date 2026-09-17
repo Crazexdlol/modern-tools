@@ -8,6 +8,12 @@ export type ClaimStatus = 'open' | 'closed'
 export interface ACVHistoryEntry {
   id: string
   date: string
+  // Stable creation timestamp — set once by the DB (`default now()`), never
+  // updated. Optional in the interface because callers that construct entries
+  // to *write* (e.g. ClaimWorkspace's saveToHistory) leave it to the DB; every
+  // read via rowToEntry populates it, falling back to `date` for the rare
+  // pre-column row.
+  createdAt?: string
   mode: string
   vehicle: string
   vin: string
@@ -43,9 +49,36 @@ export interface ACVHistoryEntry {
   // Reports tab — Invoice state (jsonb; shape lives in reports-tab.tsx).
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   invoice?: any
+  // Storage Charges tab state (jsonb; shape = StorageState in acv/types.ts).
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  storage?: any
   // Status phase (set via /api/claims/[id]/phase; cleared by setting null).
   statusPhase?: string | null
   statusPhaseSetAt?: string | null
+  // Reason the claim was closed (set via /api/claims/[id]/approve).
+  //   'completed' — normal course, ran to closure
+  //   'cancelled' — pulled (client withdrew, wrong assignment, duplicate, etc)
+  //   null        — either the claim isn't closed, or it was closed before the
+  //                 close_reason column was added (legacy rows).
+  closeReason?: 'completed' | 'cancelled' | null
+  // Timestamp the claim was closed (set via /api/claims/[id]/approve; cleared
+  // by /api/claims/[id]/reopen). Null for open claims and for closed rows
+  // that predate the closed_at migration and had no submitted_at to backfill.
+  closedAt?: string | null
+  // Canonical client the claim's clientName resolves to. Null on claims
+  // created before the Marketing rollout (backfilled in a later session).
+  clientId?: string | null
+  // Team-wide star flag — anyone can toggle, everyone sees it. Set via
+  // /api/claims/[id]/star. Default false; undefined = column not yet
+  // migrated (graceful degradation).
+  starred?: boolean
+  // acv_history.assigned_at — timestamp when this claim was most recently
+  // (re)assigned. Used with openedAt below to derive the "unread" gray
+  // highlight on the appraiser dashboard.
+  assignedAt?: string | null
+  // user_claim_views.opened_at for the current auth user; null if this user
+  // has never opened this claim (or the migration hasn't run yet).
+  openedAt?: string | null
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -53,6 +86,7 @@ function rowToEntry(row: any): ACVHistoryEntry {
   return {
     id: row.id,
     date: row.date,
+    createdAt: row.created_at ?? row.date,
     mode: row.mode,
     vehicle: row.vehicle,
     vin: row.vin,
@@ -73,33 +107,79 @@ function rowToEntry(row: any): ACVHistoryEntry {
     documents: row.documents ?? undefined,
     dv: row.dv ?? undefined,
     invoice: row.invoice ?? undefined,
+    storage: row.storage ?? undefined,
     statusPhase: row.status_phase ?? null,
     statusPhaseSetAt: row.status_phase_set_at ?? null,
+    closeReason: row.close_reason === 'completed' || row.close_reason === 'cancelled' ? row.close_reason : null,
+    closedAt: row.closed_at ?? null,
+    clientId: row.client_id ?? null,
+    starred: row.starred === true,
+    assignedAt: row.assigned_at ?? null,
   }
 }
 
 // Returns null on a fetch error so callers can show a real error state
 // instead of an empty-looking dashboard.
 //
-// List-view fetch: pulls only the columns the three list pages (dashboard,
-// /claims, /completed-assignments) actually render. The fat jsonb blobs
+// List-view fetch: pulls only the columns the two list pages (dashboard,
+// /claims) actually render. The fat jsonb blobs
 // (comps, auction_listings, documents, reports_state, estimate, dv, invoice,
 // adjustments, result) are intentionally omitted — on ~390 claims they'd
 // balloon the response into multi-MB territory and stall login. Full-row
 // fetch lives in fetchACVEntry(id) for the claim workspace.
 export async function fetchACVHistory(): Promise<ACVHistoryEntry[] | null> {
   const supabase = createClient()
-  const { data, error } = await supabase
+  // Full column list — includes all newer columns (starred, close_reason).
+  // If any newer column hasn't been migrated yet, we fall back to the core
+  // column set so the dashboard stays alive. `starred` and `closeReason`
+  // default gracefully (false / null) when absent, so the UI is fine either
+  // way.
+  const colsFull = 'id, date, created_at, mode, vehicle, vin, ma_number, acv, status, claim, assigned_to, assigned_at, submitted_at, submitted_by, status_phase, status_phase_set_at, starred, close_reason, closed_at'
+  const colsCore = 'id, date, created_at, mode, vehicle, vin, ma_number, acv, status, claim, assigned_to, assigned_at, submitted_at, submitted_by, status_phase, status_phase_set_at'
+  // Dashboard default: oldest at top (longest-open first). Users can click
+  // the Days Open header to flip direction.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let data: any[] | null = null
+  let { data: fullData, error } = await supabase
     .from('acv_history')
-    .select('id, date, mode, vehicle, vin, ma_number, acv, status, claim, assigned_to, submitted_at, submitted_by, status_phase, status_phase_set_at')
-    .order('date', { ascending: false })
+    .select(colsFull)
+    .order('created_at', { ascending: true })
+  data = fullData
+
+  if (error && error.code === '42703') {
+    const { data: fallback, error: err2 } = await supabase
+      .from('acv_history')
+      .select(colsCore)
+      .order('created_at', { ascending: true })
+    data = fallback
+    error = err2
+  }
 
   if (error) {
     console.error('Failed to fetch ACV history:', error)
     return null
   }
 
-  return (data ?? []).map(rowToEntry)
+  const entries = (data ?? []).map(rowToEntry)
+
+  // Pull the current user's opened_at rows so the dashboard can derive
+  // isUnread (assigned_to = user AND (no row OR assigned_at > opened_at)).
+  // Wrapped defensively: the table may not exist yet if the migration
+  // hasn't run — in that case everything just shows as opened.
+  const { data: { user } } = await supabase.auth.getUser()
+  let viewsByClaimId = new Map<string, string>()
+  if (user) {
+    const { data: views, error: viewsErr } = await supabase
+      .from('user_claim_views')
+      .select('claim_id, opened_at')
+      .eq('user_id', user.id)
+    // 42P01 = table doesn't exist yet (pre-migration). Fall through with empty map.
+    if (!viewsErr && views) {
+      viewsByClaimId = new Map(views.map(v => [v.claim_id as string, v.opened_at as string]))
+    }
+  }
+
+  return entries.map(e => ({ ...e, openedAt: viewsByClaimId.get(e.id) ?? null }))
 }
 
 export async function fetchACVEntry(id: string): Promise<ACVHistoryEntry | null> {
@@ -159,6 +239,8 @@ export async function saveACVHistory(entry: ACVHistoryEntry, editId?: string | n
   if (entry.documents !== undefined) payload.documents = entry.documents
   if (entry.dv !== undefined) payload.dv = entry.dv
   if (entry.invoice !== undefined) payload.invoice = entry.invoice
+  if (entry.storage !== undefined) payload.storage = entry.storage
+  if (entry.clientId !== undefined) payload.client_id = entry.clientId
 
   // Existence check first: an "update returned 0 rows" could mean either
   // "row not found" (correct to fall through to insert) OR "RLS blocked
@@ -184,11 +266,13 @@ export async function saveACVHistory(entry: ACVHistoryEntry, editId?: string | n
       .update(payload)
       .eq('id', id)
     if (updateError && updateError.code === '42703') {
-      // documents/dv/invoice columns not migrated yet — save everything
-      // else rather than losing the claim edit.
+      // documents/dv/invoice/client_id columns not migrated yet — save
+      // everything else rather than losing the claim edit.
       delete payload.documents
       delete payload.dv
       delete payload.invoice
+      delete payload.storage
+      delete payload.client_id
       ;({ error: updateError } = await supabase
         .from('acv_history')
         .update(payload)
@@ -235,6 +319,17 @@ export async function saveACVHistory(entry: ACVHistoryEntry, editId?: string | n
 // user thinking rows were removed when they weren't.
 export async function deleteACVHistory(id: string): Promise<boolean> {
   const supabase = createClient()
+  // Clean up storage bucket first — the RLS policy gates on the claim
+  // existing, so after the row is deleted the objects become orphaned
+  // (undeletable via RLS). Do this before the DB delete.
+  try {
+    const { data: files } = await supabase.storage.from('claim-documents').list(id)
+    if (files && files.length > 0) {
+      await supabase.storage.from('claim-documents').remove(
+        files.map(f => `${id}/${f.name}`)
+      )
+    }
+  } catch { /* storage cleanup best-effort */ }
   const { error } = await supabase.from('acv_history').delete().eq('id', id)
   if (error) {
     console.error('Failed to delete ACV history:', error)

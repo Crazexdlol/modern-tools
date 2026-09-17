@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/lib/auth/require-admin'
+import { rateLimit } from '@/lib/rate-limit'
 
 // Module-level cache: which Auto.dev keys have hit their monthly quota.
 // Resets when Vercel cycles the lambda (cold start).
@@ -161,8 +162,16 @@ function normalizeAutodev(items: AutoDevListing[]): NormalizedListing[] {
 }
 
 export async function GET(request: NextRequest) {
-  const { errorResponse } = await requireAuth()
+  const { caller, errorResponse } = await requireAuth()
   if (errorResponse) return errorResponse
+  const limit = rateLimit(`search-comps:${caller!.userId}`, 3000, 3600)
+  if (!limit.ok) {
+    console.warn(`[search-comps] rate limit tripped for ${caller!.userId}, retry in ${limit.resetInSeconds}s`)
+    return NextResponse.json(
+      { error: `Rate limit exceeded, try again in ${limit.resetInSeconds} seconds` },
+      { status: 429 },
+    )
+  }
   const p = request.nextUrl.searchParams
   const year = p.get('year')
   const make = p.get('make')

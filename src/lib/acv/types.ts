@@ -1,7 +1,26 @@
 // Claim work types — controls which tool tabs appear in the workspace.
 // 'other' unlocks every tool (used for mixed/complex claims). Multiple can
 // be selected. Empty array = legacy claim (no filtering, all tools shown).
-export type ClaimType = 'acv' | 'dv' | 'estimate' | 'other'
+export type ClaimType = 'acv' | 'dv' | 'estimate' | 'storage' | 'other'
+
+// ── Storage Charges tool ─────────────────────────────────────────────────────
+// One row per billable storage-related item. Line total is Hours × Rate;
+// Qty is display-only (count of the item, not multiplied into the total).
+// Persisted as jsonb on acv_history.storage.
+export interface StorageLine {
+  id: string          // client-generated per row so React keys are stable
+  qty: number         // display only, default 1
+  description: string
+  hours: number
+  rate: number        // $/hr
+}
+
+export interface StorageState {
+  lines: StorageLine[]
+  taxRatePct: number  // 0-100
+  notes: string
+  savedAt?: string    // ISO
+}
 
 export interface ClaimInfo {
   maNumber: string
@@ -34,6 +53,10 @@ export interface ClaimInfo {
   adjuster: string
   adjusterPhone: string
   adjusterEmail: string
+  // Policy deductible in dollars. Optional so existing claims that predate
+  // this field still deserialize; downstream consumers should treat undefined
+  // as 0 / not-set.
+  deductible?: number
   vin: string
   year: number
   make: string

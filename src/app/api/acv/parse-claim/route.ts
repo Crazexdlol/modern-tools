@@ -20,6 +20,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'File must be a PDF' }, { status: 400 })
     }
 
+    // Per-file size cap: 25 MB. Anything larger is almost certainly wrong
+    // and would stall OCR.
+    if (file.size > 25 * 1024 * 1024) {
+      return NextResponse.json({ error: `File ${file.name} exceeds 25 MB limit` }, { status: 413 })
+    }
+
     const buffer = Buffer.from(await file.arrayBuffer())
     const text = await extractTextFromPDF(buffer)
 

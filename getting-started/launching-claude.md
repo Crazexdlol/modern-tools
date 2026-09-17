@@ -13,7 +13,7 @@ There should be exactly **one** copy of this project on disk at that path. If yo
 ## 2. Start Claude Code
 
 ```powershell
-claude
+claude --dangerously-skip-permissions
 ```
 
 That drops you into an interactive session in this folder. Claude Code auto-loads `CLAUDE.md` (project instructions) and your global `~/.claude/CLAUDE.md` on startup.

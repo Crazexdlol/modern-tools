@@ -24,9 +24,18 @@ export async function POST(
   }
 
   const service = createServiceClient()
+  const now = new Date().toISOString()
+  // Also phase the claim as 'completed' so it stays visible on the dashboard
+  // (no more separate /completed-assignments queue) and admins can filter to
+  // it via the same phase-chip UI as the other phases.
   const { error } = await service
     .from('acv_history')
-    .update({ submitted_at: new Date().toISOString(), submitted_by: caller!.userId })
+    .update({
+      submitted_at: now,
+      submitted_by: caller!.userId,
+      status_phase: 'completed',
+      status_phase_set_at: now,
+    })
     .eq('id', id)
   if (error) return NextResponse.json({ error: error.message }, { status: 400 })
   return NextResponse.json({ ok: true })

@@ -7,12 +7,22 @@ import { usePathname } from 'next/navigation'
 import { ChevronDown, User as UserIcon, Settings } from 'lucide-react'
 import { LogoutButton } from '@/components/logout-button'
 import { useCurrentProfile } from '@/lib/supabase/profiles'
+import { fetchDueForRemarketingCount } from '@/lib/supabase/clients'
 
-const NAV_ITEMS = [
+interface NavItem {
+  label: string
+  href: string
+  marketingOnly?: boolean
+  adminOnly?: boolean
+}
+
+const NAV_ITEMS: NavItem[] = [
   { label: 'Dashboard', href: '/' },
-  { label: 'All Claims', href: '/claims' },
+  { label: 'All Claims', href: '/claims', adminOnly: true },
   { label: 'Reports', href: '/reports' },
   { label: 'Rules / Laws', href: '/rules-laws' },
+  { label: 'Marketing', href: '/marketing', marketingOnly: true },
+  { label: 'Help', href: '/help' },
 ]
 
 export function AppHeader() {
@@ -20,6 +30,7 @@ export function AppHeader() {
   const { profile } = useCurrentProfile()
   const [menuOpen, setMenuOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement | null>(null)
+  const [dueCount, setDueCount] = useState<number>(0)
 
   useEffect(() => {
     const onDocClick = (e: MouseEvent) => {
@@ -29,6 +40,14 @@ export function AppHeader() {
     return () => document.removeEventListener('mousedown', onDocClick)
   }, [])
 
+  // Fetch due-count once the marketing_access profile flag is known. Non-marketing
+  // callers get 0 back thanks to RLS + graceful fallback.
+  useEffect(() => {
+    if (!profile) return
+    if (profile.marketingAccess !== true) { setDueCount(0); return }
+    fetchDueForRemarketingCount().then(setDueCount)
+  }, [profile?.id, profile?.marketingAccess])
+
   const displayLabel = profile?.name || profile?.email || ''
 
   return (
@@ -37,6 +56,18 @@ export function AppHeader() {
         <Link href="/"><Image src="/logo.png" alt="Modern Appraisers" width={160} height={48} className="h-9 w-auto" priority /></Link>
         <nav className="flex items-center gap-6">
           {NAV_ITEMS.map(item => {
+            // Marketing tab is flag-only — admin role does NOT grant implicit
+            // access. Enforced server-side by RLS + the /marketing page guard;
+            // this just hides the link when the flag is off.
+            if (item.marketingOnly && profile?.marketingAccess !== true) {
+              return null
+            }
+            // All Claims is admin-only — appraisers only see their assigned
+            // claims via the Dashboard. Route also self-redirects (see
+            // src/app/claims/page.tsx) as a defence-in-depth.
+            if (item.adminOnly && profile?.role !== 'admin') {
+              return null
+            }
             const active = item.href === '/'
               ? pathname === '/' || pathname.startsWith('/claims/')
               : item.href === '/claims'
@@ -46,9 +77,14 @@ export function AppHeader() {
               <Link
                 key={item.href}
                 href={item.href}
-                className={`text-sm font-medium transition-colors ${active ? 'text-white' : 'text-gray-400 hover:text-white'}`}
+                className={`inline-flex items-center gap-1.5 text-sm font-medium transition-colors ${active ? 'text-white' : 'text-gray-400 hover:text-white'}`}
               >
                 {item.label}
+                {item.marketingOnly && dueCount > 0 && (
+                  <span className="inline-flex items-center justify-center min-w-[18px] h-4 px-1 rounded-full bg-red-600 text-white text-[10px] font-bold" title={`${dueCount} client${dueCount === 1 ? '' : 's'} due for remarketing`}>
+                    {dueCount > 99 ? '99+' : dueCount}
+                  </span>
+                )}
               </Link>
             )
           })}

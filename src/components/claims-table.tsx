@@ -1,10 +1,12 @@
 "use client"
 
 import { useState, useMemo, useCallback, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
-import { Search, X, Ban, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react'
+import Link from 'next/link'
+import { Search, X, Ban, ArrowUpDown, ArrowUp, ArrowDown, Star, ChevronLeft, ChevronRight } from 'lucide-react'
 import { type ACVHistoryEntry, deleteACVHistory } from '@/lib/supabase/history'
-import type { Profile } from '@/lib/supabase/profiles'
+import type { ClaimType } from '@/lib/acv/types'
+import { type Profile, useCurrentProfile } from '@/lib/supabase/profiles'
+import { cn } from '@/lib/utils'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { Button } from '@/components/ui/button'
 import { ClaimMessagePreview } from '@/components/claim-message-preview'
@@ -16,10 +18,51 @@ import { isLicenseValid } from '@/lib/supabase/appraiser-licenses'
 import { extractLossState } from '@/lib/claim-state'
 import { type StatusPhaseConfig, formatPhaseAge, phaseColorClasses } from '@/lib/supabase/status-phase-configs'
 
+const PAGE_SIZE = 100
+
 function fmtDate(iso: string): string {
   return new Date(iso).toLocaleDateString("en-US", {
     month: "2-digit", day: "2-digit", year: "numeric",
   })
+}
+
+// Whole days between two ISO timestamps at local-midnight boundaries. If
+// `toIso` is omitted, uses today. This drives the Days column: for open
+// claims, from = createdAt / to = today (ticks up daily); for closed
+// claims, from = createdAt / to = closedAt (frozen when the claim closed).
+function daysBetween(fromIso: string | undefined, toIso?: string | null): number {
+  if (!fromIso) return 0
+  const from = new Date(fromIso)
+  if (Number.isNaN(from.getTime())) return 0
+  const to = toIso ? new Date(toIso) : new Date()
+  if (Number.isNaN(to.getTime())) return 0
+  const startOfFrom = new Date(from.getFullYear(), from.getMonth(), from.getDate()).getTime()
+  const startOfTo   = new Date(to.getFullYear(),   to.getMonth(),   to.getDate()  ).getTime()
+  return Math.max(0, Math.round((startOfTo - startOfFrom) / 86_400_000))
+}
+
+function daysOpenFor(entry: ACVHistoryEntry): number {
+  return daysBetween(entry.createdAt, entry.status === 'closed' ? entry.closedAt ?? undefined : undefined)
+}
+
+function fmtDaysOpenFor(entry: ACVHistoryEntry): string {
+  const n = daysOpenFor(entry)
+  if (n === 0) return 'Today'
+  if (n === 1) return '1 day'
+  return `${n} days`
+}
+
+const CLAIM_TYPE_LABELS: Record<ClaimType, string> = {
+  acv:      'ACV',
+  dv:       'DV',
+  estimate: 'Estimate',
+  storage:  'Storage',
+  other:    'Other',
+}
+
+function formatClaimTypes(types: ClaimType[] | undefined): string {
+  if (!types || types.length === 0) return ''
+  return types.map(t => CLAIM_TYPE_LABELS[t] ?? t).join(', ')
 }
 
 function StateCell({
@@ -85,6 +128,7 @@ export function ClaimsTable({
   statusPhaseConfigs = [],
   phaseFilter = null,
   onPhaseChanged,
+  onStarChanged,
 }: {
   entries: ACVHistoryEntry[]
   onDeleted?: (id: string) => void
@@ -99,9 +143,10 @@ export function ClaimsTable({
   statusPhaseConfigs?: StatusPhaseConfig[]
   phaseFilter?: string | null
   onPhaseChanged?: (id: string, phase: string | null, setAt: string | null) => void
+  onStarChanged?: (id: string, starred: boolean) => void
 }) {
-  const router = useRouter()
   const [searchQuery, setSearchQuery] = useState('')
+  const [page, setPage] = useState(1)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [bulkAssignee, setBulkAssignee] = useState<string>('')
   const [bulkBusy, setBulkBusy] = useState(false)
@@ -110,10 +155,14 @@ export function ClaimsTable({
   const [bulkReassignConfirmOpen, setBulkReassignConfirmOpen] = useState(false)
   const [bulkDeleteConfirmOpen, setBulkDeleteConfirmOpen] = useState(false)
   const [bulkCloseConfirmOpen, setBulkCloseConfirmOpen] = useState(false)
+  const [bulkReopenConfirmOpen, setBulkReopenConfirmOpen] = useState(false)
 
-  // Column sort — Henry wants click-to-sort on Date, Insured, Client, Assigned To.
-  type SortCol = 'ma' | 'insured' | 'client' | 'vehicle' | 'vin' | 'state' | 'date' | 'insco' | 'assignee'
-  const [sortBy, setSortBy] = useState<{ col: SortCol; dir: 'asc' | 'desc' } | null>(null)
+  // Column sort — Henry wants click-to-sort on Days Open (default), MA #,
+  // Insured, Client, Vehicle, VIN, State, Ins. Co., Assigned To. Default is
+  // Days Open descending so longest-open claims float to the top and stay
+  // there (the sort key uses created_at, which is stable across visits).
+  type SortCol = 'ma' | 'insured' | 'client' | 'vehicle' | 'vin' | 'state' | 'daysOpen' | 'insco' | 'assignee'
+  const [sortBy, setSortBy] = useState<{ col: SortCol; dir: 'asc' | 'desc' } | null>({ col: 'daysOpen', dir: 'desc' })
   const toggleSort = (col: SortCol) => {
     setSortBy(prev => {
       if (!prev || prev.col !== col) return { col, dir: 'asc' }
@@ -121,6 +170,11 @@ export function ClaimsTable({
       return null
     })
   }
+
+  // Current viewer's id — used to derive the "unread" gray highlight on
+  // rows assigned to me that I haven't opened since the last (re)assignment.
+  const { profile: currentProfile } = useCurrentProfile()
+  const currentUserId = currentProfile?.id ?? null
 
   // Look up an assignee's display name by profile id.
   const nameFor = useCallback((id: string | null | undefined): string => {
@@ -169,7 +223,7 @@ export function ClaimsTable({
         case 'vehicle':  return (e.vehicle ?? '').toLowerCase()
         case 'vin':      return (e.vin ?? '').toLowerCase()
         case 'state':    return (extractLossState(e.claim?.ownerAddress) ?? '').toLowerCase()
-        case 'date':     return new Date(e.date).getTime()
+        case 'daysOpen': return daysOpenFor(e)
         case 'insco':    return (e.claim?.insuranceCompany ?? '').toLowerCase()
         case 'assignee': return nameFor(e.assignedTo).toLowerCase()
       }
@@ -184,9 +238,31 @@ export function ClaimsTable({
 
   const filteredIds = useMemo(() => filtered.map(e => e.id), [filtered])
 
-  // If the user filters/sorts away claims they've selected, prune those
-  // ids so the "N selected" counter matches what's actually visible and
-  // bulk actions don't operate on hidden rows.
+  // Client-side pagination. Search/sort/filter run against the full set above,
+  // then we slice for rendering so React only diffs PAGE_SIZE rows at a time.
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
+  // Snap back to page 1 whenever the filtered set changes (new search, phase
+  // filter, sort). If we don't, a user on page 4 who types a search that
+  // returns 30 rows would see an empty table until they manually paged back.
+  useEffect(() => {
+    setPage(1)
+  }, [searchQuery, phaseFilter, sortBy])
+  // Belt-and-suspenders: if the total shrinks below the current page (e.g.
+  // deletions from a bulk action), clamp so we never render an empty page.
+  useEffect(() => {
+    if (page > totalPages) setPage(totalPages)
+  }, [page, totalPages])
+  const pageStart = (page - 1) * PAGE_SIZE
+  const paginated = useMemo(
+    () => filtered.slice(pageStart, pageStart + PAGE_SIZE),
+    [filtered, pageStart],
+  )
+  const paginatedIds = useMemo(() => paginated.map(e => e.id), [paginated])
+
+  // If the user filters away claims they've selected, prune those ids so
+  // the "N selected" counter matches what's actually reachable and bulk
+  // actions don't operate on hidden rows. Note: selection persists ACROSS
+  // pages within the same filtered set — leaving a page doesn't drop it.
   useEffect(() => {
     if (selectedIds.size === 0) return
     const visible = new Set(filteredIds)
@@ -201,18 +277,21 @@ export function ClaimsTable({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- selectedIds intentionally omitted; we only want this to fire on filter/sort change
   }, [filteredIds])
-  const allFilteredSelected =
-    filteredIds.length > 0 && filteredIds.every(id => selectedIds.has(id))
-  const someFilteredSelected =
-    !allFilteredSelected && filteredIds.some(id => selectedIds.has(id))
+  // Header select-all now operates on the current page only, matching the
+  // standard email-client convention. Bulk actions still run over every
+  // selectedId across all pages.
+  const allPageSelected =
+    paginatedIds.length > 0 && paginatedIds.every(id => selectedIds.has(id))
+  const somePageSelected =
+    !allPageSelected && paginatedIds.some(id => selectedIds.has(id))
 
-  const toggleAllFiltered = () => {
+  const toggleAllOnPage = () => {
     setSelectedIds(prev => {
       const next = new Set(prev)
-      if (allFilteredSelected) {
-        filteredIds.forEach(id => next.delete(id))
+      if (allPageSelected) {
+        paginatedIds.forEach(id => next.delete(id))
       } else {
-        filteredIds.forEach(id => next.add(id))
+        paginatedIds.forEach(id => next.add(id))
       }
       return next
     })
@@ -335,6 +414,39 @@ export function ClaimsTable({
     window.location.reload()
   }
 
+  const runBulkReopen = async () => {
+    setBulkReopenConfirmOpen(false)
+    setBulkBusy(true)
+    setBulkError(null)
+    const ids = Array.from(selectedIds)
+    const results = await Promise.all(
+      ids.map(id =>
+        fetch(`/api/claims/${id}/reopen`, { method: 'POST' })
+          .then(async r => {
+            if (r.ok) return 'ok' as const
+            const body = await r.json().catch(() => ({ error: '' }))
+            const msg = (body?.error ?? '').toString().toLowerCase()
+            if (msg.includes('not closed')) return 'skipped' as const
+            return 'failed' as const
+          })
+          .catch(() => 'failed' as const),
+      ),
+    )
+    setBulkBusy(false)
+    const ok = results.filter(r => r === 'ok').length
+    const skipped = results.filter(r => r === 'skipped').length
+    const failed = results.filter(r => r === 'failed').length
+    if (failed > 0 || skipped > 0) {
+      const parts = [`Reopened ${ok}`]
+      if (skipped > 0) parts.push(`${skipped} skipped (not closed)`)
+      if (failed > 0) parts.push(`${failed} failed`)
+      setBulkError(parts.join(' · ') + '. Refresh to see current state.')
+      onAssignmentChanged?.()
+      return
+    }
+    window.location.reload()
+  }
+
   const runBulkDelete = async () => {
     setBulkDeleteConfirmOpen(false)
     setBulkBusy(true)
@@ -356,14 +468,36 @@ export function ClaimsTable({
   }
 
   const colCount =
+    1 + // star (always leftmost)
     (adminView ? 1 : 0) + // checkbox
-    8 + // MA, Insured, Client, Vehicle, VIN, State, Date, Ins. Co.
+    9 + // MA, Insured, Client, Vehicle, Type, VIN, State, Date, Ins. Co.
     (adminView ? 1 : 0) + // Assigned To (read-only text now)
-    (showStatus ? 1 : 0) +
+    (showStatus ? 1 : 0) + // Status pill
     (showSubmittedColumn ? 1 : 0) +
     (statusPhaseConfigs.length > 0 ? 1 : 0) // Phase status column
 
   const selectedCount = selectedIds.size
+
+  // Team-wide star toggle. Optimistic UI: flip immediately, roll back on failure.
+  const toggleStar = async (id: string, current: boolean) => {
+    const next = !current
+    onStarChanged?.(id, next)
+    try {
+      const res = await fetch(`/api/claims/${id}/star`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ starred: next }),
+      })
+      if (!res.ok) {
+        onStarChanged?.(id, current) // rollback
+        const b = await res.json().catch(() => ({}))
+        console.error('star toggle failed:', b)
+      }
+    } catch (err) {
+      onStarChanged?.(id, current)
+      console.error('star toggle failed:', err)
+    }
+  }
 
   return (
     <div>
@@ -411,6 +545,13 @@ export function ClaimsTable({
               Close
             </Button>
             <Button
+              onClick={() => setBulkReopenConfirmOpen(true)}
+              disabled={bulkBusy}
+              className="bg-blue-600 hover:bg-blue-500 text-white text-sm"
+            >
+              Reopen
+            </Button>
+            <Button
               onClick={() => setBulkDeleteConfirmOpen(true)}
               disabled={bulkBusy}
               className="bg-red-600 hover:bg-red-500 text-white text-sm"
@@ -447,43 +588,71 @@ export function ClaimsTable({
         </div>
       </div>
 
-      <div className="bg-white border border-gray-200 rounded-lg shadow-sm">
-        <table className="w-full text-sm">
+      <div className="bg-white border border-gray-200 rounded-lg shadow-sm overflow-x-auto">
+        {/* table-fixed + colgroup: locks column widths so long values (long
+            client name, long insurer, or the Forbidden state pill) can't
+            reflow other columns. Cells wrap to multiple lines instead. VIN
+            column is sized to fit a full 17-char VIN on one line. */}
+        <table className="w-full text-[15px] table-fixed">
+          {/* Widths sum to 1836px on the admin dashboard (star + checkbox + 9 data
+              cols + assignee + phase), fitting within the page's max-w-[1920px]
+              inner container (~1872px after px-6). Phase column is 280px so
+              worst-case labels like "Pending Payment · 1y 2mo" fit without
+              clipping. */}
+          <colgroup>
+            <col style={{ width: '36px' }} />{/* Star (always leftmost) */}
+            {adminView && <col style={{ width: '40px' }} />}
+            <col style={{ width: '140px' }} />{/* MA # */}
+            {showStatus && <col style={{ width: '110px' }} />}{/* Status */}
+            <col style={{ width: '160px' }} />{/* Insured */}
+            <col style={{ width: '150px' }} />{/* Client */}
+            <col style={{ width: '180px' }} />{/* Vehicle */}
+            <col style={{ width: '100px' }} />{/* Type — ACV / DV / Estimate / Other */}
+            <col style={{ width: '170px' }} />{/* VIN — fits full 17-char VIN mono */}
+            <col style={{ width: '150px' }} />{/* State (needs room for Forbidden pill) */}
+            <col style={{ width: '110px' }} />{/* Days */}
+            <col style={{ width: '170px' }} />{/* Ins. Co. */}
+            {adminView && <col style={{ width: '150px' }} />}{/* Assigned To */}
+            {showSubmittedColumn && <col style={{ width: '150px' }} />}
+            {statusPhaseConfigs.length > 0 && <col style={{ width: '280px' }} />}
+          </colgroup>
           <thead>
             <tr className="border-b border-gray-200 bg-gray-50">
+              <th className="px-2 py-3" aria-label="Star" />
               {adminView && (
-                <th className="w-10 px-3 py-3">
+                <th className="px-3 py-3">
                   <input
                     type="checkbox"
-                    aria-label={allFilteredSelected ? 'Clear selection' : 'Select all shown'}
-                    checked={allFilteredSelected}
+                    aria-label={allPageSelected ? 'Clear selection on this page' : 'Select all on this page'}
+                    checked={allPageSelected}
                     ref={el => {
-                      if (el) el.indeterminate = someFilteredSelected
+                      if (el) el.indeterminate = somePageSelected
                     }}
-                    onChange={toggleAllFiltered}
+                    onChange={toggleAllOnPage}
                     className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
                   />
                 </th>
               )}
               <SortableTh label="MA #"      col="ma"       sortBy={sortBy} onClick={toggleSort} />
+              {showStatus && (
+                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-900 uppercase tracking-wider">Status</th>
+              )}
               <SortableTh label="Insured"   col="insured"  sortBy={sortBy} onClick={toggleSort} />
               <SortableTh label="Client"    col="client"   sortBy={sortBy} onClick={toggleSort} />
               <SortableTh label="Vehicle"   col="vehicle"  sortBy={sortBy} onClick={toggleSort} />
+              <th className="text-left px-4 py-3 text-xs font-semibold text-gray-900 uppercase tracking-wider">Type</th>
               <SortableTh label="VIN"       col="vin"      sortBy={sortBy} onClick={toggleSort} />
               <SortableTh label="State"     col="state"    sortBy={sortBy} onClick={toggleSort} />
-              <SortableTh label="Date"      col="date"     sortBy={sortBy} onClick={toggleSort} />
+              <SortableTh label="Days"      col="daysOpen" sortBy={sortBy} onClick={toggleSort} />
               <SortableTh label="Ins. Co."  col="insco"    sortBy={sortBy} onClick={toggleSort} />
               {adminView && (
                 <SortableTh label="Assigned To" col="assignee" sortBy={sortBy} onClick={toggleSort} nowrap />
-              )}
-              {showStatus && (
-                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-900 uppercase tracking-wider">Status</th>
               )}
               {showSubmittedColumn && (
                 <th className="text-left px-4 py-3 text-xs font-semibold text-gray-900 uppercase tracking-wider">Submitted</th>
               )}
               {statusPhaseConfigs.length > 0 && (
-                <th className="text-left px-2 py-3 text-xs font-semibold text-gray-900 uppercase tracking-wider w-[220px]">Phase</th>
+                <th className="text-left px-2 py-3 text-xs font-semibold text-gray-900 uppercase tracking-wider">Phase</th>
               )}
             </tr>
           </thead>
@@ -495,19 +664,35 @@ export function ClaimsTable({
                 </td>
               </tr>
             ) : (
-              filtered.map((entry) => {
+              paginated.map((entry) => {
                 const isSelected = selectedIds.has(entry.id)
-                const openClaim = () => router.push(`/claims/${entry.id}`)
+                const isUnread = Boolean(
+                  currentUserId &&
+                  entry.assignedTo === currentUserId &&
+                  (!entry.openedAt || (entry.assignedAt && entry.assignedAt > entry.openedAt))
+                )
                 return (
                   <tr
                     key={entry.id}
-                    onDoubleClick={openClaim}
-                    className={`border-b border-gray-100 hover:bg-gray-50 transition-colors ${
-                      isSelected ? 'bg-blue-50/40' : ''
-                    }`}
+                    className={cn(
+                      'border-b border-gray-100 transition-colors',
+                      isUnread ? 'bg-gray-100 hover:bg-gray-200' : 'hover:bg-gray-50',
+                      isSelected && 'bg-blue-50/40',
+                    )}
                   >
+                    <td className="px-2 py-2.5 text-center" onClick={(e) => e.stopPropagation()}>
+                      <button
+                        type="button"
+                        onClick={() => toggleStar(entry.id, entry.starred === true)}
+                        title={entry.starred ? 'Unstar' : 'Star'}
+                        aria-label={entry.starred ? 'Unstar claim' : 'Star claim'}
+                        className={`p-1 rounded transition-colors ${entry.starred ? 'text-amber-500 hover:text-amber-600' : 'text-gray-300 hover:text-amber-400'}`}
+                      >
+                        <Star className={`w-4 h-4 ${entry.starred ? 'fill-current' : ''}`} />
+                      </button>
+                    </td>
                     {adminView && (
-                      <td className="w-10 px-3 py-3">
+                      <td className="px-3 py-2.5">
                         <input
                           type="checkbox"
                           aria-label={`Select claim ${entry.maNumber || entry.id}`}
@@ -517,47 +702,71 @@ export function ClaimsTable({
                         />
                       </td>
                     )}
-                    <td className="px-4 py-3">
-                      <div className="inline-flex items-center gap-2">
-                        <button
-                          type="button"
-                          onClick={openClaim}
-                          className="text-gray-900 font-medium hover:text-blue-600 hover:underline text-left"
+                    <td className="px-4 py-2.5 align-middle">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <Link
+                          href={`/claims/${entry.id}`}
+                          className="text-gray-900 font-medium hover:text-blue-600 hover:underline text-left truncate"
+                          title={entry.maNumber || undefined}
                         >
                           {entry.maNumber || '—'}
-                        </button>
+                        </Link>
                         <ClaimMessagePreview claimId={entry.id} />
                       </div>
                     </td>
-                    <td className="px-4 py-3 text-gray-900">{entry.claim?.insuredName || <span className="text-gray-400">—</span>}</td>
-                    <td className="px-4 py-3 text-gray-900">{entry.claim?.clientName || <span className="text-gray-400">—</span>}</td>
-                    <td className="px-4 py-3 text-gray-900">{entry.vehicle || <span className="text-gray-400">—</span>}</td>
-                    <td className="px-4 py-3 text-gray-900 font-mono text-xs">{entry.vin || <span className="text-gray-400">—</span>}</td>
-                    <td className="px-4 py-3">
+                    {showStatus && (
+                      <td className="px-4 py-2.5">
+                        {entry.status === 'closed' ? (
+                          <span
+                            className={`text-xs font-semibold px-2 py-0.5 rounded-full border ${
+                              entry.closeReason === 'cancelled'
+                                ? 'text-red-700 bg-red-50 border-red-200'
+                                : 'text-gray-600 bg-gray-100 border-gray-300'
+                            }`}
+                            title={entry.closeReason === 'cancelled' ? 'Closed as Cancelled' : 'Submitted'}
+                          >
+                            {entry.closeReason === 'cancelled' ? 'Cancelled' : 'Submitted'}
+                          </span>
+                        ) : (
+                          <span className="text-xs font-semibold px-2 py-0.5 rounded-full border text-emerald-700 bg-emerald-50 border-emerald-200">
+                            Open
+                          </span>
+                        )}
+                      </td>
+                    )}
+                    <td className="px-4 py-2.5 text-gray-900 align-middle truncate" title={entry.claim?.insuredName || undefined}>{entry.claim?.insuredName || <span className="text-gray-400">—</span>}</td>
+                    <td className="px-4 py-2.5 text-gray-900 align-middle truncate" title={entry.claim?.clientName || undefined}>{entry.claim?.clientName || <span className="text-gray-400">—</span>}</td>
+                    <td className="px-4 py-2.5 text-gray-900 align-middle truncate" title={entry.vehicle || undefined}>{entry.vehicle || <span className="text-gray-400">—</span>}</td>
+                    <td className="px-4 py-2.5 text-gray-900 align-middle truncate">
+                      {(() => {
+                        const label = formatClaimTypes(entry.claim?.claimTypes)
+                        return label ? <span className="text-xs font-semibold">{label}</span> : <span className="text-gray-400">—</span>
+                      })()}
+                    </td>
+                    <td className="px-4 py-2.5 text-gray-900 font-mono text-xs align-middle whitespace-nowrap">{entry.vin || <span className="text-gray-400">—</span>}</td>
+                    <td className="px-4 py-2.5 align-middle">
                       <StateCell entry={entry} getLicenseBadge={getLicenseBadge} />
                     </td>
-                    <td className="px-4 py-3 text-gray-900 whitespace-nowrap">{fmtDate(entry.date)}</td>
-                    <td className="px-4 py-3 text-gray-900">{entry.claim?.insuranceCompany || <span className="text-gray-400">—</span>}</td>
+                    <td
+                      className="px-4 py-2.5 text-gray-900 whitespace-nowrap align-middle"
+                      title={entry.createdAt
+                        ? entry.status === 'closed' && entry.closedAt
+                          ? `Opened ${fmtDate(entry.createdAt)} · ${entry.closeReason === 'cancelled' ? 'Cancelled' : 'Submitted'} ${fmtDate(entry.closedAt)}`
+                          : `Opened ${fmtDate(entry.createdAt)}`
+                        : undefined}
+                    >
+                      {fmtDaysOpenFor(entry)}
+                    </td>
+                    <td className="px-4 py-2.5 text-gray-900 align-middle truncate" title={entry.claim?.insuranceCompany || undefined}>{entry.claim?.insuranceCompany || <span className="text-gray-400">—</span>}</td>
                     {adminView && (
-                      <td className="px-4 py-3 text-gray-900 whitespace-nowrap">
+                      <td className="px-4 py-2.5 text-gray-900 align-middle truncate" title={entry.assignedTo ? nameFor(entry.assignedTo) : undefined}>
                         {entry.assignedTo
                           ? nameFor(entry.assignedTo)
                           : <span className="text-gray-400 italic">Unassigned</span>}
                       </td>
                     )}
-                    {showStatus && (
-                      <td className="px-4 py-3">
-                        <span className={`text-xs font-semibold px-2 py-0.5 rounded-full border ${
-                          entry.status === 'closed'
-                            ? 'text-gray-600 bg-gray-100 border-gray-300'
-                            : 'text-emerald-700 bg-emerald-50 border-emerald-200'
-                        }`}>
-                          {entry.status === 'closed' ? 'Closed' : 'Open'}
-                        </span>
-                      </td>
-                    )}
                     {showSubmittedColumn && (
-                      <td className="px-4 py-3">
+                      <td className="px-4 py-2.5">
                         {entry.submittedAt ? (
                           <div>
                             <div className="text-sm text-gray-700">{fmtDate(entry.submittedAt)}</div>
@@ -567,7 +776,7 @@ export function ClaimsTable({
                       </td>
                     )}
                     {statusPhaseConfigs.length > 0 && (
-                      <td className="px-2 py-3" onClick={(e) => e.stopPropagation()}>
+                      <td className="px-2 py-2.5" onClick={(e) => e.stopPropagation()}>
                         {adminView ? (
                           <PhaseSelector
                             claimId={entry.id}
@@ -582,11 +791,11 @@ export function ClaimsTable({
                           const age = formatPhaseAge(entry.statusPhaseSetAt)
                           return (
                             <span
-                              className={`inline-flex flex-col items-center text-xs font-semibold px-2 py-0.5 rounded-full border ${phaseColorClasses(cfg.color)}`}
+                              className={`flex items-center justify-center gap-1.5 text-xs font-semibold w-full px-3 py-1.5 rounded-full border whitespace-nowrap !text-black ${phaseColorClasses(cfg.color)}`}
                               title={age ? `${cfg.label} · ${age}` : cfg.label}
                             >
                               <span>{cfg.label}</span>
-                              {age && <span className="opacity-70 font-normal text-[10px] leading-tight">{age}</span>}
+                              {age && <span className="font-semibold text-[11px] !text-black">{age}</span>}
                             </span>
                           )
                         })() : null}
@@ -599,6 +808,48 @@ export function ClaimsTable({
           </tbody>
         </table>
       </div>
+
+      {filtered.length > 0 && (
+        <div className="mt-4 flex items-center justify-between text-sm text-gray-600">
+          <div>
+            {filtered.length <= PAGE_SIZE ? (
+              <>Showing {filtered.length} claim{filtered.length === 1 ? '' : 's'}</>
+            ) : (
+              <>
+                Showing <span className="font-semibold text-gray-900">{pageStart + 1}</span>
+                –<span className="font-semibold text-gray-900">{Math.min(pageStart + PAGE_SIZE, filtered.length)}</span>{' '}
+                of <span className="font-semibold text-gray-900">{filtered.length}</span>
+              </>
+            )}
+          </div>
+          {totalPages > 1 && (
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setPage(p => Math.max(1, p - 1))}
+                disabled={page <= 1}
+                className="inline-flex items-center gap-1 px-3 py-1.5 rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              >
+                <ChevronLeft className="w-4 h-4" />
+                Prev
+              </button>
+              <span className="px-2 text-gray-600">
+                Page <span className="font-semibold text-gray-900">{page}</span> of{' '}
+                <span className="font-semibold text-gray-900">{totalPages}</span>
+              </span>
+              <button
+                type="button"
+                onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                disabled={page >= totalPages}
+                className="inline-flex items-center gap-1 px-3 py-1.5 rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              >
+                Next
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
+          )}
+        </div>
+      )}
 
       <ConfirmDialog
         open={submitConfirmOpen}
@@ -649,6 +900,22 @@ export function ClaimsTable({
       />
 
       <ConfirmDialog
+        open={bulkReopenConfirmOpen}
+        title={`Reopen ${selectedCount} claim${selectedCount === 1 ? '' : 's'}?`}
+        message={
+          <>
+            Reopens the selected claim{selectedCount === 1 ? '' : 's'} back to Open status.
+            Claims that aren&apos;t closed will be skipped.
+          </>
+        }
+        confirmLabel="Reopen"
+        variant="primary"
+        busy={bulkBusy}
+        onConfirm={runBulkReopen}
+        onCancel={() => setBulkReopenConfirmOpen(false)}
+      />
+
+      <ConfirmDialog
         open={bulkDeleteConfirmOpen}
         title={`Delete ${selectedCount} claim${selectedCount === 1 ? '' : 's'}?`}
         message="This permanently removes the claim(s) from the database. This cannot be undone."
@@ -671,9 +938,9 @@ function SortableTh({
   nowrap = false,
 }: {
   label: string
-  col: 'ma' | 'insured' | 'client' | 'vehicle' | 'vin' | 'state' | 'date' | 'insco' | 'assignee'
+  col: 'ma' | 'insured' | 'client' | 'vehicle' | 'vin' | 'state' | 'daysOpen' | 'insco' | 'assignee'
   sortBy: { col: string; dir: 'asc' | 'desc' } | null
-  onClick: (col: 'ma' | 'insured' | 'client' | 'vehicle' | 'vin' | 'state' | 'date' | 'insco' | 'assignee') => void
+  onClick: (col: 'ma' | 'insured' | 'client' | 'vehicle' | 'vin' | 'state' | 'daysOpen' | 'insco' | 'assignee') => void
   nowrap?: boolean
 }) {
   const active = sortBy?.col === col

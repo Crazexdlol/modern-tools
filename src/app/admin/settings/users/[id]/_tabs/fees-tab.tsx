@@ -1,8 +1,17 @@
 "use client"
 
 import { useEffect, useState } from 'react'
+import { Plus, Save, X } from 'lucide-react'
 import { fetchFeeCatalog, type FeeCatalogEntry } from '@/lib/supabase/fee-catalog'
 import { fetchAppraiserFees } from '@/lib/supabase/appraiser-fees'
+
+interface NewFeeDraft {
+  code: string
+  label: string
+  unit: 'flat' | 'per_mile'
+}
+
+const emptyDraft = (): NewFeeDraft => ({ code: '', label: '', unit: 'flat' })
 
 export function FeesTab({ userId }: { userId: string }) {
   const [catalog, setCatalog] = useState<FeeCatalogEntry[]>([])
@@ -12,6 +21,15 @@ export function FeesTab({ userId }: { userId: string }) {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
+  const [draft, setDraft] = useState<NewFeeDraft | null>(null)
+  const [addingFee, setAddingFee] = useState(false)
+
+  const reload = () =>
+    Promise.all([fetchFeeCatalog(), fetchAppraiserFees(userId)]).then(([cat, amts]) => {
+      setCatalog(cat)
+      setAmounts(amts)
+      setLoading(false)
+    })
 
   useEffect(() => {
     let cancelled = false
@@ -53,10 +71,44 @@ export function FeesTab({ userId }: { userId: string }) {
     setSaved(true)
   }
 
+  const startAddFee = () => {
+    setDraft(emptyDraft())
+    setError(null)
+  }
+
+  const saveDraft = async () => {
+    if (!draft) return
+    if (!draft.code.trim() || !draft.label.trim()) { setError('Label and code are required.'); return }
+    setAddingFee(true); setError(null)
+    const nextSort = catalog.length === 0 ? 1 : Math.max(...catalog.map(c => c.sortOrder)) + 1
+    const res = await fetch('/api/admin/fee-catalog', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code: draft.code, label: draft.label, unit: draft.unit, sortOrder: nextSort }),
+    })
+    setAddingFee(false)
+    if (!res.ok) { const b = await res.json().catch(() => ({})); setError(b.error ?? 'Save failed'); return }
+    setDraft(null)
+    await reload()
+  }
+
   if (loading) return <div className="text-sm text-gray-500">Loading fees…</div>
 
   return (
     <div className="space-y-4 max-w-2xl">
+      <div className="flex justify-between items-center">
+        <p className="text-xs text-gray-500">
+          Adding a fee here also adds it to the shared fee catalog and every other appraiser&apos;s fee list.
+        </p>
+        <button
+          onClick={startAddFee}
+          disabled={draft !== null}
+          className="inline-flex items-center gap-1 bg-blue-600 text-white text-sm font-medium px-3 py-1.5 rounded disabled:opacity-50 hover:bg-blue-700"
+        >
+          <Plus className="w-4 h-4" /> Add Fee
+        </button>
+      </div>
+
       <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
         <table className="w-full text-sm">
           <thead className="bg-gray-50 border-b border-gray-200">
@@ -86,6 +138,56 @@ export function FeesTab({ userId }: { userId: string }) {
                 </tr>
               )
             })}
+            {draft && (
+              <tr className="bg-blue-50/40 border-b border-gray-100">
+                <td className="px-4 py-2">
+                  <div className="flex flex-col gap-1.5">
+                    <input
+                      value={draft.label}
+                      onChange={e => setDraft({ ...draft, label: e.target.value })}
+                      placeholder="Fee label"
+                      className="bg-white border border-gray-200 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                    <div className="flex gap-2">
+                      <input
+                        value={draft.code}
+                        onChange={e => setDraft({ ...draft, code: e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, '_') })}
+                        placeholder="code_snake_case"
+                        className="flex-1 bg-white border border-gray-200 rounded px-2 py-1 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                      <select
+                        value={draft.unit}
+                        onChange={e => setDraft({ ...draft, unit: e.target.value as 'flat' | 'per_mile' })}
+                        className="bg-white border border-gray-200 rounded px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      >
+                        <option value="flat">flat ($)</option>
+                        <option value="per_mile">per mile</option>
+                      </select>
+                    </div>
+                  </div>
+                </td>
+                <td className="px-4 py-2 text-right align-top">
+                  <div className="inline-flex gap-2">
+                    <button
+                      onClick={saveDraft}
+                      disabled={addingFee}
+                      className="text-emerald-600 hover:text-emerald-700 disabled:opacity-40"
+                      title="Add fee"
+                    >
+                      <Save className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={() => { setDraft(null); setError(null) }}
+                      disabled={addingFee}
+                      className="text-gray-400 hover:text-gray-600 disabled:opacity-40"
+                      title="Cancel"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            )}
           </tbody>
         </table>
       </div>

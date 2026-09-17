@@ -20,7 +20,9 @@ export async function POST() {
       { cookies: { getAll() { return cookieStore.getAll() }, setAll() {} } }
     )
     const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return new NextResponse(null, { status: 204 })
+    // Return 401 for unauth callers so this endpoint isn't a silent probe
+    // for whether the service is up. The client tolerates errors.
+    if (!user) return NextResponse.json(null, { status: 401 })
 
     const activityDate = laCalendarDate()
     // Minute bucket: current UTC time truncated to the minute.

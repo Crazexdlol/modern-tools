@@ -24,6 +24,11 @@ export interface Profile {
   // the dropdown that populates the printed-doc handling-appraiser name.
   showInHandlingAppraiserList: boolean
   isSuperAdmin: boolean
+  // Gates the /marketing tab + client_* reads/writes. Admins always have it
+  // implicitly; non-admins need an explicit admin grant. Enforced by RLS
+  // via public.has_marketing_access() and by the profiles_role_guard trigger
+  // against self-grant.
+  marketingAccess: boolean
   createdAt: string
   updatedAt: string
 }
@@ -45,6 +50,7 @@ interface ProfileRow {
   is_active?: boolean | null
   show_in_handling_appraiser_list?: boolean | null
   is_super_admin?: boolean | null
+  marketing_access?: boolean | null
   created_at: string
   updated_at: string
 }
@@ -72,6 +78,7 @@ function rowToProfile(row: ProfileRow): Profile {
     isActive: row.is_active !== false,
     showInHandlingAppraiserList: row.show_in_handling_appraiser_list !== false,
     isSuperAdmin: row.is_super_admin === true,
+    marketingAccess: row.marketing_access === true,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   }

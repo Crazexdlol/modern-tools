@@ -48,7 +48,12 @@ export async function updateSession(request: NextRequest) {
 
     return supabaseResponse
   } catch {
-    // If Supabase auth fails, let the request through rather than crashing
-    return NextResponse.next()
+    // Fail closed: during a Supabase outage or unexpected error, redirect
+    // to /login rather than letting an unauthenticated request through.
+    // /api/* and /login are already excluded at the top of this function,
+    // so those paths never reach this catch.
+    const url = request.nextUrl.clone()
+    url.pathname = '/login'
+    return NextResponse.redirect(url)
   }
 }

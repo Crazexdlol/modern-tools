@@ -78,9 +78,9 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   const recipientIds = Array.isArray(body.recipientIds)
     ? (body.recipientIds.filter((v): v is string => typeof v === 'string'))
     : []
-  if (recipientIds.length === 0) {
-    return NextResponse.json({ error: 'At least one recipient is required' }, { status: 400 })
-  }
+  // Recipient list is optional. Empty = note-to-thread only; no one is
+  // notified but the message still lives on the claim so future readers
+  // (including the sender) can see it.
 
   const supabase = await getSupabaseFromCookies()
 

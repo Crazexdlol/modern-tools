@@ -3,6 +3,7 @@ import { fillACVPdf } from '@/lib/acv/pdf-filler'
 import { calculateACV } from '@/lib/acv/calculations'
 import type { ClaimInfo, SelectedComp, ACVAdjustments } from '@/lib/acv/types'
 import { requireAuth } from '@/lib/auth/require-admin'
+import { sanitizeFilename } from '@/lib/sanitize-filename'
 
 // pdf-lib + fs.readFileSync require the Node runtime; keep this explicit
 // so a future edge default flip doesn't silently break the route.
@@ -26,7 +27,7 @@ export async function POST(request: NextRequest) {
     return new NextResponse(buffer, {
       headers: {
         'Content-Type': 'application/pdf',
-        'Content-Disposition': `attachment; filename="${claim.maNumber || 'report'}-acv.pdf"`,
+        'Content-Disposition': `attachment; filename="${sanitizeFilename(claim.maNumber || 'report')}-acv.pdf"`,
       },
     })
   } catch (err) {

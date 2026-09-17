@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { Plus, Inbox, MessageSquare } from 'lucide-react'
+import { Plus, CheckCircle2, MessageSquare } from 'lucide-react'
 import { MigrateData } from "@/components/migrate-data"
 import { AppHeader } from "@/components/app-header"
 import { ClaimsTable } from "@/components/claims-table"
@@ -73,8 +73,18 @@ export default function DashboardPage() {
   }, [profile?.id, profile?.role])
 
   const isAdmin = profile?.role === 'admin'
-  const openClaims = entries.filter(e => e.status !== 'closed' && !e.submittedAt)
-  const submittedClaims = entries.filter(e => e.status !== 'closed' && !!e.submittedAt)
+  // Every non-closed claim shows on the dashboard now — submitted ones are
+  // phased 'completed' via the submit route and filterable via the phase-chip
+  // row / the "Completed" toggle button. There is no separate completed queue.
+  const openClaims = entries.filter(e => e.status !== 'closed')
+  const completedCount = openClaims.filter(e => e.statusPhase === 'completed').length
+  // Chip row: admins see every configured phase; non-admins only see chips for
+  // phases that actually appear in their assigned queue. So an appraiser with
+  // no completed / pending_payment claims doesn't see those filters at all,
+  // but a stray one (rare) still surfaces so they can filter to it.
+  const visiblePhaseConfigs = isAdmin
+    ? statusPhaseConfigs
+    : statusPhaseConfigs.filter(cfg => openClaims.some(e => e.statusPhase === cfg.code))
   // Admins always; non-admins need their per-user grant (profile.canCreateClaims).
   const canCreate = isAdmin || profile?.canCreateClaims === true
 
@@ -91,7 +101,7 @@ export default function DashboardPage() {
     <div className="min-h-screen bg-gray-50 text-gray-900">
       <MigrateData />
       <AppHeader />
-      <main className="max-w-[1600px] mx-auto px-6 py-8 space-y-8">
+      <main className="max-w-[1920px] mx-auto px-6 py-8 space-y-8">
         <LicenseExpirationBanner profile={profile ?? null} allProfiles={profiles} />
         <div className="flex items-start justify-between gap-4">
           <div className="space-y-3">
@@ -115,9 +125,9 @@ export default function DashboardPage() {
                   )}
                 </Link>
               </div>
-              {statusPhaseConfigs.length > 0 && (
+              {visiblePhaseConfigs.length > 0 && (
                 <div className="flex items-center gap-1.5 flex-wrap">
-                  {statusPhaseConfigs.map(cfg => {
+                  {visiblePhaseConfigs.map(cfg => {
                     const active = phaseFilter === cfg.code
                     return (
                       <button
@@ -139,18 +149,26 @@ export default function DashboardPage() {
           </div>
           <div className="flex items-center gap-2">
             {isAdmin && (
-              <Link
-                href="/completed-assignments"
-                className="flex items-center gap-2 bg-white border border-gray-200 hover:border-gray-300 text-gray-700 text-sm font-bold px-4 py-2.5 rounded-lg transition-colors shadow-sm"
+              <button
+                type="button"
+                onClick={() => setPhaseFilter(phaseFilter === 'completed' ? null : 'completed')}
+                className={`flex items-center gap-2 border text-sm font-bold px-4 py-2.5 rounded-lg transition-colors shadow-sm ${
+                  phaseFilter === 'completed'
+                    ? 'bg-blue-600 border-blue-600 text-white hover:bg-blue-500'
+                    : 'bg-white border-gray-200 hover:border-gray-300 text-gray-700'
+                }`}
+                title={phaseFilter === 'completed' ? 'Clear Completed filter' : 'Show only Completed claims'}
               >
-                <Inbox className="w-4 h-4" />
+                <CheckCircle2 className="w-4 h-4" />
                 Completed
-                {submittedClaims.length > 0 && (
-                  <span className="inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full bg-blue-600 text-white text-xs font-bold">
-                    {submittedClaims.length}
+                {completedCount > 0 && (
+                  <span className={`inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full text-xs font-bold ${
+                    phaseFilter === 'completed' ? 'bg-white text-blue-600' : 'bg-blue-600 text-white'
+                  }`}>
+                    {completedCount}
                   </span>
                 )}
-              </Link>
+              </button>
             )}
             {canCreate && (
               <button
@@ -170,8 +188,8 @@ export default function DashboardPage() {
           </div>
         )}
 
-        {/* Open Claims — the only table on the dashboard. Completed assignments
-            live on /completed-assignments (button above). */}
+        {/* All non-closed claims (including submitted/completed). The Completed
+            button above filters to phase='completed' when toggled on. */}
         {claimsLoading ? (
           <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-8 flex items-center justify-center gap-3 text-gray-500">
             <span className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
@@ -190,6 +208,9 @@ export default function DashboardPage() {
             phaseFilter={phaseFilter}
             onPhaseChanged={(id, phase, setAt) => setEntries(prev =>
               prev.map(e => e.id === id ? { ...e, statusPhase: phase, statusPhaseSetAt: setAt } : e)
+            )}
+            onStarChanged={(id, starred) => setEntries(prev =>
+              prev.map(e => e.id === id ? { ...e, starred } : e)
             )}
           />
         )}

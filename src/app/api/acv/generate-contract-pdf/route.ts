@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/lib/auth/require-admin'
+import { sanitizeFilename } from '@/lib/sanitize-filename'
 import { PDFDocument } from 'pdf-lib'
 import fs from 'fs'
 import path from 'path'
@@ -65,7 +66,7 @@ export async function POST(request: NextRequest) {
 
     const pdfBytes = await pdfDoc.save()
     const buffer = Buffer.from(pdfBytes)
-    const filename = maNumber ? `${maNumber}-contract.pdf` : 'contract.pdf'
+    const filename = maNumber ? `${sanitizeFilename(maNumber)}-contract.pdf` : 'contract.pdf'
 
     return new NextResponse(buffer, {
       headers: {

@@ -75,6 +75,12 @@ export async function GET(request: NextRequest) {
   }
 
   vin = sanitizeVin(vin)
+  // Post-sanitize strictness — a VIN is 17 chars from the WMI alphabet
+  // (no I/O/Q). Reject anything else *before* it reaches MarketCheck/NHTSA
+  // so we don't burn API calls on garbage input.
+  if (!/^[A-HJ-NPR-Z0-9]{17}$/i.test(vin)) {
+    return NextResponse.json({ error: 'Invalid VIN' }, { status: 400 })
+  }
   const apiKey = process.env.MARKETCHECK_API_KEY
 
   try {

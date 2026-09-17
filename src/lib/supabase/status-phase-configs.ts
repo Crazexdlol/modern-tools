@@ -3,7 +3,7 @@ import { createClient as createBrowserClient } from './client'
 export interface StatusPhaseConfig {
   code: string
   label: string
-  color: string          // 'green' | 'red' | 'amber' | 'blue' | 'gray'
+  color: string          // 'green' | 'red' | 'amber' | 'blue' | 'gray' | 'purple' | 'teal' | 'fuchsia'
   sortOrder: number
   archived: boolean
 }
@@ -76,14 +76,22 @@ export function formatPhaseAge(setAt: string | null | undefined, now: Date = new
   return `${years}y ${remainderMonths}mo`
 }
 
-/** Map color name → Tailwind pill classes (bg + text + border). */
+/**
+ * Map color name → Tailwind pill classes (bg + text + border).
+ * All six phase colors are distinct hue families so no two phases can look
+ * alike on the dashboard. Tailwind needs to see these classes as literal
+ * strings at build time — do NOT construct them dynamically.
+ */
 export function phaseColorClasses(color: string): string {
   switch (color) {
-    case 'green':  return 'bg-emerald-50 text-emerald-800 border-emerald-200'
-    case 'red':    return 'bg-red-50 text-red-800 border-red-200'
-    case 'amber':  return 'bg-amber-50 text-amber-800 border-amber-200'
-    case 'blue':   return 'bg-blue-50 text-blue-800 border-blue-200'
-    case 'gray':   return 'bg-gray-100 text-gray-700 border-gray-200'
-    default:       return 'bg-gray-100 text-gray-700 border-gray-200'
+    case 'green':   return 'bg-emerald-50 text-emerald-800 border-emerald-200'
+    case 'red':     return 'bg-red-50 text-red-800 border-red-200'
+    case 'amber':   return 'bg-amber-50 text-amber-800 border-amber-200'
+    case 'blue':    return 'bg-blue-50 text-blue-800 border-blue-200'
+    case 'gray':    return 'bg-gray-100 text-gray-700 border-gray-200'
+    case 'purple':  return 'bg-violet-50 text-violet-800 border-violet-200'
+    case 'teal':    return 'bg-teal-50 text-teal-800 border-teal-200'
+    case 'fuchsia': return 'bg-fuchsia-50 text-fuchsia-800 border-fuchsia-200'
+    default:        return 'bg-gray-100 text-gray-700 border-gray-200'
   }
 }

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { fillAwardPdf } from '@/lib/acv/award-pdf-filler'
 import type { AwardPdfData } from '@/lib/acv/award-pdf-filler'
 import { requireAuth } from '@/lib/auth/require-admin'
+import { sanitizeFilename } from '@/lib/sanitize-filename'
 
 // pdf-lib + fs.readFileSync require the Node runtime; keep this explicit
 // so a future edge default flip doesn't silently break the route.
@@ -18,7 +19,7 @@ export async function POST(request: NextRequest) {
     return new NextResponse(buffer, {
       headers: {
         'Content-Type': 'application/pdf',
-        'Content-Disposition': `attachment; filename="${body.claimNumber || 'report'}-award.pdf"`,
+        'Content-Disposition': `attachment; filename="${sanitizeFilename(body.claimNumber || 'report')}-award.pdf"`,
       },
     })
   } catch (err) {

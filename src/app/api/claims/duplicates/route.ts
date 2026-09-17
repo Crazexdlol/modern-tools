@@ -8,17 +8,17 @@ export const runtime = 'nodejs'
 // `matches` (per-row detail — admins only; non-admins get an empty array
 // so they can't enumerate the whole book by VIN or claim number).
 
-// GET /api/claims/duplicates?vin=X&claimNumber=Y&excludeId=Z
+// GET /api/claims/duplicates?vin=X&claimNumber=Y&maNumber=Z&excludeId=W
 //
-// Returns any OTHER claims (not `excludeId`) that share the same VIN and/or
-// claim number. Uses the service client because appraisers only have access
-// to their own claims via RLS — but we want to warn about duplicates across
-// the whole book, not just theirs. Returns minimal identifying info per
-// match (id, MA#, insured, vehicle, date) so the caller can render it.
+// Returns any OTHER claims (not `excludeId`) that share the same VIN, claim
+// number, or MA number. Uses the service client because appraisers only have
+// access to their own claims via RLS — but we want to warn about duplicates
+// across the whole book, not just theirs. Returns minimal identifying info
+// per match (id, MA#, CL#, insured, vehicle, date) so the caller can render.
 //
-// Any authenticated user can call. Matches are case-insensitive for VIN
-// (VINs are canonically uppercase but users may type mixed case) and exact
-// for claim number (they're formatted specifically per insurer).
+// Any authenticated user can call. VIN match is case-insensitive (VINs are
+// canonically uppercase but users may type mixed case); claim # is exact
+// (formatted specifically per insurer); MA # match is case-insensitive.
 interface AcvRow {
   id: string
   ma_number: string | null
@@ -31,6 +31,7 @@ interface AcvRow {
 interface Match {
   id: string
   maNumber: string
+  claimNumber: string
   insuredName: string
   vehicle: string
   date: string
@@ -40,6 +41,7 @@ function rowToMatch(r: AcvRow): Match {
   return {
     id: r.id,
     maNumber: r.ma_number ?? '',
+    claimNumber: r.claim?.claimNumber ?? '',
     insuredName: r.claim?.insuredName ?? '',
     vehicle: r.vehicle ?? '',
     date: r.date ?? '',
@@ -53,10 +55,15 @@ export async function GET(request: NextRequest) {
   const url = new URL(request.url)
   const vin = (url.searchParams.get('vin') ?? '').trim()
   const claimNumber = (url.searchParams.get('claimNumber') ?? '').trim()
+  const maNumber = (url.searchParams.get('maNumber') ?? '').trim()
   const excludeId = url.searchParams.get('excludeId') ?? null
 
-  if (!vin && !claimNumber) {
-    return NextResponse.json({ vinMatches: [], claimNumberMatches: [], vinCount: 0, claimNumberCount: 0 })
+  if (!vin && !claimNumber && !maNumber) {
+    return NextResponse.json({
+      vinMatches: [], vinCount: 0,
+      claimNumberMatches: [], claimNumberCount: 0,
+      maNumberMatches: [], maNumberCount: 0,
+    })
   }
 
   const service = createServiceClient()
@@ -86,13 +93,27 @@ export async function GET(request: NextRequest) {
     claimNumberMatches = ((data as AcvRow[]) ?? []).map(rowToMatch)
   }
 
+  let maNumberMatches: Match[] = []
+  if (maNumber) {
+    let q = service
+      .from('acv_history')
+      .select('id, ma_number, vehicle, vin, date, claim')
+      .ilike('ma_number', maNumber)
+    if (excludeId) q = q.neq('id', excludeId)
+    const { data, error } = await q
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    maNumberMatches = ((data as AcvRow[]) ?? []).map(rowToMatch)
+  }
+
   // Redact per-row detail for non-admins: they still get the count (so the
-  // "duplicate VIN" warning still fires) but not the MA# / insured name /
+  // "duplicate" warning still fires) but not the MA# / insured name /
   // vehicle of claims they don't otherwise have access to.
   return NextResponse.json({
     vinMatches: isAdmin ? vinMatches : [],
     vinCount: vinMatches.length,
     claimNumberMatches: isAdmin ? claimNumberMatches : [],
     claimNumberCount: claimNumberMatches.length,
+    maNumberMatches: isAdmin ? maNumberMatches : [],
+    maNumberCount: maNumberMatches.length,
   })
 }

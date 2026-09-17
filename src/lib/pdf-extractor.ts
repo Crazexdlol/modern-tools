@@ -20,12 +20,19 @@ export async function extractTextFromPDF(buffer: Buffer): Promise<string> {
   for (let i = 1; i <= pagesToProcess; i++) {
     const imageArrayBuffer = await renderPageAsImage(pdf, i, { scale: 2 });
     const imageBuffer = Buffer.from(imageArrayBuffer);
-    const { data: { text: pageText } } = await Tesseract.recognize(
-      imageBuffer,
-      "eng",
-      { logger: () => {} }
-    );
-    ocrResults.push(pageText);
+    // Per-page timeout: 30 seconds. Tesseract can hang on pathological
+    // images; we'd rather skip the page than block the whole request.
+    try {
+      const result = await Promise.race([
+        Tesseract.recognize(imageBuffer, "eng", { logger: () => {} }),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error("Tesseract timeout")), 30_000)
+        ),
+      ]);
+      ocrResults.push(result.data.text);
+    } catch (err) {
+      console.warn(`[pdf-extractor] page ${i} OCR skipped:`, err instanceof Error ? err.message : err);
+    }
   }
 
   return ocrResults.join("\n\n");

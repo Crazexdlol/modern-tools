@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { fillNotesPdf } from '@/lib/acv/notes-pdf-filler'
 import type { NotesPdfData } from '@/lib/acv/notes-pdf-filler'
 import { requireAuth } from '@/lib/auth/require-admin'
+import { sanitizeFilename } from '@/lib/sanitize-filename'
 
 export async function POST(request: NextRequest) {
   const { errorResponse } = await requireAuth()
@@ -14,7 +15,7 @@ export async function POST(request: NextRequest) {
     return new NextResponse(buffer, {
       headers: {
         'Content-Type': 'application/pdf',
-        'Content-Disposition': `attachment; filename="${body.fileNumber || 'report'}-notes.pdf"`,
+        'Content-Disposition': `attachment; filename="${sanitizeFilename(body.fileNumber || 'report')}-notes.pdf"`,
       },
     })
   } catch (err) {

@@ -75,15 +75,15 @@ export function PhaseSelector({ claimId, currentPhase, currentSetAt, onChanged, 
 
   // Sizing tokens per variant. Active-phase button always uses phase-tinted
   // background with BLACK text so the label is legible and prominent.
-  // min-h keeps every pill the same height whether or not an age is shown.
-  // Dashboard uses size="lg". w-full + fixed min-h keeps every pill the
-  // same width and height whether it says "No Phase" or "Umpire\n1d".
+  // size="lg" matches the appraiser dashboard's compact centered pill so the
+  // admin dashboard has the same row height and phase visual as the
+  // non-admin view. size="sm" is the workspace toolbar variant.
   const buttonSize = isLg
-    ? 'px-4 py-3 rounded-lg border-2 min-h-[68px] h-[68px] justify-center w-full'
+    ? 'px-3 py-1.5 rounded-full border w-full justify-center gap-1.5 whitespace-nowrap'
     : 'px-3 py-2 rounded-lg border-2 min-h-[52px] h-[52px] justify-center w-full'
-  const activeLabelSize = isLg ? 'text-xl font-black !text-black leading-tight' : 'text-sm font-bold !text-black'
-  const activeAgeSize = isLg ? 'text-sm !text-black' : 'text-xs !text-black'
-  const emptyLabelSize = isLg ? 'text-xl font-bold' : 'text-sm font-semibold'
+  const activeLabelSize = isLg ? 'text-xs font-semibold !text-black' : 'text-sm font-bold !text-black'
+  const activeAgeSize = isLg ? 'text-[11px] font-semibold !text-black' : 'text-xs !text-black'
+  const emptyLabelSize = isLg ? 'text-xs font-semibold text-gray-500' : 'text-sm font-semibold'
   const activeBg = activeConfig
     ? phaseColorClasses(activeConfig.color)
     : 'bg-white border-gray-200 text-gray-600 hover:border-gray-300'
@@ -98,10 +98,17 @@ export function PhaseSelector({ claimId, currentPhase, currentSetAt, onChanged, 
         title={activeConfig ? `Phase: ${activeConfig.label}${age ? ` (${age})` : ''} — click to change` : 'Set phase'}
       >
         {activeConfig ? (
-          <span className="flex flex-col items-center leading-tight">
-            <span className={activeLabelSize}>{activeConfig.label}</span>
-            {age && <span className={`font-normal ${activeAgeSize}`}>{age}</span>}
-          </span>
+          isLg ? (
+            <>
+              <span className={activeLabelSize}>{activeConfig.label}</span>
+              {age && <span className={activeAgeSize}>{age}</span>}
+            </>
+          ) : (
+            <span className="flex flex-col items-center leading-tight">
+              <span className={activeLabelSize}>{activeConfig.label}</span>
+              {age && <span className={`font-normal ${activeAgeSize}`}>{age}</span>}
+            </span>
+          )
         ) : (
           <span className={`whitespace-nowrap ${emptyLabelSize}`}>No Phase</span>
         )}

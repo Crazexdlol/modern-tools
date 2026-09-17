@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { fillInvoicePdf } from '@/lib/invoice/invoice-pdf-filler'
 import type { InvoiceVariant, InvoicePdfData } from '@/lib/invoice/types'
 import { requireAuth } from '@/lib/auth/require-admin'
+import { sanitizeFilename } from '@/lib/sanitize-filename'
 
 export const runtime = 'nodejs'
 
@@ -20,7 +21,7 @@ export async function POST(request: NextRequest) {
     return new NextResponse(Buffer.from(pdfBytes), {
       headers: {
         'Content-Type': 'application/pdf',
-        'Content-Disposition': `attachment; filename="${(body.data as InvoicePdfData)?.invoiceNumber || 'invoice'}.pdf"`,
+        'Content-Disposition': `attachment; filename="${sanitizeFilename((body.data as InvoicePdfData)?.invoiceNumber || 'invoice')}.pdf"`,
       },
     })
   } catch (err) {

@@ -1,4 +1,4 @@
-import { PDFDocument, PDFName, PDFBool, PDFString, StandardFonts } from 'pdf-lib'
+import { PDFDocument, PDFName, PDFBool, PDFString, StandardFonts, rgb } from 'pdf-lib'
 import fs from 'fs'
 import path from 'path'
 
@@ -35,18 +35,28 @@ function setField(
   } catch { /* field may not exist */ }
 }
 
-function setDropdown(
+// Capture Dropdown9's widget rectangle and blank it out before flatten so we
+// can freely overlay our own label text. The template's dropdown option list
+// is fixed (ACV / DV / Cost of Repair boilerplate) — Henry now wants a
+// uniform "Right To Appraisal - X" label that isn't in the option list, so
+// dropping the dropdown and drawing the text as flattened content is the
+// cleanest way to get consistent phrasing across all variants.
+function captureAndBlankDropdown(
   form: ReturnType<PDFDocument['getForm']>,
   name: string,
-  value: string,
-) {
+): { x: number; y: number; width: number; height: number } | null {
   try {
     const field = form.getDropdown(name)
-    if (field.getOptions().includes(value)) field.select(value)
-    field.acroField.getWidgets().forEach(w => {
-      w.dict.delete(PDFName.of('AP'))
-    })
-  } catch { /* ignore */ }
+    const widgets = field.acroField.getWidgets()
+    if (widgets.length === 0) return null
+    const rect = widgets[0].getRectangle()
+    // Blank the selection so nothing gets baked in when we flatten.
+    if (field.getOptions().includes(' ')) field.select(' ')
+    widgets.forEach(w => { w.dict.delete(PDFName.of('AP')) })
+    return rect
+  } catch {
+    return null
+  }
 }
 
 export async function fillNotesPdf(data: NotesPdfData): Promise<Uint8Array> {
@@ -86,8 +96,9 @@ export async function fillNotesPdf(data: NotesPdfData): Promise<Uint8Array> {
   setField(form, 'Text5', data.vehicle)
   setField(form, 'Date8_af_date', fmtDate(data.dateOfLoss))
 
-  // Dropdown
-  setDropdown(form, 'Dropdown9', data.dropdownValue)
+  // Capture the dropdown's rect and blank it so we can overlay a free-form
+  // label after flattening (see helper for why we bypass the dropdown).
+  const ddRect = captureAndBlankDropdown(form, 'Dropdown9')
 
   // Comments
   setField(form, 'Text6', data.comments)
@@ -107,6 +118,25 @@ export async function fillNotesPdf(data: NotesPdfData): Promise<Uint8Array> {
 
   // Flatten so values print as static text (no editable form fields).
   form.flatten()
+
+  // Overlay the label at the dropdown's original position. Whiteout first so
+  // any residual widget appearance (border etc.) is covered, then draw at a
+  // baseline that visually matches the other Times Roman fields on the row.
+  if (ddRect && data.dropdownValue) {
+    const page = doc.getPages()[0]
+    page.drawRectangle({
+      x: ddRect.x, y: ddRect.y,
+      width: ddRect.width, height: ddRect.height,
+      color: rgb(1, 1, 1),
+    })
+    page.drawText(data.dropdownValue, {
+      x: ddRect.x + 3,
+      y: ddRect.y + 6,
+      size: 11,
+      font: timesRoman,
+      color: rgb(0, 0, 0),
+    })
+  }
 
   return doc.save()
 }

@@ -7,6 +7,7 @@ import {
   ArrowLeft,
   ArrowRight,
   Check,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   Loader2,
@@ -25,6 +26,8 @@ import {
   Lock,
   Pencil,
   Trash2,
+  Info,
+  ExternalLink,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -42,6 +45,7 @@ import {
 import { saveACVHistory, fetchACVEntry, deleteACVHistory, type ClaimStatus } from '@/lib/supabase/history'
 import { useCurrentProfile, fetchAllProfilesBrowser, type Profile } from '@/lib/supabase/profiles'
 import { LossSearchTab, type LossListing } from '@/components/claim/loss-search-tab'
+import { ClientPicker } from '@/components/claim/client-picker'
 import { EstimateTab } from '@/components/claim/estimate-tab'
 import { DocumentsTab } from '@/components/claim/documents-tab'
 import { MessagesTab } from '@/components/claim/messages-tab'
@@ -52,8 +56,11 @@ import { useDuplicateCheck, type DuplicateResult } from '@/lib/supabase/claim-du
 import { AssignmentSheet, triggerAssignmentSheetPrint } from '@/components/claim/assignment-sheet'
 import { DVTab, type DVState } from '@/components/claim/dv-tab'
 import { ReportsTab, type InvoiceReportState } from '@/components/claim/reports-tab'
+import { StorageTab, defaultStorageState } from '@/components/claim/storage-tab'
+import type { StorageState } from '@/lib/acv/types'
 import { uploadClaimDocument, type ClaimDocument } from '@/lib/supabase/documents'
 import { savePdfWithPicker } from '@/lib/save-pdf'
+import { safeHref } from '@/lib/safe-href'
 import { captureSummaryPdf } from '@/lib/summary-pdf'
 import { saveSummary, getSummary, genId, newEmptyForm, type SavedSummary } from '@/app/summary-page/lib'
 import { SummaryFields } from '@/app/summary-page/SummaryFields'
@@ -71,7 +78,7 @@ async function saveToHistory(
   editId?: string | null,
   mileageRate?: number,
   reportsState?: ReportsState,
-  extras?: { status?: ClaimStatus; auctionListings?: LossListing[]; estimate?: unknown; documents?: ClaimDocument[]; dv?: DVState | null; invoice?: InvoiceReportState | null },
+  extras?: { status?: ClaimStatus; auctionListings?: LossListing[]; estimate?: unknown; documents?: ClaimDocument[]; dv?: DVState | null; invoice?: InvoiceReportState | null; storage?: StorageState | null; clientId?: string | null },
 ) {
   const id = editId || `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
   const entry = {
@@ -94,6 +101,8 @@ async function saveToHistory(
     documents: extras?.documents,
     dv: extras?.dv ?? undefined,
     invoice: extras?.invoice ?? undefined,
+    storage: extras?.storage ?? undefined,
+    clientId: extras?.clientId,
   }
   await saveACVHistory(entry, editId)
   return id
@@ -166,92 +175,109 @@ function MileageRateInput({
   )
 }
 
-// ── Duplicate warning (inline under VIN / Claim # fields) ────────────────────
+// ── Duplicate warning (inline under VIN / Claim # / MA # fields) ─────────────
 // `count` is authoritative for the header text; `matches` is the per-row
 // detail, which the API only returns for admins (non-admins get an empty
 // array + the true count so the warning still fires but doesn't leak
 // unrelated claim details).
+//
+// Duplicates are strictly informational — Modern Appraisers can legitimately
+// be hired on a different loss for the same vehicle, or share a claim/MA
+// number by clerical coincidence. Nothing is locked; the chip is just so the
+// user knows another claim exists.
 function DuplicateWarning({
   matches,
   count,
   field,
 }: {
-  matches: Array<{ id: string; maNumber: string; insuredName: string; vehicle: string; date: string }>
+  matches: Array<{ id: string; maNumber: string; claimNumber: string; insuredName: string; vehicle: string; date: string }>
   count: number
   field: string
 }) {
   if (count === 0) return null
-  const fmt = (iso: string) => {
-    if (!iso) return ''
-    const d = new Date(iso)
-    return isNaN(d.getTime()) ? '' : d.toLocaleDateString()
-  }
   return (
-    <div className="mt-2 p-2 rounded border border-amber-200 bg-amber-50 text-xs text-amber-800">
-      <div className="font-semibold mb-1">
-        Duplicate {field}: matches {count} other claim{count === 1 ? '' : 's'}
-      </div>
+    <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-600">
+      <span className="inline-flex items-center gap-1 text-slate-500 shrink-0">
+        <Info className="w-3.5 h-3.5" />
+        Also on {count} other claim{count === 1 ? '' : 's'}
+        <span className="text-slate-400">·</span>
+      </span>
       {matches.length > 0 ? (
-        <ul className="pl-4 list-disc space-y-0.5">
+        <>
           {matches.slice(0, 5).map(m => (
-            <li key={m.id}>
-              <a
-                href={`/claims/${m.id}`}
-                target="_blank"
-                rel="noreferrer"
-                className="text-amber-900 underline hover:text-amber-950"
-              >
-                MA# {m.maNumber || m.id}
-              </a>
-              {m.insuredName && <> · {m.insuredName}</>}
-              {m.vehicle && <> · {m.vehicle}</>}
-              {m.date && <> · {fmt(m.date)}</>}
-            </li>
+            <a
+              key={m.id}
+              href={`/claims/${m.id}`}
+              target="_blank"
+              rel="noreferrer"
+              title={[m.insuredName, m.vehicle].filter(Boolean).join(' · ') || undefined}
+              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50 text-slate-700 hover:text-slate-900 font-medium transition-colors"
+            >
+              <span>MA {m.maNumber || m.id.slice(0, 6)}</span>
+              {m.claimNumber && <span className="text-slate-400">· CL {m.claimNumber}</span>}
+              <ExternalLink className="w-3 h-3 text-slate-400" />
+            </a>
           ))}
-          {matches.length > 5 && <li>and {matches.length - 5} more…</li>}
-        </ul>
+          {matches.length > 5 && <span className="text-slate-500">+{matches.length - 5} more</span>}
+        </>
       ) : (
-        <div className="text-amber-800/80">
-          Contact an admin for details.
-        </div>
+        <span className="text-slate-400 italic">Ask an admin for details</span>
       )}
+      <span className="sr-only">
+        {field} matches on other claim{count === 1 ? '' : 's'} — informational, not a block.
+      </span>
     </div>
   )
 }
 
 // ── Persistent duplicate banner at top of saved-claim workspace ──────────────
+// Rendered on any saved claim whose VIN, CL#, or MA# matches another claim.
+// Same "informational only" framing — clean neutral card, not an alarming
+// amber warning.
 function DuplicateBanner({ duplicates }: { duplicates: DuplicateResult }) {
-  const { vinMatches, claimNumberMatches } = duplicates
-  const fmt = (iso: string) => {
-    if (!iso) return ''
-    const d = new Date(iso)
-    return isNaN(d.getTime()) ? '' : d.toLocaleDateString()
-  }
-  const renderList = (label: string, list: DuplicateResult['vinMatches']) => (
-    <div>
-      <span className="font-semibold">{label} matches:</span>{' '}
-      {list.slice(0, 5).map((m, i) => (
-        <span key={m.id}>
-          <a href={`/claims/${m.id}`} target="_blank" rel="noreferrer"
-             className="underline hover:no-underline">
-            MA# {m.maNumber || m.id}
-          </a>
-          {m.insuredName && ` (${m.insuredName})`}
-          {m.date && `, ${fmt(m.date)}`}
-          {i < Math.min(list.length, 5) - 1 && '; '}
-        </span>
-      ))}
-      {list.length > 5 && <> and {list.length - 5} more…</>}
-    </div>
-  )
+  const { vinMatches, claimNumberMatches, maNumberMatches } = duplicates
+  const groups: Array<{ label: string; list: DuplicateResult['vinMatches'] }> = []
+  if (vinMatches.length > 0)         groups.push({ label: 'VIN',    list: vinMatches })
+  if (claimNumberMatches.length > 0) groups.push({ label: 'CL #',   list: claimNumberMatches })
+  if (maNumberMatches.length > 0)    groups.push({ label: 'MA #',   list: maNumberMatches })
+  if (groups.length === 0) return null
+
   return (
-    <div className="mb-4 p-3 rounded-lg bg-amber-50 border border-amber-300 text-amber-900 text-sm space-y-1">
-      <div className="font-bold flex items-center gap-2">
-        <AlertCircle className="w-4 h-4" />
-        Duplicate detected on this claim
+    <div className="mb-4 rounded-lg border border-slate-200 bg-white shadow-sm overflow-hidden">
+      <div className="flex items-center gap-2 px-4 py-2 border-b border-slate-100 bg-slate-50">
+        <Info className="w-4 h-4 text-slate-500" />
+        <span className="text-sm font-semibold text-slate-800">Matching claim{groups.reduce((n, g) => n + g.list.length, 0) === 1 ? '' : 's'} on file</span>
+        <span className="text-xs text-slate-500">— informational, this claim is not blocked</span>
       </div>
-      {vinMatches.length > 0 && renderList('VIN', vinMatches)}
-      {claimNumberMatches.length > 0 && renderList('Claim #', claimNumberMatches)}
+      <div className="divide-y divide-slate-100">
+        {groups.map(g => (
+          <div key={g.label} className="px-4 py-2.5">
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 text-xs">
+              <span className="inline-flex items-center gap-1 shrink-0">
+                <span className="text-slate-500">Same {g.label}:</span>
+              </span>
+              {g.list.slice(0, 6).map(m => (
+                <a
+                  key={m.id}
+                  href={`/claims/${m.id}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  title={[m.insuredName, m.vehicle].filter(Boolean).join(' · ') || undefined}
+                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50 text-slate-700 hover:text-slate-900 font-medium transition-colors"
+                >
+                  <span>MA {m.maNumber || m.id.slice(0, 6)}</span>
+                  {m.claimNumber && <span className="text-slate-400">· CL {m.claimNumber}</span>}
+                  {m.insuredName && <span className="text-slate-400 truncate max-w-[140px]">· {m.insuredName}</span>}
+                  <ExternalLink className="w-3 h-3 text-slate-400" />
+                </a>
+              ))}
+              {g.list.length > 6 && (
+                <span className="text-slate-500">+{g.list.length - 6} more</span>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   )
 }
@@ -261,9 +287,10 @@ const CLAIM_TYPE_LABELS: Record<ClaimType, string> = {
   acv:      'ACV',
   dv:       'DV',
   estimate: 'Est Dispute',
+  storage:  'Storage',
   other:    'Other',
 }
-const CLAIM_TYPE_ORDER: ClaimType[] = ['acv', 'dv', 'estimate', 'other']
+const CLAIM_TYPE_ORDER: ClaimType[] = ['acv', 'dv', 'estimate', 'storage', 'other']
 
 function ClaimTypeChips({
   selected,
@@ -307,19 +334,27 @@ function ClaimTypeChips({
 function ClaimInfoForm({
   claim,
   onChange,
+  clientId,
+  onClientIdChange,
   insuranceCompanyOptions,
   duplicates,
   isNew,
   canEdit,
+  isAdmin,
   onParsedNotes,
   allProfiles,
 }: {
   claim: ClaimInfo
   onChange: (updated: ClaimInfo) => void
+  clientId: string | null
+  onClientIdChange: (id: string | null) => void
   insuranceCompanyOptions: string[]
   duplicates: DuplicateResult
   isNew: boolean
   canEdit: boolean
+  // Handling Appraiser + Client Name are admin-only editable — non-admins
+  // see disabled inputs showing the current value (or "—" if empty).
+  isAdmin: boolean
   onParsedNotes?: (notes: string) => void
   allProfiles: Profile[]
 }) {
@@ -457,19 +492,43 @@ function ClaimInfoForm({
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div>
             <label className={labelCls}>Handling Appraiser</label>
-            <select
-              className={inputCls}
-              value={claim.handlingAppraiser ?? ''}
-              onChange={(e) => set('handlingAppraiser', e.target.value)}
-            >
-              <option value="">— Select appraiser —</option>
-              {allProfiles
-                .filter(p => p.isActive)
-                .map(p => {
-                  const name = p.name || p.email
-                  return <option key={p.id} value={name}>{name}</option>
-                })}
-            </select>
+            {isAdmin ? (
+              <select
+                className={inputCls}
+                value={claim.handlingAppraiser ?? ''}
+                onChange={(e) => set('handlingAppraiser', e.target.value)}
+              >
+                <option value="">— Select appraiser —</option>
+                {(() => {
+                  const visible = allProfiles.filter(p => p.isActive && p.showInHandlingAppraiserList !== false)
+                  const current = claim.handlingAppraiser ?? ''
+                  // If the current value points to a name not in the visible
+                  // list (e.g., removed from the handling-appraiser list, or a
+                  // legacy free-text entry), keep it as a disabled option so
+                  // the field still shows what's actually saved instead of
+                  // silently rendering blank.
+                  const currentInVisible = current && visible.some(p => (p.name || p.email) === current)
+                  return (
+                    <>
+                      {current && !currentInVisible && (
+                        <option value={current} disabled>{current} (not in list)</option>
+                      )}
+                      {visible.map(p => {
+                        const name = p.name || p.email
+                        return <option key={p.id} value={name}>{name}</option>
+                      })}
+                    </>
+                  )
+                })()}
+              </select>
+            ) : (
+              <input
+                className={inputCls}
+                value={claim.handlingAppraiser || '—'}
+                disabled
+                readOnly
+              />
+            )}
           </div>
         </div>
       </div>
@@ -496,6 +555,7 @@ function ClaimInfoForm({
           <div>
             <label className={labelCls}>MA Number</label>
             <input className={inputCls} placeholder="MA-12345" value={claim.maNumber} onChange={(e) => set('maNumber', e.target.value)} />
+            <DuplicateWarning matches={duplicates.maNumberMatches} count={duplicates.maNumberCount} field="MA #" />
           </div>
           <div>
             <label className={labelCls}>Insurance Claim #</label>
@@ -522,7 +582,25 @@ function ClaimInfoForm({
           </div>
           <div>
             <label className={labelCls}>Client Name</label>
-            <input className={inputCls} placeholder="Sedgwick" value={claim.clientName} onChange={(e) => set('clientName', e.target.value)} />
+            {isAdmin ? (
+              <ClientPicker
+                value={clientId}
+                valueName={claim.clientName}
+                onChange={(id, name) => {
+                  onClientIdChange(id)
+                  set('clientName', name)
+                }}
+                placeholder="Sedgwick"
+                inputClassName={inputCls}
+              />
+            ) : (
+              <input
+                className={inputCls}
+                value={claim.clientName || '—'}
+                disabled
+                readOnly
+              />
+            )}
           </div>
           <div>
             <label className={labelCls}>Insured / Owner Name</label>
@@ -619,6 +697,22 @@ function ClaimInfoForm({
           <div>
             <label className={labelCls}>Adjuster Email</label>
             <input className={inputCls} placeholder="adjuster@insurer.com" value={claim.adjusterEmail} onChange={(e) => set('adjusterEmail', e.target.value)} />
+          </div>
+          <div>
+            <label className={labelCls}>Deductible</label>
+            <div className="relative">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm pointer-events-none">$</span>
+              <input
+                type="number"
+                inputMode="decimal"
+                step="any"
+                min={0}
+                className={inputCls + ' pl-7'}
+                placeholder="500"
+                value={claim.deductible ? String(claim.deductible) : ''}
+                onChange={(e) => set('deductible', e.target.value === '' ? 0 : Number(e.target.value))}
+              />
+            </div>
           </div>
         </div>
       </div>
@@ -943,7 +1037,7 @@ function CompCard({
           </button>
         )}
         <a
-          href={comp.vdpUrl || `https://www.google.com/search?q=${encodeURIComponent(comp.vin as string)}`}
+          href={safeHref(comp.vdpUrl || `https://www.google.com/search?q=${encodeURIComponent(comp.vin as string)}`)}
           target="_blank"
           rel="noopener noreferrer"
           onClick={(e) => e.stopPropagation()}
@@ -1257,7 +1351,7 @@ function ReviewStep({
         throw new Error(data.error || 'PDF generation failed')
       }
       const blob = await res.blob()
-      const name = `${claim.maNumber || 'report'}-acv.pdf`
+      const name = `${claim.maNumber || 'report'}-acvreport.pdf`
       // Auto-file to Documents FIRST (canonical claim record), then let the
       // user choose where to save a local copy via the OS save-as dialog.
       onSave()
@@ -1445,7 +1539,7 @@ const REPORT_TYPES = [
   },
 ]
 
-type NotesType = 'acv' | 'dv' | 'acv-umpire' | 'dv-umpire'
+type NotesType = 'acv' | 'dv' | 'acv-umpire' | 'dv-umpire' | 'estimate' | 'estimate-umpire'
 
 function buildNotesComments(
   type: NotesType,
@@ -1459,8 +1553,28 @@ function buildNotesComments(
   umpireName: string,
   umpireAmount: string,
   signatureBlock1: string,
+  repairShopAmount: string,
 ): string {
   let text = ''
+
+  if (type === 'estimate' || type === 'estimate-umpire') {
+    // Estimate Dispute (Cost of Repair) — matches the Modern Appraisers
+    // sample notes verbiage (CCCone software, final repair cost, repair
+    // shop estimate line).
+    text += `We established a final cost of repairs using CCCone estimating software for all damages related to this loss along with all items that are considered not included in the CCCone database. We came to a final repair cost of ${maValue} to address the amount of loss.\n\n`
+    text += `The insured's hired appraiser, ${appraiserName} with ${appraiserCompany} prepared an estimate in the amount of ${appraiserValue} to address the final cost of repair. The repair shop had an estimate in the amount of ${repairShopAmount}\n\n`
+    if (type === 'estimate') {
+      text += `Our negotiations with ${appraiserTitle} ${appraiserLastName} led to an award amount of ${agreementAmount}.\n\n`
+      text += 'Mutually signed award letter attached.\n\n'
+    } else {
+      text += `Our negotiations with ${appraiserTitle} ${appraiserLastName} were not successful, we therefore elected to move forward with ${umpireName} as the umpire to rule on this claim. ${umpireName.split(/\s+/).slice(-1)[0] ? `Mr. ${umpireName.split(/\s+/).slice(-1)[0]}` : 'The umpire'} came back with an umpire award in the amount of ${umpireAmount} .\n\n`
+      text += 'Mutually signed award letter attached.\n\n'
+    }
+    text += 'If you have any questions pertaining to this assignment, please feel free to contact me directly.'
+    const sigNameE = signatureBlock1.split('\n').map(l => l.trim()).filter(Boolean)[0] || ''
+    text += `\n\nSincerely,\n${sigNameE}\nModern Appraisers\n702-321-5930`
+    return text
+  }
 
   if (type === 'acv' || type === 'acv-umpire') {
     text += `We established a market value on insureds vehicle using three comparable vehicles, with adjustments made for mileage, condition, and options. Our appraised value was ${maValue} not including sales tax or any other costs.\n\n`
@@ -1486,12 +1600,24 @@ function buildNotesComments(
   return text
 }
 
+// Label that gets drawn over the (now-blanked) Dropdown9 field position by
+// the notes filler. Free-form: no longer constrained to the template's option
+// list. Henry standardized on "Right To Appraisal - X" across all variants
+// (2026-09-17).
 function getDropdownValue(type: NotesType): string {
-  if (type === 'acv' || type === 'acv-umpire') return 'Appraisal Clause Assignment – ACV '
-  return 'Diminished Value Assignment – DV'
+  if (type === 'acv' || type === 'acv-umpire') return 'Right To Appraisal - ACV'
+  if (type === 'estimate' || type === 'estimate-umpire') return 'Right To Appraisal - Cost of Repair'
+  return 'Right To Appraisal - DV'
 }
 
+type AwardType = 'acv' | 'dv' | 'estimate'
+
 interface ReportsState {
+  // Award variant. 'acv' preserves the original letterhead; 'dv' hides
+  // the ACV-specific exclusion clause and relabels the value line as
+  // "Diminished Value (DV)". Auto-synced from claim.claimTypes but the
+  // user can override in the Award tab.
+  awardType?: AwardType
   notesType: NotesType
   notesData: {
     // Closing Notes date. Empty until the tab is first opened; then auto-set to
@@ -1506,6 +1632,11 @@ interface ReportsState {
     agreementAmountNum: number
     umpireName: string
     umpireAmountNum: number
+    // Estimate Dispute — repair shop's own estimate amount, referenced in
+    // the "The repair shop had an estimate in the amount of $X" sentence.
+    // Optional so pre-existing claims (which never had this field) don't
+    // fail deserialization; treat undefined as 0 at read time.
+    repairShopAmountNum?: number
   }
   awardData: {
     insuranceCompany: string
@@ -1525,8 +1656,18 @@ interface ReportsState {
 }
 
 function defaultReportsState(claim: ClaimInfo): ReportsState {
+  // Seed the report variants from the claim's type. Estimate wins over DV
+  // wins over ACV when picking a single default (the user can still swap
+  // on the tab). Umpire variants are not defaulted — they're an explicit
+  // user choice after the negotiation fails.
+  const types = claim.claimTypes ?? []
+  const initialType: AwardType =
+    types.includes('estimate') && !types.includes('acv') && !types.includes('dv') ? 'estimate' :
+    types.includes('dv') && !types.includes('acv') && !types.includes('estimate') ? 'dv' :
+    'acv'
   return {
-    notesType: 'acv',
+    awardType: initialType,
+    notesType: initialType,
     notesData: {
       // Left empty so it can auto-fill with today's date on FIRST tab open,
       // not at claim-creation time. See the useEffect near ReportsStep's view
@@ -1541,6 +1682,7 @@ function defaultReportsState(claim: ClaimInfo): ReportsState {
       agreementAmountNum: 0,
       umpireName: '',
       umpireAmountNum: 0,
+      repairShopAmountNum: 0,
     },
     awardData: {
       insuranceCompany: claim.insuranceCompany || '',
@@ -1595,9 +1737,13 @@ function ReportsStep({
   const notesType = reportsState.notesType
   const notesData = reportsState.notesData
   const awardData = reportsState.awardData
+  const awardType: AwardType = reportsState.awardType ?? 'acv'
 
   const setNotesType = (t: NotesType) =>
     onReportsStateChange(prev => ({ ...prev, notesType: t }))
+
+  const setAwardType = (t: AwardType) =>
+    onReportsStateChange(prev => ({ ...prev, awardType: t }))
 
   const setNotesData = (fn: (prev: ReportsState['notesData']) => ReportsState['notesData']) =>
     onReportsStateChange(prev => ({ ...prev, notesData: fn(prev.notesData) }))
@@ -1649,6 +1795,7 @@ function ReportsStep({
     notesData.umpireName || '[Umpire Name]',
     notesData.umpireAmountNum ? formatCurrency(notesData.umpireAmountNum) : '$0.00',
     awardData.signatureBlock1,
+    notesData.repairShopAmountNum ? formatCurrency(notesData.repairShopAmountNum) : '$0.00',
   )
 
   const downloadNotesPdf = async () => {
@@ -1668,6 +1815,7 @@ function ReportsStep({
         notesData.umpireName,
         notesData.umpireAmountNum ? formatCurrency(notesData.umpireAmountNum) : '$0.00',
         awardData.signatureBlock1,
+        notesData.repairShopAmountNum ? formatCurrency(notesData.repairShopAmountNum) : '$0.00',
       )
       const today = new Date().toISOString().split('T')[0]
       const res = await fetch('/api/acv/generate-notes-pdf', {
@@ -1691,7 +1839,7 @@ function ReportsStep({
         throw new Error(data.error || 'PDF generation failed')
       }
       const blob = await res.blob()
-      const name = `${claim.maNumber || 'report'}-notes.pdf`
+      const name = `${claim.maNumber || 'report'}-closingnotes.pdf`
       // Auto-file to Documents first, then prompt for local save location.
       onDocumentSaved?.(blob, name, 'closing-notes')
       await savePdfWithPicker(blob, name)
@@ -1704,6 +1852,27 @@ function ReportsStep({
 
   const setAward = (field: string, value: string) =>
     setAwardData(prev => ({ ...prev, [field]: value }))
+
+  // Auto-sync the Award + Closing Notes variant from the claim's type.
+  // If exactly one of {acv, dv, estimate} is checked on Claim Info, both
+  // report variants switch to match. If multiple (or zero) are checked,
+  // we don't change anything — user picks in the tab. Umpire variants on
+  // Notes are preserved as long as the family matches.
+  useEffect(() => {
+    const types = claim.claimTypes ?? []
+    const workTypes = ['acv', 'dv', 'estimate'].filter(t => types.includes(t as ClaimType))
+    if (workTypes.length !== 1) return
+    const target = workTypes[0] as AwardType
+    const notesTarget: NotesType =
+      target === 'estimate' ? (notesType === 'estimate-umpire' ? 'estimate-umpire' : 'estimate')
+      : target === 'dv'    ? (notesType === 'dv-umpire' ? 'dv-umpire' : 'dv')
+      :                       (notesType === 'acv-umpire' ? 'acv-umpire' : 'acv')
+    onReportsStateChange(prev => {
+      if (prev.awardType === target && prev.notesType === notesTarget) return prev
+      return { ...prev, awardType: target, notesType: notesTarget }
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally only on claimTypes; notesType read from a closure is fine because we override in the same setter
+  }, [claim.claimTypes])
 
   // Keep award fields in sync with claim data. The Handling Appraiser (when set)
   // becomes Appraiser 1 on the award — and, via signatureBlock1, the Closing
@@ -1739,6 +1908,7 @@ function ReportsStep({
         signatureBlock1: withRoleLabel(awardData.signatureBlock1, 'For the Insurer'),
         signatureBlock2: withRoleLabel(awardData.signatureBlock2, 'For the Insured'),
         acvAmount: awardData.acvAmountNum ? formatCurrency(awardData.acvAmountNum) : '',
+        variant: awardType,
       }
       const res = await fetch('/api/acv/generate-award-pdf', {
         method: 'POST',
@@ -2021,6 +2191,33 @@ function ReportsStep({
             </div>
           </CardHeader>
           <CardContent className="space-y-4">
+            {/* Variant toggle — controls the value-line label and whether the
+                ACV-specific exclusion clause prints. Auto-defaulted from
+                claim.claimTypes; user can still override here. */}
+            <div>
+              <label className={labelCls}>Award Type</label>
+              <div className="grid grid-cols-3 gap-2 max-w-md">
+                {([
+                  ['acv', 'ACV'],
+                  ['dv', 'DV'],
+                  ['estimate', 'Estimate Dispute'],
+                ] as const).map(([value, label]) => (
+                  <button
+                    key={value}
+                    type="button"
+                    onClick={() => setAwardType(value)}
+                    className={cn(
+                      'px-3 py-2 text-sm font-semibold rounded-lg border transition-all',
+                      awardType === value
+                        ? 'bg-blue-600 text-white border-blue-600'
+                        : 'bg-white text-gray-700 border-gray-200 hover:border-blue-300'
+                    )}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className={labelCls}>Insurance Company</label>
@@ -2073,7 +2270,11 @@ function ReportsStep({
                 />
               </div>
               <div className="md:col-span-2">
-                <label className={labelCls}>Actual Cash Value (ACV)</label>
+                <label className={labelCls}>
+                  {awardType === 'dv' ? 'Diminished Value (DV)'
+                    : awardType === 'estimate' ? 'Amount of Loss (Final Cost of Repair)'
+                    : 'Actual Cash Value (ACV)'}
+                </label>
                 <CurrencyInput
                   className={inputCls}
                   placeholder="$0.00"
@@ -2149,7 +2350,8 @@ function ReportsStep({
 
   // Closing Notes form
   if (selectedReport === 'closing-notes') {
-    const isUmpire = notesType === 'acv-umpire' || notesType === 'dv-umpire'
+    const isUmpire = notesType === 'acv-umpire' || notesType === 'dv-umpire' || notesType === 'estimate-umpire'
+    const isEstimate = notesType === 'estimate' || notesType === 'estimate-umpire'
 
     return (
       <div className="space-y-6">
@@ -2185,12 +2387,14 @@ function ReportsStep({
             {/* Type selector */}
             <div>
               <label className={labelCls}>Assignment Type</label>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
                 {([
                   ['acv', 'ACV'],
                   ['dv', 'DV'],
+                  ['estimate', 'Estimate Dispute'],
                   ['acv-umpire', 'ACV → Umpire'],
                   ['dv-umpire', 'DV → Umpire'],
+                  ['estimate-umpire', 'Estimate → Umpire'],
                 ] as const).map(([value, label]) => (
                   <button
                     key={value}
@@ -2272,6 +2476,21 @@ function ReportsStep({
                 </div>
               </div>
             </div>
+
+            {/* Repair Shop Estimate (Estimate Dispute only) */}
+            {isEstimate && (
+              <div className="border-t border-gray-100 pt-4">
+                <h4 className="text-xs font-medium text-gray-500 mb-3 uppercase tracking-wider">Repair Shop</h4>
+                <div className="w-64">
+                  <label className={labelCls}>Repair Shop Estimate</label>
+                  <CurrencyInput
+                    className={inputCls}
+                    value={notesData.repairShopAmountNum ?? 0}
+                    onChange={(val) => setNotes('repairShopAmountNum', val)}
+                  />
+                </div>
+              </div>
+            )}
 
             {/* Agreement or Umpire fields */}
             <div className="border-t border-gray-100 pt-4">
@@ -2366,6 +2585,7 @@ function defaultClaim(): ClaimInfo {
     adjuster: '',
     adjusterPhone: '',
     adjusterEmail: '',
+    deductible: 0,
     vin: '',
     year: 0,
     make: '',
@@ -2521,6 +2741,7 @@ const TOOL_TABS = [
   { id: 'notes', label: 'Closing Notes', step: 8 },
   { id: 'summary', label: 'Summary', step: 5 },
   { id: 'estimate', label: 'Estimate Dispute', step: 7 },
+  { id: 'storage', label: 'Storage Charges', step: 16 },
 ] as const
 
 function tabForStep(step: number): string {
@@ -2532,6 +2753,7 @@ function tabForStep(step: number): string {
   if (step === 7) return 'estimate'
   if (step === 11) return 'dv'
   if (step === 12) return 'reports'
+  if (step === 16) return 'storage'
   if (step === 13) return 'messages'
   if (step === 14) return 'guidelines'
   if (step === 15) return 'reports-hub'
@@ -2588,6 +2810,9 @@ function ClaimWorkspaceInner({ claimId }: { claimId: string }) {
   )
   // On /claims/new any draft is content-only: never adopt a stale draft's row id.
   const [editingId, setEditingId] = useState<string | null>(null)
+  // Linked canonical client (see Marketing migration). Null on claims created
+  // before the Marketing rollout; will backfill in a later session.
+  const [clientId, setClientId] = useState<string | null>(null)
   const [reportsState, setReportsState] = useState<ReportsState>(
     () => draft.current?.reportsState ?? defaultReportsState(draft.current?.claim ?? defaultClaim())
   )
@@ -2645,13 +2870,30 @@ function ClaimWorkspaceInner({ claimId }: { claimId: string }) {
   // without this an appraiser creating a claim would flunk the `isAssignee`
   // check and get a fully-disabled form (couldn't type, couldn't upload the
   // assignment PDF, couldn't do anything).
-  const readOnly = !isAdmin && !isNew && (isSubmitted || isClosed || (!!userId && !isAssignee))
+  //
+  // Non-admin lock: only if the claim is closed OR we're not the assignee.
+  // We used to also lock after Submit, but Henry wants appraisers to keep
+  // editing after they hit Submit (they may need to attach a late doc or
+  // fix a typo). Admins are never locked out; they can still edit closed
+  // claims via the workspace and re-close afterward.
+  const readOnly = !isAdmin && !isNew && (isClosed || (!!userId && !isAssignee))
+
+  // Mark this claim as viewed by the current user (fires on mount + when
+  // the editingId changes). Fire-and-forget; failures are silent (a missed
+  // mark just leaves the row gray on the dashboard until the next open).
+  // Skipped for admins — they don't see the unread highlight anyway.
+  useEffect(() => {
+    if (!editingId || isAdmin) return
+    fetch(`/api/claims/${editingId}/mark-viewed`, { method: 'POST' }).catch(() => {})
+  }, [editingId, isAdmin])
+
   const [auctionListings, setAuctionListings] = useState<LossListing[]>([])
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [estimate, setEstimate] = useState<any>(undefined)
   const [documents, setDocuments] = useState<ClaimDocument[]>([])
   const [dv, setDv] = useState<DVState | null>(null)
   const [invoice, setInvoice] = useState<InvoiceReportState | null>(null)
+  const [storage, setStorage] = useState<StorageState | null>(null)
   // Preserve a legacy row's mode ('auto-acv' / 'auction') on save so nothing churns.
   const modeRef = useRef<string>('comp-finder')
   const [loadingClaim, setLoadingClaim] = useState(!isNew)
@@ -2702,6 +2944,8 @@ function ClaimWorkspaceInner({ claimId }: { claimId: string }) {
       setDocuments((entry.documents as ClaimDocument[] | undefined) ?? [])
       setDv((entry.dv as DVState | undefined) ?? null)
       setInvoice((entry.invoice as InvoiceReportState | undefined) ?? null)
+      setStorage((entry.storage as StorageState | undefined) ?? null)
+      setClientId(entry.clientId ?? null)
       modeRef.current = entry.mode || 'comp-finder'
       const comps = entry.comps ?? []
       setListings(comps)
@@ -2780,7 +3024,7 @@ function ClaimWorkspaceInner({ claimId }: { claimId: string }) {
         editingIdRef.current = id
         setEditingId(id)
       }
-      saveToHistory(claim, builtComps, adjustments, result, modeRef.current, id, mileageRate, reportsState, { status, auctionListings, estimate, documents, dv, invoice })
+      saveToHistory(claim, builtComps, adjustments, result, modeRef.current, id, mileageRate, reportsState, { status, auctionListings, estimate, documents, dv, invoice, storage, clientId })
         .then(() => {
           setHasUnsavedChanges(false)
           // Promote a /claims/new session to its real URL after the first save.
@@ -2793,7 +3037,7 @@ function ClaimWorkspaceInner({ claimId }: { claimId: string }) {
         .catch(() => { /* keep the unsaved badge if the save failed */ })
     }, 2000)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [claim, selectedIds, compAdjs, adjustments, reportsState, mileageRate, status, auctionListings, estimate, documents, dv, invoice])
+  }, [claim, selectedIds, compAdjs, adjustments, reportsState, mileageRate, status, auctionListings, estimate, documents, dv, invoice, storage, clientId])
 
   // Keep ?tab= in the URL in sync (survives refresh, deep-linkable) without
   // triggering a Next.js navigation.
@@ -2803,11 +3047,13 @@ function ClaimWorkspaceInner({ claimId }: { claimId: string }) {
     window.history.replaceState(null, '', url.toString())
   }, [step])
 
-  // Live duplicate check on VIN + Claim # against every other claim in the
-  // system (uses service-role backend so appraisers see cross-team dupes,
-  // not just their own). Debounced 500ms. Excludes the current claim's own
-  // id when editing an existing one so it doesn't self-match.
-  const duplicates = useDuplicateCheck(claim.vin, claim.claimNumber, editingId)
+  // Live duplicate check on VIN + Claim # + MA # against every other claim
+  // in the system (uses service-role backend so appraisers see cross-team
+  // dupes, not just their own). Debounced 500ms. Excludes the current claim's
+  // own id when editing an existing one so it doesn't self-match. Duplicates
+  // don't lock anything — they're informational (Modern Appraisers can be
+  // legitimately hired on a different loss for the same vehicle).
+  const duplicates = useDuplicateCheck(claim.vin, claim.claimNumber, claim.maNumber, editingId)
 
   // Filter which tool tabs to show based on claim.claimTypes. Award / Notes /
   // Summary / Invoice are always visible (they finalize any claim type).
@@ -2822,6 +3068,7 @@ function ClaimWorkspaceInner({ claimId }: { claimId: string }) {
       if (t.id === 'acv')      return other || types.includes('acv')
       if (t.id === 'dv')       return other || types.includes('dv')
       if (t.id === 'estimate') return other || types.includes('estimate')
+      if (t.id === 'storage')  return other || types.includes('storage')
       return true
     })
   }, [claim.claimTypes])
@@ -3095,7 +3342,7 @@ function ClaimWorkspaceInner({ claimId }: { claimId: string }) {
 
   const claimVehicle = [claim.year || '', claim.make, claim.model].filter(Boolean).join(' ')
 
-  const saveExtras = { status, auctionListings, estimate, documents, dv, invoice }
+  const saveExtras = { status, auctionListings, estimate, documents, dv, invoice, storage, clientId }
 
   // Auto-file a generated/printed report PDF into the claim's Documents tab.
   // Always numbers files of the same source per claim ("MA1234-award (1).pdf",
@@ -3136,20 +3383,33 @@ function ClaimWorkspaceInner({ claimId }: { claimId: string }) {
     message: string
     confirmLabel: string
     variant: 'primary' | 'danger'
+    // For 'approve': which close reason to POST. Ignored on other paths.
+    reason?: 'completed' | 'cancelled'
   }
   const [pendingWorkflow, setPendingWorkflow] = useState<PendingWorkflow | null>(null)
 
   const runWorkflow = async () => {
     if (!pendingWorkflow) return
     if (!editingId) { setPendingWorkflow(null); return }
-    const path = pendingWorkflow.path
+    const { path, reason } = pendingWorkflow
     setWorkflowBusy(true)
-    const res = await fetch(`/api/claims/${editingId}/${path}`, { method: 'POST' })
+    const res = await fetch(`/api/claims/${editingId}/${path}`, {
+      method: 'POST',
+      headers: reason ? { 'Content-Type': 'application/json' } : undefined,
+      body: reason ? JSON.stringify({ reason }) : undefined,
+    })
     setWorkflowBusy(false)
     setPendingWorkflow(null)
     if (!res.ok) {
       const b = await res.json().catch(() => ({} as { error?: string }))
       alert((b as { error?: string }).error ?? 'Action failed')
+      return
+    }
+    // After a successful submit or close (Complete / Cancelled), kick back
+    // to the dashboard — the workspace step is done. Reopen keeps the user
+    // in place because they typically want to keep editing.
+    if (path === 'submit' || path === 'approve') {
+      router.push('/')
       return
     }
     const fresh = await fetchACVEntry(editingId)
@@ -3161,19 +3421,30 @@ function ClaimWorkspaceInner({ claimId }: { claimId: string }) {
     }
   }
 
+  // Non-admins only. Admins skip the submit step and close directly via the
+  // Finalize dropdown (Complete / Cancel).
   const handleSubmit = () => setPendingWorkflow({
     path: 'submit',
     title: 'Submit this claim for admin review?',
-    message: 'You will not be able to edit the claim after submitting. Only an admin can then close it or reassign it to another appraiser.',
+    message: 'The claim will go to the admin queue for closing. You can still edit or attach documents afterward.',
     confirmLabel: 'Submit',
     variant: 'primary',
   })
-  const handleApprove = () => setPendingWorkflow({
+  const handleComplete = () => setPendingWorkflow({
     path: 'approve',
-    title: 'Close this claim?',
-    message: 'The claim will be marked closed and move to the All Claims list. Reopen from the workspace if you need to.',
-    confirmLabel: 'Close Claim',
+    title: 'Mark this claim as Complete?',
+    message: 'Closes the claim as Completed (ran its normal course). It moves to Closed Claims and can be reopened later if needed.',
+    confirmLabel: 'Complete Claim',
     variant: 'primary',
+    reason: 'completed',
+  })
+  const handleCancel = () => setPendingWorkflow({
+    path: 'approve',
+    title: 'Mark this claim as Cancelled?',
+    message: 'Closes the claim as Cancelled (client withdrew, wrong assignment, duplicate, etc). It moves to Closed Claims and can be reopened later if needed.',
+    confirmLabel: 'Cancel Claim',
+    variant: 'danger',
+    reason: 'cancelled',
   })
   const handleReopen = () => setPendingWorkflow({
     path: 'reopen',
@@ -3218,6 +3489,23 @@ function ClaimWorkspaceInner({ claimId }: { claimId: string }) {
     setReassignOpen(false)
     setPendingReassign({ id, label })
   }
+
+  // Finalize dropdown (admin-only): one button that opens a menu with
+  // Complete Claim / Cancel Claim. Picking either arms the ConfirmDialog via
+  // the existing handleComplete/handleCancel handlers. Mirrors the Reassign
+  // popover's click-outside-to-close pattern.
+  const [finalizeOpen, setFinalizeOpen] = useState(false)
+  const finalizeRef = useRef<HTMLDivElement | null>(null)
+  useEffect(() => {
+    if (!finalizeOpen) return
+    const onDocClick = (e: MouseEvent) => {
+      if (finalizeRef.current && !finalizeRef.current.contains(e.target as Node)) {
+        setFinalizeOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', onDocClick)
+    return () => document.removeEventListener('mousedown', onDocClick)
+  }, [finalizeOpen])
 
   const runReassign = async () => {
     if (!pendingReassign || !editingId) { setPendingReassign(null); return }
@@ -3385,7 +3673,7 @@ function ClaimWorkspaceInner({ claimId }: { claimId: string }) {
               above already pushes these to the far right; no ml-auto needed. */}
           {!isNew && editingId && (
             <div className="flex items-center gap-2">
-              {!isSubmitted && !isClosed && (isAssignee || isAdmin) && (
+              {!isAdmin && !isSubmitted && !isClosed && isAssignee && (
                 <Button
                   onClick={handleSubmit}
                   disabled={workflowBusy}
@@ -3395,15 +3683,38 @@ function ClaimWorkspaceInner({ claimId }: { claimId: string }) {
                   Submit
                 </Button>
               )}
-              {isAdmin && isSubmitted && !isClosed && (
-                <Button
-                  onClick={handleApprove}
-                  disabled={workflowBusy}
-                  size="sm"
-                  className="bg-emerald-600 hover:bg-emerald-500 text-white"
-                >
-                  Close Claim
-                </Button>
+              {isAdmin && !isClosed && (
+                <div className="relative" ref={finalizeRef}>
+                  <Button
+                    onClick={() => setFinalizeOpen(o => !o)}
+                    disabled={workflowBusy}
+                    size="sm"
+                    className="bg-emerald-600 hover:bg-emerald-500 text-white"
+                  >
+                    Finalize
+                    <ChevronDown className="w-3.5 h-3.5 ml-1" />
+                  </Button>
+                  {finalizeOpen && (
+                    <div className="absolute right-0 mt-1 w-48 rounded-lg border border-gray-200 bg-white shadow-lg z-20 overflow-hidden">
+                      <button
+                        type="button"
+                        onClick={() => { setFinalizeOpen(false); handleComplete() }}
+                        className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-800 hover:bg-emerald-50 hover:text-emerald-700"
+                      >
+                        <Check className="w-4 h-4 text-emerald-600" />
+                        Complete Claim
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => { setFinalizeOpen(false); handleCancel() }}
+                        className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-800 hover:bg-red-50 hover:text-red-700 border-t border-gray-100"
+                      >
+                        <X className="w-4 h-4 text-red-600" />
+                        Cancel Claim
+                      </button>
+                    </div>
+                  )}
+                </div>
               )}
               {isAdmin && isClosed && (
                 <Button
@@ -3539,18 +3850,19 @@ function ClaimWorkspaceInner({ claimId }: { claimId: string }) {
           </div>
         )}
 
-        {/* Task 11: submitted read-only banner for non-admins. Admins still see
-            Close Claim in the toolbar so they don't need this notice. */}
+        {/* Submitted informational banner for non-admins. The claim stays
+            editable until the admin closes it (Complete or Cancelled) —
+            appraisers may need to attach late documents or fix a detail
+            after submitting. */}
         {isSubmitted && !isAdmin && submittedAt && (
           <div className="mb-4 p-3 rounded-lg bg-blue-50 border border-blue-200 text-blue-700 text-sm">
-            Submitted on {new Date(submittedAt).toLocaleString()}. Waiting on admin review.
-            This claim is read-only until an admin closes it or reassigns it to another appraiser.
+            Submitted on {new Date(submittedAt).toLocaleString()}. Waiting on admin review — you can still edit or attach documents until the claim is closed.
           </div>
         )}
 
         {/* Duplicate banner — visible on any saved claim whose VIN or Claim #
             matches another claim in the system. */}
-        {!isNew && (duplicates.vinMatches.length > 0 || duplicates.claimNumberMatches.length > 0) && (
+        {!isNew && (duplicates.vinCount > 0 || duplicates.claimNumberCount > 0 || duplicates.maNumberCount > 0) && (
           <DuplicateBanner duplicates={duplicates} />
         )}
 
@@ -3559,7 +3871,7 @@ function ClaimWorkspaceInner({ claimId }: { claimId: string }) {
         {!isNew && (
         <div className="mb-6">
           <div className="flex items-center justify-center gap-12 mb-5 border-b border-gray-200">
-            {CLAIM_TABS.map((tab) => {
+            {CLAIM_TABS.filter(tab => tab.id !== 'reports-hub' || isAdmin).map((tab) => {
               const active = tabForStep(step) === tab.id
               return (
                 <button
@@ -3675,10 +3987,13 @@ function ClaimWorkspaceInner({ claimId }: { claimId: string }) {
                 <ClaimInfoForm
                   claim={claim}
                   onChange={setClaim}
+                  clientId={clientId}
+                  onClientIdChange={setClientId}
                   insuranceCompanyOptions={insuranceCompanyOptions}
                   duplicates={duplicates}
                   isNew={isNew}
                   canEdit={isAdmin || profile?.canEditClaimInfo === true}
+                  isAdmin={isAdmin}
                   onParsedNotes={(notes) => { pendingAutoNoteRef.current = notes }}
                   allProfiles={allProfiles}
                 />
@@ -4234,6 +4549,7 @@ function ClaimWorkspaceInner({ claimId }: { claimId: string }) {
             <h2 className="text-lg font-semibold text-gray-900 mb-4">Estimate Dispute</h2>
             <EstimateTab
               claim={claim}
+              claimId={editingId}
               estimate={estimate}
               onChange={setEstimate}
               onDocumentSaved={(blob, name, source) => addDocument(blob, name, source)}
@@ -4279,6 +4595,22 @@ function ClaimWorkspaceInner({ claimId }: { claimId: string }) {
             />
           </div>
         )}
+
+        {/* Step 16: Storage Charges — new element-of-loss tool (2026-09-15).
+            Line-item calculator (Qty display / Description / Hours × Rate) with
+            configurable sales tax and a notes block. Generates a from-scratch
+            PDF (see /api/storage/generate-pdf + lib/storage/pdf.ts). */}
+        {step === 16 && (
+          <div>
+            <StorageTab
+              claim={claim}
+              state={storage ?? defaultStorageState()}
+              onChange={setStorage}
+              onDocumentSaved={(blob, name) => addDocument(blob, name, 'storage')}
+              readOnly={readOnly}
+            />
+          </div>
+        )}
         </fieldset>
 
         {/* Step 13: Messages — rendered OUTSIDE the fieldset so messaging
@@ -4295,8 +4627,10 @@ function ClaimWorkspaceInner({ claimId }: { claimId: string }) {
         )}
 
         {/* Step 15: Reports Hub — entry point for all fillable/printable reports
-            attached to this claim (Invoice, ACV Modern Contract). */}
-        {step === 15 && (
+            attached to this claim (Invoice, ACV Modern Contract). Admin-only —
+            appraisers don't touch invoicing or the signed contract. Deep links
+            to ?tab=reports-hub for non-admins fall through to a hidden render. */}
+        {step === 15 && isAdmin && (
           <ReportsHubTab claimId={editingId ?? claimId} onOpenInvoice={() => setStep(12)} />
         )}
       </main>

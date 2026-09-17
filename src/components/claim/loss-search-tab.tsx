@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { Loader2, Search, AlertCircle, Car } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import type { ClaimInfo } from '@/lib/acv/types'
+import { safeHref } from '@/lib/safe-href'
 
 export interface LossListing {
   id: string
@@ -92,7 +93,7 @@ function LossCard({ listing }: { listing: LossListing }) {
 
   if (listing.vdpUrl) {
     return (
-      <a href={listing.vdpUrl} target="_blank" rel="noopener noreferrer">
+      <a href={safeHref(listing.vdpUrl)} target="_blank" rel="noopener noreferrer">
         {card}
       </a>
     )

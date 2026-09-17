@@ -73,7 +73,7 @@ export async function POST(
   // rows and the caller would see {ok:true} despite the id being bogus).
   const { data: currentRow } = await service
     .from('acv_history')
-    .select('claim')
+    .select('claim, status_phase')
     .eq('id', id)
     .maybeSingle()
   if (!currentRow) return NextResponse.json({ error: 'Claim not found' }, { status: 404 })
@@ -83,20 +83,27 @@ export async function POST(
   // Also reset last_status_request_at so the new appraiser gets a fresh
   // 48-hour window, and stamp assigned_at so the cron has an anchor when
   // the appraiser hasn't messaged yet. Clear submitted_at/submitted_by so
-  // a reassigned claim leaves the completed-assignments queue and returns
-  // to active work for the new assignee — the previous submission was by
-  // the prior appraiser and doesn't apply to the new one. No-op if the
-  // claim wasn't submitted; matches the send-back route's un-submit shape.
+  // a reassigned claim returns to active work for the new assignee — the
+  // previous submission was by the prior appraiser and doesn't apply to
+  // the new one.
+  const patch: Record<string, unknown> = {
+    assigned_to: body.assignedTo,
+    assigned_at: body.assignedTo ? new Date().toISOString() : null,
+    last_status_request_at: null,
+    submitted_at: null,
+    submitted_by: null,
+    claim: nextClaim,
+  }
+  // If the claim was phased 'completed' (via submit), clear the phase too —
+  // the new appraiser hasn't submitted anything yet. Other phases (Umpire,
+  // Hold, etc.) are admin-managed and stay set across reassignment.
+  if (currentRow.status_phase === 'completed') {
+    patch.status_phase = null
+    patch.status_phase_set_at = null
+  }
   const { error } = await service
     .from('acv_history')
-    .update({
-      assigned_to: body.assignedTo,
-      assigned_at: body.assignedTo ? new Date().toISOString() : null,
-      last_status_request_at: null,
-      submitted_at: null,
-      submitted_by: null,
-      claim: nextClaim,
-    })
+    .update(patch)
     .eq('id', id)
   if (error) return NextResponse.json({ error: error.message }, { status: 400 })
   return NextResponse.json({ ok: true })

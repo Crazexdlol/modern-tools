@@ -4,8 +4,10 @@ import { requireAdmin, fetchClaim } from '@/lib/auth/require-admin'
 
 export const runtime = 'nodejs'
 
+type CloseReason = 'completed' | 'cancelled'
+
 export async function POST(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { errorResponse } = await requireAdmin()
@@ -16,15 +18,41 @@ export async function POST(
   if (!claim) return NextResponse.json({ error: 'Claim not found' }, { status: 404 })
   if (claim.status === 'closed') return NextResponse.json({ error: 'Claim is already closed' }, { status: 400 })
 
+  // Body: { reason?: 'completed' | 'cancelled' } — defaults to 'completed'
+  // so pre-migration callers (bulk-close from the dashboard, etc.) keep
+  // working without change. If the close_reason column hasn't been added
+  // yet (42703) we fall back to the legacy status-only update below.
+  let reason: CloseReason = 'completed'
+  try {
+    const body = await request.json() as { reason?: string } | null
+    if (body?.reason === 'cancelled') reason = 'cancelled'
+  } catch {
+    // No body / not JSON — keep the default.
+  }
+
   const service = createServiceClient()
-  // Close = set status=closed. Admin can close from any active state — no
-  // "must be submitted" guard, since admins now close open+in-progress claims
-  // directly from the dashboard as well as reviewed submissions from the
-  // completed queue. submitted_at/by stays intact for audit trail when set.
-  const { error } = await service
+  const now = new Date().toISOString()
+  // Attempt with the full new-column set first; if either close_reason or
+  // closed_at hasn't been migrated yet the DB returns 42703 and we retry
+  // with fewer columns so the API still succeeds.
+  let { error } = await service
     .from('acv_history')
-    .update({ status: 'closed' })
+    .update({ status: 'closed', close_reason: reason, closed_at: now })
     .eq('id', id)
+  if (error && error.code === '42703') {
+    // Try without closed_at (close_reason migrated, closed_at not).
+    ;({ error } = await service
+      .from('acv_history')
+      .update({ status: 'closed', close_reason: reason })
+      .eq('id', id))
+  }
+  if (error && error.code === '42703') {
+    // Neither migrated yet — legacy status-only close.
+    ;({ error } = await service
+      .from('acv_history')
+      .update({ status: 'closed' })
+      .eq('id', id))
+  }
   if (error) return NextResponse.json({ error: error.message }, { status: 400 })
-  return NextResponse.json({ ok: true })
+  return NextResponse.json({ ok: true, reason })
 }

@@ -6,8 +6,10 @@ import { createClient } from './client'
 export interface ClaimDocument {
   id: string
   name: string
-  // What produced it: a generated report or a manual upload.
-  source: 'acv-report' | 'award' | 'closing-notes' | 'summary' | 'dv-report' | 'estimate' | 'estimate-review' | 'invoice' | 'upload'
+  // What produced it: a generated report or a manual upload. 'labor-rates'
+  // is a user-set tag on an uploaded document that flags it as a reference
+  // labor-rates sheet for the Estimate Review to auto-extract rates from.
+  source: 'acv-report' | 'award' | 'closing-notes' | 'summary' | 'dv-report' | 'estimate' | 'estimate-review' | 'invoice' | 'storage' | 'upload' | 'labor-rates'
   path: string
   size: number
   createdAt: string
@@ -49,6 +51,33 @@ function sanitizeName(name: string): string {
   return name.replace(/[^a-zA-Z0-9._ ()-]+/g, '_').slice(0, 120)
 }
 
+// Extension must match the declared MIME family. Blocks renamed-extension
+// attacks (e.g. .html served as application/pdf). Only covers extensions
+// whose MIME is in ALLOWED_MIME above — everything else is either
+// unmapped-but-allowed (skipped) or gets rejected by the MIME check first.
+const EXT_MIME: Record<string, string[]> = {
+  '.pdf': ['application/pdf'],
+  '.doc': ['application/msword'],
+  '.docx': ['application/vnd.openxmlformats-officedocument.wordprocessingml.document'],
+  '.xls': ['application/vnd.ms-excel'],
+  '.xlsx': ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'],
+  '.ppt': ['application/vnd.ms-powerpoint'],
+  '.pptx': ['application/vnd.openxmlformats-officedocument.presentationml.presentation'],
+  '.rtf': ['application/rtf'],
+  '.zip': ['application/zip', 'application/x-zip-compressed'],
+  '.txt': ['text/plain'],
+  '.csv': ['text/csv', 'application/vnd.ms-excel'],
+  '.png': ['image/png'],
+  '.jpg': ['image/jpeg'],
+  '.jpeg': ['image/jpeg'],
+  '.gif': ['image/gif'],
+  '.webp': ['image/webp'],
+  '.heic': ['image/heic', 'image/heif'],
+  '.heif': ['image/heic', 'image/heif'],
+  '.tif': ['image/tiff'],
+  '.tiff': ['image/tiff'],
+}
+
 export async function uploadClaimDocument(
   claimId: string,
   file: Blob,
@@ -62,6 +91,17 @@ export async function uploadClaimDocument(
   const mime = (file.type || 'application/octet-stream').toLowerCase()
   if (!ALLOWED_MIME.has(mime)) {
     console.error(`Upload rejected: content-type ${mime} not allowed`)
+    return null
+  }
+  // Extension-vs-MIME cross-check. If the name has no extension, or the
+  // extension isn't in our map, skip — the MIME allowlist above already
+  // gated this. Only reject when we have a mapped extension and the
+  // declared MIME doesn't match — that's the renamed-extension attack.
+  const dotIdx = name.lastIndexOf('.')
+  const ext = dotIdx >= 0 ? name.slice(dotIdx).toLowerCase() : ''
+  const expected = EXT_MIME[ext]
+  if (expected && !expected.includes(mime)) {
+    console.error(`Upload rejected: extension ${ext} doesn't match declared MIME ${mime}`)
     return null
   }
   const supabase = createClient()
@@ -85,10 +125,19 @@ export async function uploadClaimDocument(
   }
 }
 
-// Opens/downloads a stored document via a short-lived signed URL.
-export async function getClaimDocumentUrl(path: string): Promise<string | null> {
+// Opens/downloads a stored document via a short-lived signed URL. When
+// `downloadName` is passed, Supabase sets a Content-Disposition header so
+// the browser saves the file as that name — otherwise the download name
+// falls back to the last segment of the storage path (which prefixes an
+// epoch timestamp + the claim id + the sanitized display name, e.g.
+// "1731619200000-MA1234-acv (1).pdf") and users end up with ugly filenames.
+export async function getClaimDocumentUrl(
+  path: string,
+  downloadName?: string | null,
+): Promise<string | null> {
   const supabase = createClient()
-  const { data, error } = await supabase.storage.from(BUCKET).createSignedUrl(path, 300)
+  const opts = downloadName ? { download: downloadName } : undefined
+  const { data, error } = await supabase.storage.from(BUCKET).createSignedUrl(path, 300, opts)
   if (error) {
     console.error('Failed to sign claim document URL:', error)
     return null

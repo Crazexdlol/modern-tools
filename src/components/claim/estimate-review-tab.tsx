@@ -8,10 +8,35 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { cn } from "@/lib/utils";
 import type { ClaimInfo } from "@/lib/acv/types";
 import { CATEGORY_LABEL } from "@/lib/estimate-review/types";
-import type { EstimateReview, Flag, FlagCategory, ManualEntry } from "@/lib/estimate-review/types";
+import type {
+  EstimateReview,
+  Flag,
+  FlagCategory,
+  GuidelineFinding,
+  LaborRateFinding,
+  ManualEntry,
+  PartsFinding,
+  TaxFinding,
+} from "@/lib/estimate-review/types";
+import { extractLossState } from "@/lib/claim-state";
 import { captureReviewPdf, reviewPdfFileName } from "@/lib/estimate-review/pdf";
 import type { ClaimDocument } from "@/lib/supabase/documents";
 import type { ClaimEstimate } from "./estimate-tab";
+
+// Kept for backward-compat rendering of old reviews that have guidelineFindings
+// persisted from before the Repair Library was removed. New reviews never
+// produce these findings.
+const GUIDELINE_TYPE_STYLE: Record<'missing' | 'forbidden' | 'conflict', string> = {
+  missing: 'bg-amber-100 text-amber-800',
+  forbidden: 'bg-red-100 text-red-800',
+  conflict: 'bg-blue-100 text-blue-800',
+};
+
+const GUIDELINE_TYPE_LABEL: Record<'missing' | 'forbidden' | 'conflict', string> = {
+  missing: 'Missing Procedure',
+  forbidden: 'Not Permitted',
+  conflict: 'Included/Not Included Conflict',
+};
 
 const CATEGORY_STYLE: Record<FlagCategory, string> = {
   not_included: "bg-red-100 text-red-800",
@@ -194,17 +219,293 @@ function fmtDuration(ms: number): string {
 function buildEmptyEstimate(prev: ClaimEstimate | null): ClaimEstimate {
   return {
     savedAt: prev?.savedAt ?? new Date().toISOString(),
-    fileNameA: prev?.fileNameA ?? "",
-    fileNameB: prev?.fileNameB ?? "",
-    softwareA: prev?.softwareA ?? "",
-    softwareB: prev?.softwareB ?? "",
-    grandTotalA: prev?.grandTotalA ?? 0,
-    grandTotalB: prev?.grandTotalB ?? 0,
-    totalDifference: prev?.totalDifference ?? 0,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    result: prev?.result ?? ({ comparison: { summary: {}, laborRateDifferences: [], lineItemDifferences: [], matchingItems: [], keyFindings: [] } } as any),
     reviews: prev?.reviews ?? [],
+    assertedLaborRates: prev?.assertedLaborRates,
   };
+}
+
+function PartsFindingsTable({ findings }: { findings: PartsFinding[] }) {
+  const impactRows = findings.filter((f) => f.type === 'price_mismatch' || f.type === 'qty_mismatch');
+  const invoiceOrphans = findings.filter((f) => f.type === 'invoice_orphan');
+  const estimateOrphans = findings.filter((f) => f.type === 'estimate_orphan');
+  const total = impactRows.reduce((sum, f) => sum + Math.abs(f.dollarImpact), 0);
+  return (
+    <div className="mt-4">
+      <div className="flex items-center gap-2 mb-2 px-4">
+        <span className="text-[10px] font-bold uppercase tracking-wider bg-fuchsia-100 text-fuchsia-800 px-1.5 py-0.5 rounded">
+          Parts vs. Invoices
+        </span>
+        <span className="text-xs text-gray-500">
+          {impactRows.length} price/qty discrepanc{impactRows.length === 1 ? "y" : "ies"} · total impact{" "}
+          <span className="font-bold text-amber-700">-{fmtMoney(total)}</span>
+          {(invoiceOrphans.length > 0 || estimateOrphans.length > 0) && (
+            <>
+              {" · "}
+              {invoiceOrphans.length > 0 && `${invoiceOrphans.length} invoice-only`}
+              {invoiceOrphans.length > 0 && estimateOrphans.length > 0 && ", "}
+              {estimateOrphans.length > 0 && `${estimateOrphans.length} estimate-only`}
+            </>
+          )}
+        </span>
+      </div>
+      {impactRows.length > 0 && (
+        <div className="overflow-x-auto -mx-4 sm:mx-0">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="bg-gray-50 border-y border-gray-200">
+                <th className="text-left px-4 py-2 text-xs text-gray-500 font-semibold uppercase tracking-wider">Part</th>
+                <th className="text-left px-4 py-2 text-xs text-gray-500 font-semibold uppercase tracking-wider">Invoice</th>
+                <th className="text-left px-4 py-2 text-xs text-gray-500 font-semibold uppercase tracking-wider">Estimate</th>
+                <th className="text-right px-4 py-2 text-xs text-gray-500 font-semibold uppercase tracking-wider">Δ / Unit</th>
+                <th className="text-right px-4 py-2 text-xs text-gray-500 font-semibold uppercase tracking-wider">Impact</th>
+              </tr>
+            </thead>
+            <tbody>
+              {impactRows.map((f, i) => (
+                <tr key={i} className="border-b border-gray-100 align-top">
+                  <td className="px-4 py-3">
+                    <div className="font-semibold text-gray-900">{f.description}</div>
+                    {f.partNumber && (
+                      <div className="text-xs text-gray-500 mt-0.5 font-mono">{f.partNumber}</div>
+                    )}
+                    {f.matchedBy === 'description' && (
+                      <div className="text-[10px] text-gray-400 mt-0.5">matched by description</div>
+                    )}
+                  </td>
+                  <td className="px-4 py-3 text-xs text-gray-700">
+                    {f.invoice && (
+                      <>
+                        <div>{f.invoice.qty} × {fmtMoney(f.invoice.unitPrice)} = {fmtMoney(f.invoice.total)}</div>
+                        <div className="text-gray-400 mt-0.5 truncate max-w-[180px]" title={f.invoice.fileName}>{f.invoice.fileName}</div>
+                      </>
+                    )}
+                  </td>
+                  <td className="px-4 py-3 text-xs text-gray-700">
+                    {f.estimate && (
+                      <div>{f.estimate.qty} × {fmtMoney(f.estimate.unitPrice)} = {fmtMoney(f.estimate.total)}</div>
+                    )}
+                  </td>
+                  <td className={cn(
+                    "px-4 py-3 text-right tabular-nums font-semibold",
+                    f.priceDeltaPerUnit > 0 ? "text-amber-700" : f.priceDeltaPerUnit < 0 ? "text-green-700" : "text-gray-400",
+                  )}>
+                    {f.priceDeltaPerUnit !== 0 ? `${f.priceDeltaPerUnit > 0 ? "+" : ""}${fmtMoney(f.priceDeltaPerUnit)}` : "—"}
+                    {f.qtyDelta !== 0 && <div className="text-[10px] font-normal text-gray-500">qty Δ {f.qtyDelta > 0 ? "+" : ""}{f.qtyDelta}</div>}
+                  </td>
+                  <td className="px-4 py-3 text-right tabular-nums font-bold text-amber-700">
+                    {f.dollarImpact < 0 ? "-" : "+"}{fmtMoney(Math.abs(f.dollarImpact))}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {(invoiceOrphans.length > 0 || estimateOrphans.length > 0) && (
+        <div className="mt-2 px-4 py-3 bg-slate-50 border-y border-slate-200 text-xs text-gray-600 space-y-2">
+          {invoiceOrphans.length > 0 && (
+            <div>
+              <div className="font-semibold text-gray-700 mb-1">On invoice, not on estimate:</div>
+              <ul className="list-disc pl-4 space-y-0.5">
+                {invoiceOrphans.map((f, i) => (
+                  <li key={i}>
+                    <span className="text-gray-800">{f.description}</span>
+                    {f.partNumber && <span className="text-gray-400 font-mono"> · {f.partNumber}</span>}
+                    {f.invoice && <span className="text-gray-500"> — {fmtMoney(f.invoice.total)} ({f.invoice.fileName})</span>}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {estimateOrphans.length > 0 && (
+            <div>
+              <div className="font-semibold text-gray-700 mb-1">On estimate, no invoice:</div>
+              <ul className="list-disc pl-4 space-y-0.5">
+                {estimateOrphans.map((f, i) => (
+                  <li key={i}>
+                    <span className="text-gray-800">{f.description}</span>
+                    {f.partNumber && <span className="text-gray-400 font-mono"> · {f.partNumber}</span>}
+                    {f.estimate && <span className="text-gray-500"> — {fmtMoney(f.estimate.total)}</span>}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function TaxFindingsTable({ findings }: { findings: TaxFinding[] }) {
+  const noRuleRow = findings.find((f) => f.type === 'no_state_rule');
+  const impactRows = findings.filter((f) => f.type !== 'no_state_rule');
+  const total = impactRows.reduce((sum, f) => sum + Math.abs(f.dollarImpact), 0);
+  return (
+    <div className="mt-4">
+      <div className="flex items-center gap-2 mb-2 px-4">
+        <span className="text-[10px] font-bold uppercase tracking-wider bg-orange-100 text-orange-800 px-1.5 py-0.5 rounded">
+          Sales Tax
+        </span>
+        <span className="text-xs text-gray-500">
+          {noRuleRow ? (
+            <span className="italic text-gray-500">{noRuleRow.reason}</span>
+          ) : (
+            <>
+              {impactRows.length} discrepanc{impactRows.length === 1 ? "y" : "ies"} · total impact{" "}
+              <span className="font-bold text-amber-700">-{fmtMoney(total)}</span>
+              {impactRows[0]?.state && (
+                <span className="text-gray-400"> · {impactRows[0].state} · {impactRows[0].ruleLabel}</span>
+              )}
+            </>
+          )}
+        </span>
+      </div>
+      {impactRows.length > 0 && (
+        <div className="overflow-x-auto -mx-4 sm:mx-0">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="bg-gray-50 border-y border-gray-200">
+                <th className="text-left px-4 py-2 text-xs text-gray-500 font-semibold uppercase tracking-wider">Component</th>
+                <th className="text-right px-4 py-2 text-xs text-gray-500 font-semibold uppercase tracking-wider">Base</th>
+                <th className="text-right px-4 py-2 text-xs text-gray-500 font-semibold uppercase tracking-wider">Estimate Tax</th>
+                <th className="text-right px-4 py-2 text-xs text-gray-500 font-semibold uppercase tracking-wider">Expected Tax</th>
+                <th className="text-left px-4 py-2 text-xs text-gray-500 font-semibold uppercase tracking-wider">Reason</th>
+                <th className="text-right px-4 py-2 text-xs text-gray-500 font-semibold uppercase tracking-wider">Impact</th>
+              </tr>
+            </thead>
+            <tbody>
+              {impactRows.map((f, i) => (
+                <tr key={i} className="border-b border-gray-100 align-top">
+                  <td className="px-4 py-3 font-semibold text-gray-900">{f.component}</td>
+                  <td className="px-4 py-3 text-right tabular-nums text-gray-700">{fmtMoney(f.estimateAmount)}</td>
+                  <td className="px-4 py-3 text-right tabular-nums text-gray-700">{fmtMoney(f.estimateTax)}</td>
+                  <td className="px-4 py-3 text-right tabular-nums text-gray-700">{fmtMoney(f.expectedTax)}</td>
+                  <td className="px-4 py-3 text-xs text-gray-600 max-w-md">{f.reason}</td>
+                  <td className="px-4 py-3 text-right tabular-nums font-bold text-amber-700">
+                    {f.dollarImpact < 0 ? "-" : "+"}{fmtMoney(Math.abs(f.dollarImpact))}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function GuidelineFindingsTable({ findings }: { findings: GuidelineFinding[] }) {
+  const total = findings.reduce((sum, f) => sum + Math.abs(f.dollarImpact), 0);
+  return (
+    <div className="mt-4">
+      <div className="flex items-center gap-2 mb-2 px-4">
+        <span className="text-[10px] font-bold uppercase tracking-wider bg-indigo-100 text-indigo-800 px-1.5 py-0.5 rounded">
+          Guidelines
+        </span>
+        <span className="text-xs text-gray-500">
+          {findings.length} finding{findings.length === 1 ? "" : "s"} from attached guideline docs
+          {total > 0 && (
+            <>
+              {" · total impact "}
+              <span className="font-bold text-amber-700">-{fmtMoney(total)}</span>
+            </>
+          )}
+        </span>
+      </div>
+      <div className="overflow-x-auto -mx-4 sm:mx-0">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="bg-gray-50 border-y border-gray-200">
+              <th className="text-left px-4 py-2 text-xs text-gray-500 font-semibold uppercase tracking-wider">Operation / Type</th>
+              <th className="text-left px-4 py-2 text-xs text-gray-500 font-semibold uppercase tracking-wider">Document</th>
+              <th className="text-left px-4 py-2 text-xs text-gray-500 font-semibold uppercase tracking-wider">Reason</th>
+              <th className="text-right px-4 py-2 text-xs text-gray-500 font-semibold uppercase tracking-wider">Impact</th>
+            </tr>
+          </thead>
+          <tbody>
+            {findings.map((f, i) => (
+              <tr key={i} className="border-b border-gray-100 align-top">
+                <td className="px-4 py-3">
+                  <div className="font-semibold text-gray-900">{f.operation || '—'}</div>
+                  <span className={cn("inline-block mt-1 text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded", GUIDELINE_TYPE_STYLE[f.type])}>
+                    {GUIDELINE_TYPE_LABEL[f.type]}
+                  </span>
+                </td>
+                <td className="px-4 py-3 text-xs text-gray-700 max-w-xs">
+                  <div className="font-semibold text-gray-800">{f.documentTitle}</div>
+                  {f.documentSection && (
+                    <div className="text-gray-500">{f.documentSection}</div>
+                  )}
+                  {f.documentQuote && (
+                    <div className="italic text-gray-500 mt-1 line-clamp-3" title={f.documentQuote}>
+                      &ldquo;{f.documentQuote}&rdquo;
+                    </div>
+                  )}
+                </td>
+                <td className="px-4 py-3 text-sm text-gray-700 max-w-md">{f.reason}</td>
+                <td className="px-4 py-3 text-right tabular-nums font-bold text-amber-700">
+                  {f.dollarImpact !== 0
+                    ? `${f.dollarImpact < 0 ? "-" : "+"}${fmtMoney(Math.abs(f.dollarImpact))}`
+                    : <span className="text-gray-400 font-normal">Informational</span>}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function LaborRateFindingsTable({ findings }: { findings: LaborRateFinding[] }) {
+  const total = findings.reduce((sum, f) => sum + Math.abs(f.dollarImpact), 0);
+  return (
+    <div className="mt-4">
+      <div className="flex items-center gap-2 mb-2 px-4">
+        <span className="text-[10px] font-bold uppercase tracking-wider bg-teal-100 text-teal-800 px-1.5 py-0.5 rounded">
+          Labor Rates
+        </span>
+        <span className="text-xs text-gray-500">
+          {findings.length} category discrepanc{findings.length === 1 ? "y" : "ies"} · total impact{" "}
+          <span className="font-bold text-amber-700">-{fmtMoney(total)}</span>
+        </span>
+      </div>
+      <div className="overflow-x-auto -mx-4 sm:mx-0">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="bg-gray-50 border-y border-gray-200">
+              <th className="text-left px-4 py-2 text-xs text-gray-500 font-semibold uppercase tracking-wider">Category</th>
+              <th className="text-right px-4 py-2 text-xs text-gray-500 font-semibold uppercase tracking-wider">Your Rate</th>
+              <th className="text-right px-4 py-2 text-xs text-gray-500 font-semibold uppercase tracking-wider">Estimate Rate</th>
+              <th className="text-right px-4 py-2 text-xs text-gray-500 font-semibold uppercase tracking-wider">Δ/hr</th>
+              <th className="text-right px-4 py-2 text-xs text-gray-500 font-semibold uppercase tracking-wider">Hours</th>
+              <th className="text-right px-4 py-2 text-xs text-gray-500 font-semibold uppercase tracking-wider">Impact</th>
+            </tr>
+          </thead>
+          <tbody>
+            {findings.map((f, i) => (
+              <tr key={i} className="border-b border-gray-100">
+                <td className="px-4 py-2.5 font-semibold text-gray-900">{f.label}</td>
+                <td className="px-4 py-2.5 text-right tabular-nums text-gray-700">{fmtMoney(f.assertedRate)}/hr</td>
+                <td className="px-4 py-2.5 text-right tabular-nums text-gray-700">{fmtMoney(f.estimateRate)}/hr</td>
+                <td className={cn(
+                  "px-4 py-2.5 text-right tabular-nums font-semibold",
+                  f.diffPerHour > 0 ? "text-amber-700" : "text-green-700",
+                )}>
+                  {f.diffPerHour > 0 ? "+" : ""}{fmtMoney(f.diffPerHour)}
+                </td>
+                <td className="px-4 py-2.5 text-right tabular-nums text-gray-700">{f.hoursOnEstimate.toFixed(1)}</td>
+                <td className="px-4 py-2.5 text-right tabular-nums font-bold text-amber-700">
+                  {f.dollarImpact < 0 ? "-" : "+"}{fmtMoney(Math.abs(f.dollarImpact))}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
 }
 
 // ── Drop zone for one-or-more files ────────────────────────────────────────
@@ -293,11 +594,13 @@ function MultiDropZone({
 // ── The tab ─────────────────────────────────────────────────────────────────
 export function EstimateReviewTab({
   claim,
+  claimId,
   estimate,
   onChange,
   onDocumentSaved,
 }: {
   claim: ClaimInfo;
+  claimId: string | null;
   estimate: ClaimEstimate | null;
   onChange: (next: ClaimEstimate) => void;
   onDocumentSaved?: (blob: Blob, name: string, source: ClaimDocument["source"]) => void;
@@ -305,6 +608,7 @@ export function EstimateReviewTab({
   const reviews = estimate?.reviews ?? [];
   const [estimates, setEstimates] = useState<File[]>([]);
   const [photos, setPhotos] = useState<File[]>([]);
+  const [invoices, setInvoices] = useState<File[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showUpload, setShowUpload] = useState(reviews.length === 0);
@@ -336,6 +640,14 @@ export function EstimateReviewTab({
       const formData = new FormData();
       for (const f of estimates) formData.append("estimates", f);
       for (const f of photos) formData.append("photos", f);
+      for (const f of invoices) formData.append("invoices", f);
+      // Phase 4: loss state for automated sales-tax check. Extracted from the
+      // claim's owner address; if unknown, server returns a "no rule" finding.
+      const claimState = extractLossState(claim.ownerAddress) ?? "";
+      if (claimState) formData.append("claimState", claimState);
+      // Claim id lets the server pull labor-rate reference photos tagged in
+      // the Documents tab (source='labor-rates'). Missing = no rate findings.
+      if (claimId) formData.append("claimId", claimId);
       const nextNumber = reviews.length + 1;
       formData.append("nextReviewNumber", String(nextNumber));
 
@@ -349,6 +661,7 @@ export function EstimateReviewTab({
       onChange(next);
       setEstimates([]);
       setPhotos([]);
+      setInvoices([]);
       setShowUpload(false);
 
       // Auto-file successful reviews to Documents. Refs won't exist until React
@@ -356,7 +669,12 @@ export function EstimateReviewTab({
       if (onDocumentSaved) {
         setTimeout(async () => {
           for (const review of newReviews) {
-            if (review.error || review.flags.length === 0) continue;
+            const hasFindings = review.flags.length > 0
+              || (review.rateFindings?.length ?? 0) > 0
+              || (review.partsFindings?.filter(f => f.type === 'price_mismatch' || f.type === 'qty_mismatch').length ?? 0) > 0
+              || (review.guidelineFindings?.length ?? 0) > 0
+              || (review.taxFindings?.filter(f => f.type !== 'no_state_rule').length ?? 0) > 0;
+            if (review.error || !hasFindings) continue;
             const el = cardRefs.current[review.id];
             if (!el) continue;
             try {
@@ -425,6 +743,25 @@ export function EstimateReviewTab({
             hint="Drop as many vehicle photos or PDFs as you need (multi-page PDFs are fine)"
             max={MAX_PHOTOS}
           />
+          <MultiDropZone
+            label="Parts invoices (optional)"
+            files={invoices}
+            onAdd={(files) => setInvoices((prev) => [...prev, ...files])}
+            onRemove={(i) => setInvoices((prev) => prev.filter((_, idx) => idx !== i))}
+            accept={{
+              "application/pdf": [".pdf"],
+              "image/*": [".jpg", ".jpeg", ".png", ".webp", ".tiff", ".bmp"],
+            }}
+            hint="Drop supplier invoices — line items are matched to estimate parts by part # then description"
+            max={100}
+          />
+          <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 text-xs text-gray-600 leading-relaxed">
+            <span className="font-semibold text-gray-700">Labor rate check:</span> upload the correct labor rate sheet
+            (photo or PDF) to the <span className="font-semibold">Documents</span> tab and set its Type to
+            <span className="mx-1 inline-block text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-teal-50 border border-teal-200 text-teal-800">Labor Rates</span>.
+            Every review below auto-includes those documents; rates on the estimate that differ from the reference are flagged.
+            Add or remove tagged docs any time to re-run.
+          </div>
           {error && (
             <div className="flex items-start gap-2 p-3 rounded-lg bg-red-50 border border-red-200 text-red-600 text-sm">
               <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
@@ -504,26 +841,73 @@ export function EstimateReviewTab({
                 <div className="mt-3 p-3 rounded bg-red-50 border border-red-200 text-red-600 text-sm">
                   Review failed: {review.error}
                 </div>
-              ) : review.flags.length === 0 && (review.manualEntries?.length ?? 0) === 0 ? (
+              ) : review.flags.length === 0 && (review.manualEntries?.length ?? 0) === 0 && (review.rateFindings?.length ?? 0) === 0 && (review.partsFindings?.length ?? 0) === 0 && (review.guidelineFindings?.length ?? 0) === 0 && (review.taxFindings?.filter(f => f.type !== 'no_state_rule').length ?? 0) === 0 ? (
                 <div className="mt-3 p-3 rounded bg-green-50 border border-green-200 text-green-700 text-sm">
-                  No P-Pages violations or manual entries found. Estimate looks clean.
+                  No violations, manual entries, rate discrepancies, invoice mismatches, guideline findings, or tax issues. Estimate looks clean.
                 </div>
               ) : (
                 <>
-                  <div className="mt-2 text-sm text-gray-600">
-                    {review.flags.length > 0 ? (
-                      <>
-                        {review.flags.length} flag{review.flags.length === 1 ? "" : "s"} · total impact{" "}
-                        <span className="font-bold text-amber-700">
-                          -{fmtMoney(review.flags.reduce((sum, f) => sum + Math.abs(f.impact), 0))}
+                  {(() => {
+                    const flagImpact = review.flags.reduce((sum, f) => sum + Math.abs(f.impact), 0);
+                    const rateImpact = (review.rateFindings ?? []).reduce((sum, f) => sum + Math.abs(f.dollarImpact), 0);
+                    const partsImpact = (review.partsFindings ?? []).reduce((sum, f) => sum + Math.abs(f.dollarImpact), 0);
+                    const guidelineImpact = (review.guidelineFindings ?? []).reduce((sum, f) => sum + Math.abs(f.dollarImpact), 0);
+                    const taxImpact = (review.taxFindings ?? []).reduce((sum, f) => sum + Math.abs(f.dollarImpact), 0);
+                    const totalImpact = flagImpact + rateImpact + partsImpact + guidelineImpact + taxImpact;
+                    if (totalImpact === 0) return null;
+                    return (
+                      <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 flex items-baseline justify-between gap-4">
+                        <span className="text-xs font-semibold uppercase tracking-wider text-amber-800">
+                          Total disputed amount
                         </span>
-                      </>
-                    ) : (
-                      <span className="text-gray-500">No rulebook violations flagged.</span>
+                        <span className="text-2xl font-black tabular-nums text-amber-800">
+                          -{fmtMoney(totalImpact)}
+                        </span>
+                      </div>
+                    );
+                  })()}
+                  <div className="mt-2 text-sm text-gray-600">
+                    {(() => {
+                      const flagImpact = review.flags.reduce((sum, f) => sum + Math.abs(f.impact), 0);
+                      const rateImpact = (review.rateFindings ?? []).reduce((sum, f) => sum + Math.abs(f.dollarImpact), 0);
+                      const partsImpact = (review.partsFindings ?? []).reduce((sum, f) => sum + Math.abs(f.dollarImpact), 0);
+                      const guidelineImpact = (review.guidelineFindings ?? []).reduce((sum, f) => sum + Math.abs(f.dollarImpact), 0);
+                      const taxImpact = (review.taxFindings ?? []).reduce((sum, f) => sum + Math.abs(f.dollarImpact), 0);
+                      const totalImpact = flagImpact + rateImpact + partsImpact + guidelineImpact + taxImpact;
+                      return totalImpact > 0 ? (
+                        <span className="text-gray-500">Breakdown:</span>
+                      ) : (
+                        <span className="text-gray-500">No dollar-impact findings.</span>
+                      );
+                    })()}
+                    {review.flags.length > 0 && (
+                      <span className="text-gray-500">
+                        {" · "}{review.flags.length} P-Pages flag{review.flags.length === 1 ? "" : "s"}
+                      </span>
+                    )}
+                    {(review.rateFindings?.length ?? 0) > 0 && (
+                      <span className="text-teal-700">
+                        {" · "}{review.rateFindings!.length} rate discrepanc{review.rateFindings!.length === 1 ? "y" : "ies"}
+                      </span>
+                    )}
+                    {(review.partsFindings?.filter(f => f.type === 'price_mismatch' || f.type === 'qty_mismatch').length ?? 0) > 0 && (
+                      <span className="text-fuchsia-700">
+                        {" · "}{review.partsFindings!.filter(f => f.type === 'price_mismatch' || f.type === 'qty_mismatch').length} invoice mismatch{review.partsFindings!.filter(f => f.type === 'price_mismatch' || f.type === 'qty_mismatch').length === 1 ? "" : "es"}
+                      </span>
+                    )}
+                    {(review.guidelineFindings?.length ?? 0) > 0 && (
+                      <span className="text-indigo-700">
+                        {" · "}{review.guidelineFindings!.length} guideline finding{review.guidelineFindings!.length === 1 ? "" : "s"}
+                      </span>
+                    )}
+                    {(review.taxFindings?.filter(f => f.type !== 'no_state_rule').length ?? 0) > 0 && (
+                      <span className="text-orange-700">
+                        {" · "}{review.taxFindings!.filter(f => f.type !== 'no_state_rule').length} tax discrepanc{review.taxFindings!.filter(f => f.type !== 'no_state_rule').length === 1 ? "y" : "ies"}
+                      </span>
                     )}
                     {(review.manualEntries?.length ?? 0) > 0 && (
                       <span className="text-slate-600">
-                        {" · "}{review.manualEntries!.length} manual entr{review.manualEntries!.length === 1 ? "y" : "ies"} to review
+                        {" · "}{review.manualEntries!.length} manual entr{review.manualEntries!.length === 1 ? "y" : "ies"}
                       </span>
                     )}
                     {review.grandTotalBilled > 0 && (
@@ -535,6 +919,18 @@ export function EstimateReviewTab({
                   {review.flags.length > 0 && <FlagTable flags={review.flags} />}
                   {(review.manualEntries?.length ?? 0) > 0 && (
                     <ManualEntriesTable entries={review.manualEntries!} />
+                  )}
+                  {(review.rateFindings?.length ?? 0) > 0 && (
+                    <LaborRateFindingsTable findings={review.rateFindings!} />
+                  )}
+                  {(review.partsFindings?.length ?? 0) > 0 && (
+                    <PartsFindingsTable findings={review.partsFindings!} />
+                  )}
+                  {(review.guidelineFindings?.length ?? 0) > 0 && (
+                    <GuidelineFindingsTable findings={review.guidelineFindings!} />
+                  )}
+                  {(review.taxFindings?.length ?? 0) > 0 && (
+                    <TaxFindingsTable findings={review.taxFindings!} />
                   )}
                 </>
               )}

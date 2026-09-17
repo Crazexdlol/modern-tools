@@ -1,14 +1,12 @@
 "use client"
 
 import { useState } from 'react'
-import { useRouter } from 'next/navigation'
 import Image from 'next/image'
 import { Loader2, Lock, Mail } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { createClient } from '@/lib/supabase/client'
 
 export default function LoginPage() {
-  const router = useRouter()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
@@ -23,13 +21,17 @@ export default function LoginPage() {
       const { error } = await supabase.auth.signInWithPassword({ email, password })
       if (error) {
         setError(error.message)
+        setLoading(false)
       } else {
-        router.push('/')
-        router.refresh()
+        // Full page reload after login: SPA navigation would preserve any
+        // stale module-level caches (e.g. the profile cache in
+        // src/lib/supabase/profiles.ts) from a prior account in the same
+        // tab, causing the header dropdown and New Claim button to show
+        // the previous user until a manual hard-refresh.
+        window.location.href = '/'
       }
     } catch {
       setError('Something went wrong')
-    } finally {
       setLoading(false)
     }
   }
