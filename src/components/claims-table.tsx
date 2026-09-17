@@ -18,6 +18,7 @@ import { isLicenseValid } from '@/lib/supabase/appraiser-licenses'
 import { extractLossState } from '@/lib/claim-state'
 import { type StatusPhaseConfig, formatPhaseAge, phaseColorClasses } from '@/lib/supabase/status-phase-configs'
 import { useActiveCompany } from '@/hooks/use-active-company'
+import { useCurrentCompanyMembers } from '@/hooks/use-current-company-members'
 import { fileNumberLabel } from '@/lib/company-labels'
 
 const PAGE_SIZE = 100
@@ -175,6 +176,7 @@ export function ClaimsTable({
 
   const { activeCompany } = useActiveCompany()
   const tableFileLabel = fileNumberLabel(activeCompany?.slug ?? null)
+  const { memberIds: tableMemberIds } = useCurrentCompanyMembers()
 
   // Current viewer's id — used to derive the "unread" gray highlight on
   // rows assigned to me that I haven't opened since the last (re)assignment.
@@ -530,9 +532,11 @@ export function ClaimsTable({
             >
               <option value="">— Pick a person —</option>
               <option value="__unassign__">— Unassigned —</option>
-              {profiles.map(p => (
-                <option key={p.id} value={p.id}>{p.name || p.email}</option>
-              ))}
+              {profiles
+                .filter(p => tableMemberIds === null || tableMemberIds.has(p.id))
+                .map(p => (
+                  <option key={p.id} value={p.id}>{p.name || p.email}</option>
+                ))}
             </select>
             <Button
               onClick={() => setBulkReassignConfirmOpen(true)}

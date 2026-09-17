@@ -45,6 +45,7 @@ import {
 import { saveACVHistory, fetchACVEntry, deleteACVHistory, type ClaimStatus } from '@/lib/supabase/history'
 import { useCurrentProfile, fetchAllProfilesBrowser, type Profile } from '@/lib/supabase/profiles'
 import { useActiveCompany } from '@/hooks/use-active-company'
+import { useCurrentCompanyMembers } from '@/hooks/use-current-company-members'
 import { fileNumberLabel, fileNumberLongLabel } from '@/lib/company-labels'
 import { LossSearchTab, type LossListing } from '@/components/claim/loss-search-tab'
 import { ClientPicker } from '@/components/claim/client-picker'
@@ -382,6 +383,9 @@ function ClaimInfoForm({
   const fileLabel = fileNumberLongLabel(companySlug)
   const filePlaceholder = isEV ? '222001' : 'MA-12345'
   const [autoFillTried, setAutoFillTried] = useState(false)
+  // Only appraisers with access to the current company should appear in the
+  // Handling Appraiser dropdown (memberIds=null means show all — pre-migration).
+  const { memberIds: infoMemberIds } = useCurrentCompanyMembers()
 
   const set = (field: keyof ClaimInfo, value: string | number) =>
     onChange({ ...claim, [field]: value })
@@ -531,7 +535,11 @@ function ClaimInfoForm({
               >
                 <option value="">— Select appraiser —</option>
                 {(() => {
-                  const visible = allProfiles.filter(p => p.isActive && p.showInHandlingAppraiserList !== false)
+                  const visible = allProfiles.filter(p =>
+                    p.isActive &&
+                    p.showInHandlingAppraiserList !== false &&
+                    (infoMemberIds === null || infoMemberIds.has(p.id))
+                  )
                   const current = claim.handlingAppraiser ?? ''
                   // If the current value points to a name not in the visible
                   // list (e.g., removed from the handling-appraiser list, or a
@@ -2890,6 +2898,7 @@ function ClaimWorkspaceInner({ claimId }: { claimId: string }) {
   const { profile } = useCurrentProfile()
   const { activeCompanyId, activeCompany } = useActiveCompany()
   const wsFileLabel = fileNumberLabel(activeCompany?.slug ?? null)
+  const { memberIds: wsMemberIds } = useCurrentCompanyMembers()
   // Direct-URL guard: if a non-admin without the create grant lands on
   // /claims/new (e.g. bookmark, address-bar), silently bounce to the
   // dashboard. RLS blocks the insert anyway; this just prevents a
@@ -3794,7 +3803,9 @@ function ClaimWorkspaceInner({ claimId }: { claimId: string }) {
                             — Unassigned —
                           </button>
                           <div className="border-t border-gray-100" />
-                          {allProfiles.filter(p => p.isActive).map(p => (
+                          {allProfiles
+                            .filter(p => p.isActive && (wsMemberIds === null || wsMemberIds.has(p.id)))
+                            .map(p => (
                             <button
                               key={p.id}
                               type="button"

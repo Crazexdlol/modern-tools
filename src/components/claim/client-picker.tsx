@@ -49,12 +49,14 @@ export function ClientPicker({
   const wrapRef = useRef<HTMLDivElement | null>(null)
 
   // Reset local `selected` when the caller re-hydrates value/valueName (e.g.
-  // switching between claims). Only run when the incoming id actually changes.
+  // switching between claims). Even without a linked id we still surface the
+  // free-text name so it doesn't look blank.
   useEffect(() => {
     if (value) setSelected({ id: value, name: valueName })
+    else if (valueName) setSelected({ id: '', name: valueName })
     else setSelected(null)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [value])
+  }, [value, valueName])
 
   // Debounced search.
   useEffect(() => {
@@ -87,6 +89,18 @@ export function ClientPicker({
     onChange(c.id, c.name)
   }
 
+  // "Use typed text as a one-off name" — keeps the string on the claim without
+  // linking to (or creating) a CRM record. Used for clients Henry doesn't want
+  // in the CRM (one-off referrers, private-party sellers, etc.).
+  const useAsFreeText = (text: string) => {
+    const t = text.trim()
+    if (!t) return
+    setSelected({ id: '', name: t }) // id '' so the input shows the text
+    setQuery('')
+    setOpen(false)
+    onChange(null, t)
+  }
+
   const clear = () => {
     setSelected(null)
     setQuery('')
@@ -113,6 +127,16 @@ export function ClientPicker({
             value={displayValue}
             onFocus={() => setOpen(true)}
             onChange={(e) => { setQuery(e.target.value); if (!open) setOpen(true) }}
+            onKeyDown={(e) => {
+              // Enter commits the typed text as a free-text client name (not
+              // linked to CRM). Escape closes the dropdown without change.
+              if (e.key === 'Enter' && query.trim()) {
+                e.preventDefault()
+                useAsFreeText(query)
+              } else if (e.key === 'Escape') {
+                setOpen(false)
+              }
+            }}
           />
           <div className="absolute right-2 flex items-center gap-1">
             {selected && !open && (
@@ -164,6 +188,17 @@ export function ClientPicker({
               <Plus className="w-4 h-4" />
               Add new client{query.trim() ? `: "${query.trim()}"` : ''}
             </button>
+            {query.trim() && (
+              <button
+                type="button"
+                onClick={() => useAsFreeText(query)}
+                className="w-full flex items-center gap-2 px-3 py-2 text-left text-sm font-medium text-gray-700 hover:bg-gray-50 border-t border-gray-100"
+                title="Use this name only on this claim — don't add it to the client list"
+              >
+                <span className="text-lg leading-none">↵</span>
+                Use &ldquo;{query.trim()}&rdquo; on this claim only
+              </button>
+            )}
           </div>
         )}
       </div>
