@@ -8,11 +8,11 @@ export async function POST(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const { errorResponse } = await requireAdmin()
+  const { caller, errorResponse } = await requireAdmin()
   if (errorResponse) return errorResponse
 
   const { id } = await params
-  const claim = await fetchClaim(id)
+  const claim = await fetchClaim(id, caller!.activeCompanyId ?? undefined)
   if (!claim) return NextResponse.json({ error: 'Claim not found' }, { status: 404 })
   if (!claim.submittedAt) return NextResponse.json({ error: 'Claim is not submitted' }, { status: 400 })
 

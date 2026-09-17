@@ -12,7 +12,7 @@ export async function POST(
   if (errorResponse) return errorResponse
 
   const { id } = await params
-  const claim = await fetchClaim(id)
+  const claim = await fetchClaim(id, caller!.activeCompanyId ?? undefined)
   if (!claim) return NextResponse.json({ error: 'Claim not found' }, { status: 404 })
   if (claim.status !== 'open') return NextResponse.json({ error: 'Claim is not open' }, { status: 400 })
   if (claim.submittedAt) return NextResponse.json({ error: 'Claim already submitted' }, { status: 400 })

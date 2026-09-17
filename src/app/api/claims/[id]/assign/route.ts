@@ -40,7 +40,7 @@ export async function POST(
   // per-user `can_reassign_claims` grant AND the claim must currently be
   // assigned to them.
   if (caller!.role !== 'admin') {
-    const claim = await fetchClaim(id)
+    const claim = await fetchClaim(id, caller!.activeCompanyId ?? undefined)
     if (!claim) return NextResponse.json({ error: 'Claim not found' }, { status: 404 })
     if (claim.assignedTo !== caller!.userId) {
       return NextResponse.json({ error: 'You can only reassign claims currently assigned to you' }, { status: 403 })
@@ -71,13 +71,27 @@ export async function POST(
   // Fetch the current row (also used to 404 admin-path reassigns of
   // non-existent ids — the UPDATE below would otherwise silently touch 0
   // rows and the caller would see {ok:true} despite the id being bogus).
+  // Also read company_id so admin cross-company operations are blocked
+  // (RLS would catch this for non-admins, but this route runs on service
+  // client and bypasses RLS entirely).
   const { data: currentRow } = await service
     .from('acv_history')
-    .select('claim, status_phase')
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    .select('claim, status_phase, company_id' as any)
     .eq('id', id)
     .maybeSingle()
   if (!currentRow) return NextResponse.json({ error: 'Claim not found' }, { status: 404 })
-  const currentClaim = (currentRow.claim ?? {}) as Record<string, unknown>
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const currentRowAny = currentRow as any
+  const rowCompanyId = currentRowAny.company_id as string | null | undefined
+  if (
+    caller!.activeCompanyId &&
+    rowCompanyId &&
+    rowCompanyId !== caller!.activeCompanyId
+  ) {
+    return NextResponse.json({ error: 'Claim not found' }, { status: 404 })
+  }
+  const currentClaim = (currentRowAny.claim ?? {}) as Record<string, unknown>
   const nextClaim = { ...currentClaim, handlingAppraiser: newHandlingName }
 
   // Also reset last_status_request_at so the new appraiser gets a fresh
@@ -97,7 +111,7 @@ export async function POST(
   // If the claim was phased 'completed' (via submit), clear the phase too —
   // the new appraiser hasn't submitted anything yet. Other phases (Umpire,
   // Hold, etc.) are admin-managed and stay set across reassignment.
-  if (currentRow.status_phase === 'completed') {
+  if (currentRowAny.status_phase === 'completed') {
     patch.status_phase = null
     patch.status_phase_set_at = null
   }

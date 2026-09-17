@@ -14,7 +14,7 @@ const MAX_BODY_LEN = 4000
 // Requires SUPABASE_SERVICE_ROLE_KEY at runtime.
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id: claimId } = await params
-  const { errorResponse } = await requireClaimAccess(claimId)
+  const { caller, errorResponse } = await requireClaimAccess(claimId)
   if (errorResponse) return errorResponse
 
   const body = await request.json().catch(() => null) as {
@@ -42,7 +42,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   const service = createClient(url, serviceKey, { auth: { persistSession: false } })
 
   const id = crypto.randomUUID()
-  const { error } = await service.from('messages').insert({
+  const insertPayload: Record<string, unknown> = {
     id,
     claim_id: claimId,
     sender_id: null,
@@ -51,7 +51,12 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     recipient_names: [],
     body: text,
     is_auto_request: true,
-  })
+  }
+  if (caller!.activeCompanyId) {
+    insertPayload.company_id = caller!.activeCompanyId
+  }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error } = await service.from('messages').insert(insertPayload as any)
   if (error) {
     console.error('auto-message insert failed:', error)
     return NextResponse.json({ error: error.message }, { status: 400 })

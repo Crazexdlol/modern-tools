@@ -137,17 +137,24 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   })
 
   const id = crypto.randomUUID()
+  const insertPayload: Record<string, unknown> = {
+    id,
+    claim_id: claimId,
+    sender_id: caller!.userId,
+    sender_name: senderName,
+    recipient_ids: recipientIds,
+    recipient_names: recipientNames,
+    body: text,
+  }
+  // Stamp company_id when we know it (post-migration). Skipped pre-migration
+  // to keep the insert compatible with the legacy column set.
+  if (caller!.activeCompanyId) {
+    insertPayload.company_id = caller!.activeCompanyId
+  }
   const { data: inserted, error: insertErr } = await supabase
     .from('messages')
-    .insert({
-      id,
-      claim_id: claimId,
-      sender_id: caller!.userId,
-      sender_name: senderName,
-      recipient_ids: recipientIds,
-      recipient_names: recipientNames,
-      body: text,
-    })
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    .insert(insertPayload as any)
     .select('*')
     .maybeSingle()
   if (insertErr || !inserted) {

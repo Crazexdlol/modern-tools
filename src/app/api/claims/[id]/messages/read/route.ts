@@ -19,12 +19,16 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
     { cookies: { getAll() { return cookieStore.getAll() }, setAll() {} } }
   )
 
+  const payload: Record<string, unknown> = {
+    user_id: caller!.userId,
+    claim_id: claimId,
+    last_read_at: new Date().toISOString(),
+  }
+  if (caller!.activeCompanyId) payload.company_id = caller!.activeCompanyId
   const { error } = await supabase
     .from('message_reads')
-    .upsert(
-      { user_id: caller!.userId, claim_id: claimId, last_read_at: new Date().toISOString() },
-      { onConflict: 'user_id,claim_id' },
-    )
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    .upsert(payload as any, { onConflict: 'user_id,claim_id' })
   if (error) return NextResponse.json({ error: error.message }, { status: 400 })
   return NextResponse.json({ ok: true })
 }

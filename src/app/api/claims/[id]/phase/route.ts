@@ -17,7 +17,7 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params
-  const { errorResponse } = await requireAdmin()
+  const { caller, errorResponse } = await requireAdmin()
   if (errorResponse) return errorResponse
 
   const body = await request.json().catch(() => null) as { phase?: string | null } | null
@@ -26,6 +26,23 @@ export async function POST(
   }
 
   const service = createServiceClient()
+
+  // Cross-company guard: admin from MA session can't operate on EV claim
+  // (service client bypasses RLS, so we check explicitly).
+  if (caller!.activeCompanyId) {
+    const { data: row } = await service
+      .from('acv_history')
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .select('company_id' as any)
+      .eq('id', id)
+      .maybeSingle()
+    if (!row) return NextResponse.json({ error: 'Claim not found' }, { status: 404 })
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const rowCompanyId = (row as any).company_id as string | null | undefined
+    if (rowCompanyId && rowCompanyId !== caller!.activeCompanyId) {
+      return NextResponse.json({ error: 'Claim not found' }, { status: 404 })
+    }
+  }
 
   // Resolve the phase label if setting a phase. Also validates the code exists.
   let label: string | null = null
@@ -56,7 +73,7 @@ export async function POST(
   const msgBody = body.phase === null
     ? 'Phase removed from claim'
     : `Claim has been phased: ${label}`
-  await service.from('messages').insert({
+  const messagePayload: Record<string, unknown> = {
     id: crypto.randomUUID(),
     claim_id: id,
     sender_id: null,
@@ -65,7 +82,12 @@ export async function POST(
     recipient_names: [],
     body: msgBody,
     is_auto_request: true,
-  }).then(({ error }) => {
+  }
+  if (caller!.activeCompanyId) {
+    messagePayload.company_id = caller!.activeCompanyId
+  }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  await service.from('messages').insert(messagePayload as any).then(({ error }) => {
     if (error) console.warn('phase auto-message insert failed:', error.message)
   })
 

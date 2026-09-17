@@ -6,6 +6,7 @@ import type { Role } from '@/lib/supabase/profiles'
 interface CallerContext {
   userId: string
   role: Role
+  activeCompanyId: string | null
 }
 
 // Returns success only if the caller is authenticated AND has access to the
@@ -31,7 +32,21 @@ export async function requireClaimAccess(claimId: string): Promise<
     return { caller: null, errorResponse: NextResponse.json({ error: 'Not authenticated' }, { status: 401 }) }
   }
 
-  const { data: profile } = await supabase.from('profiles').select('id, role').eq('id', user.id).maybeSingle()
+  // Fetch profile with active_company_id if the column exists; fall back if not.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let profile: any = null
+  const full = await supabase
+    .from('profiles')
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    .select('id, role, active_company_id' as any)
+    .eq('id', user.id)
+    .maybeSingle()
+  if (full.error && full.error.code === '42703') {
+    const legacy = await supabase.from('profiles').select('id, role').eq('id', user.id).maybeSingle()
+    profile = legacy.data
+  } else {
+    profile = full.data
+  }
   if (!profile) {
     return { caller: null, errorResponse: NextResponse.json({ error: 'No profile' }, { status: 403 }) }
   }
@@ -51,5 +66,12 @@ export async function requireClaimAccess(claimId: string): Promise<
     }
   }
 
-  return { caller: { userId: user.id, role }, errorResponse: null }
+  return {
+    caller: {
+      userId: user.id,
+      role,
+      activeCompanyId: profile.active_company_id ?? null,
+    },
+    errorResponse: null,
+  }
 }
