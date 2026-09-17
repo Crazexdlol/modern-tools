@@ -1,6 +1,7 @@
 import { PDFDocument, PDFName, PDFBool, PDFArray, PDFString, rgb, StandardFonts } from 'pdf-lib'
 import type { ClaimInfo, SelectedComp, ACVAdjustments, ACVResult } from './types'
 import { readTemplate } from '@/lib/pdf/template-path'
+import { buildEagleviewACVPdf } from './eagleview-acv-pdf'
 
 function fmt(val: number): string {
   if (!val) return '$0.00'
@@ -53,6 +54,11 @@ export async function fillACVPdf(
   adjustments: ACVAdjustments,
   result: ACVResult
 ): Promise<Uint8Array> {
+  // Eagleview uses a programmatic PDF (no template file). Same data,
+  // methodology, and comp count — different visual identity + branding.
+  if (companySlug === 'eagleview') {
+    return buildEagleviewACVPdf(claim, comps, adjustments, result)
+  }
   const templateBytes = readTemplate(companySlug, 'acv-template.pdf')
   const doc = await PDFDocument.load(templateBytes)
   const form = doc.getForm()

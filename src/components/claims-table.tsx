@@ -17,6 +17,8 @@ import { isLicensedState, isForbiddenState } from '@/lib/supabase/licensed-state
 import { isLicenseValid } from '@/lib/supabase/appraiser-licenses'
 import { extractLossState } from '@/lib/claim-state'
 import { type StatusPhaseConfig, formatPhaseAge, phaseColorClasses } from '@/lib/supabase/status-phase-configs'
+import { useActiveCompany } from '@/hooks/use-active-company'
+import { fileNumberLabel } from '@/lib/company-labels'
 
 const PAGE_SIZE = 100
 
@@ -170,6 +172,9 @@ export function ClaimsTable({
       return null
     })
   }
+
+  const { activeCompany } = useActiveCompany()
+  const tableFileLabel = fileNumberLabel(activeCompany?.slug ?? null)
 
   // Current viewer's id — used to derive the "unread" gray highlight on
   // rows assigned to me that I haven't opened since the last (re)assignment.
@@ -633,7 +638,7 @@ export function ClaimsTable({
                   />
                 </th>
               )}
-              <SortableTh label="MA #"      col="ma"       sortBy={sortBy} onClick={toggleSort} />
+              <SortableTh label={tableFileLabel} col="ma"       sortBy={sortBy} onClick={toggleSort} />
               {showStatus && (
                 <th className="text-left px-4 py-3 text-xs font-semibold text-gray-900 uppercase tracking-wider">Status</th>
               )}

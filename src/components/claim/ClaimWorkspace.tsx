@@ -45,6 +45,7 @@ import {
 import { saveACVHistory, fetchACVEntry, deleteACVHistory, type ClaimStatus } from '@/lib/supabase/history'
 import { useCurrentProfile, fetchAllProfilesBrowser, type Profile } from '@/lib/supabase/profiles'
 import { useActiveCompany } from '@/hooks/use-active-company'
+import { fileNumberLabel, fileNumberLongLabel } from '@/lib/company-labels'
 import { LossSearchTab, type LossListing } from '@/components/claim/loss-search-tab'
 import { ClientPicker } from '@/components/claim/client-picker'
 import { EstimateTab } from '@/components/claim/estimate-tab'
@@ -372,8 +373,36 @@ function ClaimInfoForm({
   const [pdfSuccess, setPdfSuccess] = useState(false)
   const pdfInputRef = useRef<HTMLInputElement>(null)
 
+  // Company-aware file-number label + auto-generation. Eagleview auto-fills
+  // the file # from a server sequence (222001, 222002, ...); MA users type
+  // it in from the assignment PDF as usual.
+  const { activeCompany } = useActiveCompany()
+  const companySlug = activeCompany?.slug ?? null
+  const isEV = companySlug === 'eagleview'
+  const fileLabel = fileNumberLongLabel(companySlug)
+  const filePlaceholder = isEV ? '222001' : 'MA-12345'
+  const [autoFillTried, setAutoFillTried] = useState(false)
+
   const set = (field: keyof ClaimInfo, value: string | number) =>
     onChange({ ...claim, [field]: value })
+
+  // Reserve a fresh EV file number on new claims (once). If the migration
+  // hasn't run yet, endpoint returns { supported: false } and we leave the
+  // field editable for manual entry.
+  useEffect(() => {
+    if (!isNew || !isEV || autoFillTried || claim.maNumber) return
+    setAutoFillTried(true)
+    void (async () => {
+      try {
+        const r = await fetch('/api/companies/next-file-number', { method: 'POST' })
+        if (!r.ok) return
+        const j = await r.json() as { supported?: boolean; fileNumber?: string }
+        if (j.supported && j.fileNumber) {
+          onChange({ ...claim, maNumber: j.fileNumber })
+        }
+      } catch { /* silent — fallback to manual entry */ }
+    })()
+  }, [isNew, isEV, autoFillTried, claim, onChange])
 
   const handlePdfUpload = async (file: File) => {
     setPdfUploading(true)
@@ -555,9 +584,16 @@ function ClaimInfoForm({
         <h3 className="text-sm font-bold text-gray-900 mb-4">Report Info</h3>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div>
-            <label className={labelCls}>MA Number</label>
-            <input className={inputCls} placeholder="MA-12345" value={claim.maNumber} onChange={(e) => set('maNumber', e.target.value)} />
-            <DuplicateWarning matches={duplicates.maNumberMatches} count={duplicates.maNumberCount} field="MA #" />
+            <label className={labelCls}>{fileLabel}</label>
+            <input
+              className={inputCls}
+              placeholder={filePlaceholder}
+              value={claim.maNumber}
+              onChange={(e) => set('maNumber', e.target.value)}
+              readOnly={isEV}
+              title={isEV ? 'Auto-generated on new Eagleview claims' : undefined}
+            />
+            <DuplicateWarning matches={duplicates.maNumberMatches} count={duplicates.maNumberCount} field={fileNumberLabel(companySlug)} />
           </div>
           <div>
             <label className={labelCls}>Insurance Claim #</label>
@@ -1338,6 +1374,8 @@ function ReviewStep({
 }) {
   const [downloading, setDownloading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const { activeCompany: reviewActiveCompany } = useActiveCompany()
+  const reviewCompanySlug = reviewActiveCompany?.slug ?? null
 
   const downloadPdf = async () => {
     setDownloading(true)
@@ -1382,7 +1420,7 @@ function ReviewStep({
               { label: 'Mileage', value: claim.mileage.toLocaleString() },
               { label: 'Owner', value: claim.insuredName || '--' },
               { label: 'Insurance', value: claim.insuranceCompany || '--' },
-              { label: 'MA #', value: claim.maNumber || '--' },
+              { label: fileNumberLabel(reviewCompanySlug), value: claim.maNumber || '--' },
               { label: 'Claim #', value: claim.claimNumber || '--' },
             ].map(({ label, value }) => (
               <div key={label}>
@@ -2850,7 +2888,8 @@ function ClaimWorkspaceInner({ claimId }: { claimId: string }) {
   // Insurance Company autocomplete so typed values match a guideline exactly.
   const [insuranceCompanyOptions, setInsuranceCompanyOptions] = useState<string[]>([])
   const { profile } = useCurrentProfile()
-  const { activeCompanyId } = useActiveCompany()
+  const { activeCompanyId, activeCompany } = useActiveCompany()
+  const wsFileLabel = fileNumberLabel(activeCompany?.slug ?? null)
   // Direct-URL guard: if a non-admin without the create grant lands on
   // /claims/new (e.g. bookmark, address-bar), silently bounce to the
   // dashboard. RLS blocks the insert anyway; this just prevents a
@@ -3841,7 +3880,7 @@ function ClaimWorkspaceInner({ claimId }: { claimId: string }) {
                 instead of being truncated with an ellipsis. */}
             <div className="grid gap-x-8 gap-y-4 grid-cols-2 md:grid-cols-3 xl:grid-cols-5">
               {[
-                { label: 'MA #', value: claim.maNumber },
+                { label: wsFileLabel, value: claim.maNumber },
                 { label: 'CL #', value: claim.claimNumber },
                 { label: 'Vehicle', value: claimVehicle },
                 { label: 'Client', value: claim.clientName },
