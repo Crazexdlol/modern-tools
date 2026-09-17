@@ -178,17 +178,6 @@ function drawLabeledGrid(
   return top + numRows * rowHeight
 }
 
-function drawFooter(ctx: Ctx, claim: ClaimInfo, pageNum: number, totalPages: number) {
-  const FOOT_TOP = PAGE.height - MARGIN + 10
-  drawLine(ctx, MARGIN, FOOT_TOP - 12, PAGE.width - MARGIN, FOOT_TOP - 12, 0.4)
-  drawText(ctx, 'Prepared by Eagleview', { x: MARGIN, top: FOOT_TOP, size: 8, color: MUTED })
-  const today = new Date().toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' })
-  const fileStr = claim.maNumber ? `File ${toSafe(claim.maNumber)}` : ''
-  drawTextRight(ctx, `${fileStr}${fileStr ? '  ·  ' : ''}${today}  ·  Page ${pageNum} of ${totalPages}`, {
-    rightX: PAGE.width - MARGIN, top: FOOT_TOP, size: 8, color: MUTED,
-  })
-}
-
 export async function buildEagleviewACVPdf(
   claim: ClaimInfo,
   comps: SelectedComp[],
@@ -201,7 +190,6 @@ export async function buildEagleviewACVPdf(
   const logo = await embedEvLogo(doc)
   const today = new Date().toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' })
   const contentWidth = PAGE.width - MARGIN * 2
-  const TOTAL_PAGES = 2
 
   // ========================================================================
   //  PAGE 1 — Claim identity, insured/adjuster, loss vehicle
@@ -209,7 +197,7 @@ export async function buildEagleviewACVPdf(
   const page1 = doc.addPage([PAGE.width, PAGE.height])
   const ctx: Ctx = { doc, page: page1, fontBody, fontBold, logo }
 
-  const headerBottom = drawHeader(ctx, 'ACTUAL CASH VALUE REPORT', `Prepared ${today}`)
+  const headerBottom = drawHeader(ctx, 'ACTUAL CASH VALUE')
 
   // ── CLAIM IDENTITY ─────────────────────────────────────────────────────
   let top = headerBottom + 32
@@ -266,31 +254,13 @@ export async function buildEagleviewACVPdf(
     { label: 'SEARCH RADIUS', value: claim.radius ? `${claim.radius} mi` : '—' },
   ], { top, cols: 3, contentWidth, rowHeight: 40 })
 
-  // ── METHODOLOGY NOTE (bottom of page 1, gives context before comps) ─────
-  top += 22
-  drawRect(ctx, MARGIN, top, contentWidth, 78, BG_TINT, HAIRLINE)
-  drawText(ctx, 'METHODOLOGY', { x: MARGIN + 14, top: top + 10, size: 8, bold: true, color: GOLD })
-  const methodLines = [
-    'The Actual Cash Value is derived from three comparable vehicles selected from the local',
-    'private-party and dealer market within the search radius above. Each comparable is adjusted',
-    'for mileage and model year variance versus the loss vehicle. The mean of the three adjusted',
-    'values, less private-party market deduction, plus applicable sales tax, produces the ACV shown',
-    'on page 2.',
-  ]
-  methodLines.forEach((l, i) => {
-    drawText(ctx, l, { x: MARGIN + 14, top: top + 26 + i * 11, size: 9, color: [0.2, 0.25, 0.35] })
-  })
-
-  drawFooter(ctx, claim, 1, TOTAL_PAGES)
-
   // ========================================================================
   //  PAGE 2 — Comps + valuation
   // ========================================================================
   const page2 = doc.addPage([PAGE.width, PAGE.height])
   ctx.page = page2
 
-  const p2HeaderBottom = drawHeader(ctx, 'COMPARABLES & VALUATION',
-    claim.maNumber ? `File ${toSafe(claim.maNumber)}` : undefined)
+  const p2HeaderBottom = drawHeader(ctx, 'COMPARABLES & VALUATION')
 
   // ── COMPARABLE VEHICLES ─────────────────────────────────────────────────
   top = p2HeaderBottom + 28
@@ -339,39 +309,78 @@ export async function buildEagleviewACVPdf(
 
   // ── VALUATION ────────────────────────────────────────────────────────────
   top = drawSectionTitle(ctx, 'VALUATION', top)
+  top += 6
 
-  const eqRows: Array<{ label: string; value: number; hint?: string; emphasize?: boolean }> = [
-    { label: 'Comparable 1 value',                value: result.comp1Value },
-    { label: 'Comparable 2 value',                value: result.comp2Value },
-    { label: 'Comparable 3 value',                value: result.comp3Value },
-    { label: 'Average of comparables',            value: result.averageValue,        hint: 'sum / 3', emphasize: true },
-    { label: 'Vehicle history adjustment',        value: adjustments.vehicleHistory, hint: adjustments.vehicleHistoryNote || undefined },
-    { label: 'Prior damage adjustment',           value: adjustments.priorDamages,   hint: adjustments.priorDamagesNote  || undefined },
-    { label: 'Additions',                         value: adjustments.additions,      hint: adjustments.additionsNote     || undefined },
-    { label: 'Dealer vs. private market',         value: adjustments.deductions,     hint: adjustments.deductionsNote    || 'private-party basis' },
-    { label: `Sales tax (${(adjustments.taxRate ?? 0).toFixed(2).replace(/\.00$/, '')}%)`, value: result.taxAmount },
+  // Clean 2-column table: label left, value right. Divider lines separate
+  // logical groups (comps → average → adjustments → tax → final ACV).
+  // No inline hint text — the row labels are self-explanatory.
+  const rowH2 = 22
+  const labelX = MARGIN + 16
+  const valueRightX = MARGIN + contentWidth - 16
+  const labelSize = 10.5
+  const valueSize = 11
+
+  function drawValRow(rowTop: number, label: string, value: number, opts: { bold?: boolean; muted?: boolean } = {}) {
+    const isMuted = opts.muted && !opts.bold
+    drawText(ctx, label, {
+      x: labelX, top: rowTop,
+      size: labelSize, bold: opts.bold,
+      color: isMuted ? MUTED : BLACK,
+    })
+    drawTextRight(ctx, fmtCurrencyCents(value), {
+      rightX: valueRightX, top: rowTop,
+      size: valueSize, bold: opts.bold,
+      color: isMuted ? MUTED : BLACK,
+    })
+  }
+
+  // Group 1: comparable values.
+  drawValRow(top,             'Comparable 1', result.comp1Value)
+  drawValRow(top + rowH2,     'Comparable 2', result.comp2Value)
+  drawValRow(top + rowH2 * 2, 'Comparable 3', result.comp3Value)
+  let t = top + rowH2 * 3 + 6
+  drawLine(ctx, MARGIN, t, PAGE.width - MARGIN, t, 0.5, HAIRLINE)
+  t += 8
+
+  // Average.
+  drawValRow(t, 'Average of comparables', result.averageValue, { bold: true })
+  t += rowH2 + 6
+  drawLine(ctx, MARGIN, t, PAGE.width - MARGIN, t, 0.5, HAIRLINE)
+  t += 8
+
+  // Group 2: adjustments. Skip zero adjustments — Henry gets a cleaner view.
+  const adjustmentRows: Array<{ label: string; value: number }> = [
+    { label: 'Vehicle history adjustment', value: adjustments.vehicleHistory },
+    { label: 'Prior damage adjustment',    value: adjustments.priorDamages },
+    { label: 'Additions',                  value: adjustments.additions },
+    { label: 'Dealer vs. private market',  value: adjustments.deductions },
   ]
-  const rowH2 = 18
-  const labelX = MARGIN + 12
-  const valueRightX = MARGIN + contentWidth - 12
-  eqRows.forEach((r, ri) => {
-    const t = top + ri * rowH2
-    drawText(ctx, r.label, { x: labelX, top: t, size: 10, color: r.value === 0 && !r.emphasize ? MUTED : BLACK, bold: r.emphasize })
-    if (r.hint) {
-      const labelWidth = fontBody.widthOfTextAtSize(r.label, 10)
-      drawText(ctx, `— ${toSafe(r.hint)}`, { x: labelX + labelWidth + 8, top: t, size: 8.5, color: MUTED })
-    }
-    drawTextRight(ctx, fmtCurrencyCents(r.value), { rightX: valueRightX, top: t, size: 10, bold: r.emphasize })
-    if (r.emphasize) drawLine(ctx, MARGIN, t + rowH2 - 2, PAGE.width - MARGIN, t + rowH2 - 2, 0.4)
-  })
+  const nonZeroAdj = adjustmentRows.filter(r => r.value !== 0)
+  if (nonZeroAdj.length > 0) {
+    nonZeroAdj.forEach(r => { drawValRow(t, r.label, r.value); t += rowH2 })
+    t += 6
+    drawLine(ctx, MARGIN, t, PAGE.width - MARGIN, t, 0.5, HAIRLINE)
+    t += 8
+  }
 
-  // Final ACV box (bigger, more presence).
-  const acvTop = top + eqRows.length * rowH2 + 16
-  const acvBoxH = 56
-  drawRect(ctx, MARGIN, acvTop, contentWidth, acvBoxH, NAVY)
-  drawText(ctx, 'ACTUAL CASH VALUE', { x: MARGIN + 20, top: acvTop + 12, size: 11, bold: true, color: [0.85, 0.87, 0.92] })
-  drawText(ctx, 'Final settlement basis (inc. sales tax)', { x: MARGIN + 20, top: acvTop + 30, size: 9, color: [0.7, 0.75, 0.85] })
-  drawTextRight(ctx, fmtCurrencyCents(result.acv), { rightX: MARGIN + contentWidth - 20, top: acvTop + 14, size: 28, bold: true, color: GOLD })
+  // Group 3: tax.
+  const taxRateStr = (adjustments.taxRate ?? 0).toFixed(2).replace(/\.00$/, '')
+  drawValRow(t, `Sales tax (${taxRateStr}%)`, result.taxAmount)
+  t += rowH2 + 12
+
+  // Final ACV box.
+  const acvBoxH = 60
+  drawRect(ctx, MARGIN, t, contentWidth, acvBoxH, NAVY)
+  drawText(ctx, 'ACTUAL CASH VALUE', {
+    x: MARGIN + 20, top: t + 22,
+    size: 14, bold: true, color: [1, 1, 1],
+  })
+  drawTextRight(ctx, fmtCurrencyCents(result.acv), {
+    rightX: MARGIN + contentWidth - 20, top: t + 14,
+    size: 30, bold: true, color: GOLD,
+  })
+  const acvTop = t
+  t = acvTop + acvBoxH
 
   // ── NOTES (if any) ──────────────────────────────────────────────────────
   if (adjustments.notes && adjustments.notes.trim().length > 0) {
@@ -395,8 +404,6 @@ export async function buildEagleviewACVPdf(
     }
     if (line) drawText(ctx, line, { x: MARGIN, top: y, size })
   }
-
-  drawFooter(ctx, claim, 2, TOTAL_PAGES)
 
   return doc.save()
 }
