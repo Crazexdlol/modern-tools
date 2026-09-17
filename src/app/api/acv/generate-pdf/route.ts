@@ -30,7 +30,7 @@ export async function POST(request: NextRequest) {
     return new NextResponse(buffer, {
       headers: {
         'Content-Type': 'application/pdf',
-        'Content-Disposition': `attachment; filename="${sanitizeFilename(claim.maNumber || 'report')}-acv.pdf"`,
+        'Content-Disposition': `attachment; filename="${sanitizeFilename(claim.maNumber || 'report')}-acvreport.pdf"`,
       },
     })
   } catch (err) {

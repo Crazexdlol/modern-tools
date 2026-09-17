@@ -19,7 +19,7 @@ import type {
   TaxFinding,
 } from "@/lib/estimate-review/types";
 import { extractLossState } from "@/lib/claim-state";
-import { captureReviewPdf, reviewPdfFileName } from "@/lib/estimate-review/pdf";
+import { captureReviewPdf } from "@/lib/estimate-review/pdf";
 import type { ClaimDocument } from "@/lib/supabase/documents";
 import type { ClaimEstimate } from "./estimate-tab";
 
@@ -680,7 +680,7 @@ export function EstimateReviewTab({
             try {
               const blob = await captureReviewPdf(el);
               if (!blob) continue;
-              onDocumentSaved(blob, reviewPdfFileName(review.reviewNumber, review.fileName), "estimate-review");
+              onDocumentSaved(blob, `${claim.maNumber || 'claim'}-estimatedispute.pdf`, "estimate-review");
             } catch (err) {
               console.error("Failed to auto-file review PDF:", review.fileName, err);
             }

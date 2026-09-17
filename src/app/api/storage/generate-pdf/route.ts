@@ -22,7 +22,7 @@ export async function POST(request: NextRequest) {
     return new NextResponse(Buffer.from(bytes), {
       headers: {
         'Content-Type': 'application/pdf',
-        'Content-Disposition': `attachment; filename="${sanitizeFilename(body.claim.maNumber || 'claim')}-storagecharges.pdf"`,
+        'Content-Disposition': `attachment; filename="${sanitizeFilename(body.claim.maNumber || 'claim')}-storagereport.pdf"`,
       },
     })
   } catch (err) {

@@ -93,7 +93,7 @@ export function StorageTab({
         throw new Error(body.error || 'PDF generation failed')
       }
       const blob = await res.blob()
-      const name = `${claim.maNumber || 'claim'}-storagecharges.pdf`
+      const name = `${claim.maNumber || 'claim'}-storagereport.pdf`
       onDocumentSaved?.(blob, name)
       // Also trigger a save-to-disk so the user gets it right away.
       const url = URL.createObjectURL(blob)

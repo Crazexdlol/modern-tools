@@ -215,7 +215,7 @@ export function DVTab({
         throw new Error(data.error || 'PDF generation failed')
       }
       const blob = await res.blob()
-      const name = `${claim.maNumber || 'claim'}-dvreport-${state.reportType}${state.withPriorLoss ? '-wLoss' : ''}.pdf`
+      const name = `${claim.maNumber || 'claim'}-dvreport.pdf`
       // Auto-file to Documents first, then prompt for local save location.
       onGenerated?.(blob, name)
       await savePdfWithPicker(blob, name)

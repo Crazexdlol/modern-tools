@@ -3,6 +3,7 @@ import { fillDVPdf, type DVVariant, type DVPdfData } from '@/lib/acv/dv-pdf-fill
 import { requireAuth } from '@/lib/auth/require-admin'
 import { getCompanySlug } from '@/lib/pdf/company-slug'
 import { NoTemplateError, NO_TEMPLATE_CODE } from '@/lib/pdf/template-path'
+import { sanitizeFilename } from '@/lib/sanitize-filename'
 
 export const runtime = 'nodejs'
 
@@ -19,10 +20,14 @@ export async function POST(request: NextRequest) {
     }
     const companySlug = await getCompanySlug(caller!.activeCompanyId)
     const bytes = await fillDVPdf(companySlug, variant, body.data as DVPdfData)
+    // Prefer MA# from the data (fileNumber is set to claim.maNumber by
+    // dv-tab.tsx). Client also sets the picker filename to <MA#>-dvreport.pdf,
+    // this header is the fallback.
+    const maNumber = (body.data as DVPdfData)?.fileNumber || 'claim'
     return new NextResponse(Buffer.from(bytes), {
       headers: {
         'Content-Type': 'application/pdf',
-        'Content-Disposition': 'attachment; filename="dv-report.pdf"',
+        'Content-Disposition': `attachment; filename="${sanitizeFilename(maNumber)}-dvreport.pdf"`,
       },
     })
   } catch (err) {
