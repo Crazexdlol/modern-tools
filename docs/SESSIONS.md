@@ -18,6 +18,74 @@ Read `CLAUDE.md` first if you haven't. Then read the top entry here before touch
 
 ---
 
+## 2026-09-16 (late night) — HamsPortal Phase 1: multi-company infrastructure deployed (no visible change)
+
+**Worked on:** Phase 1 of the HamsPortal rebrand + multi-company retrofit. Adds companies (Modern Appraisers + Eagleview seeded) and per-company data isolation without touching any user-visible behavior. Modern Appraisers users log in and see everything exactly as before; Eagleview exists in the DB but has zero users, zero claims, zero logo.
+
+**Spec:** `docs/superpowers/specs/2026-09-16-hamsportal-multi-company-design.md`
+**Plan:** `docs/superpowers/plans/2026-09-16-hamsportal-multi-company-phase-1.md` (27 tasks, all completed)
+
+**Backups captured pre-Phase-1** (`backups/pre-hamsportal-2026-09-16/`):
+- `working-tree.tar.gz` (32MB) — full source snapshot.
+- 21 × `<table>.json` dumps (36MB total, 1,538 rows) — every application table.
+- `hamsportal-logo.png` + `eagleview-logo.png` — both staged.
+- Git tags: `pre-hamsportal-rebrand-b31ed7f` (last committed HEAD before this) and `pre-hamsportal-phase-1-baseline` (checkpoint of ~130 uncommitted files from prior sessions, committed as one baseline in b7722ef before Phase 1 work started).
+
+**Changed:**
+
+_Database migration (Henry ran manually in Supabase SQL Editor)_ — one transactional file:
+- `supabase/migration-multi-company.sql` — adds `companies` + `user_companies` tables (seeded MA + EV), adds `profiles.active_company_id`, adds `company_id NOT NULL` on 9 claim-scoped + CRM tables (acv_history, messages, message_reads, user_claim_views, estimate_history, clients, client_contacts, client_marketing_log, insurance_guidelines), backfills every existing row to Modern Appraisers, adds composite indexes, adds `active_company_id()` + `has_company_access()` helper SQL functions, rewrites RLS on all 9 tables with company predicates, extends `acv_history_appraiser_guard` trigger to make `company_id` immutable (company_id check runs BEFORE the service_role bypass — nothing can move a claim between companies).
+- `supabase/migration-multi-company-rollback.sql` — full reverse.
+
+_Application:_
+- `src/lib/supabase/scoped.ts` (new) — `scopedClient()` Proxy factory. Auto-injects `.eq('company_id', activeCompanyId)` on SELECT/UPDATE/DELETE against the 9 claim-scoped tables + stamps `company_id` on every INSERT. Body-supplied company_id on INSERT is overridden (session wins).
+- `src/lib/auth/require-admin.ts` — `Caller.activeCompanyId` on `requireAuth`/`requireAdmin`, new `requireCompanyContext()`, `fetchClaim(id, companyId?)` gains optional company scope.
+- `src/lib/auth/require-claim-access.ts` — same `activeCompanyId` extension.
+- `src/hooks/use-active-company.ts` (new) — client-side hook exposing profile's `active_company_id`.
+- `src/lib/supabase/history.ts` — `saveACVHistory(entry, editId, activeCompanyId?)` stamps `company_id` on INSERT.
+- `src/lib/supabase/clients.ts` — `getActiveCompanyId()` cached helper; `createClient()` / `createContact()` / `logTouch()` stamp `company_id` on INSERT.
+- `src/components/claim/ClaimWorkspace.tsx` — threads `activeCompanyId` through 4 `saveToHistory` call sites.
+- All 11 `/api/claims/[id]/*` routes — pass `caller.activeCompanyId` to `fetchClaim` + stamp `company_id` on message / mark-viewed / message_reads inserts + cross-company guard on `assign` and `phase` (service-client routes bypass RLS so explicit check needed).
+- Service-client routes wrapped in `scopedClient`: `/api/claims/duplicates`, `/api/admin/export/claims`, `/api/admin/import/claims`, `/api/admin/import/guidelines`, `/api/marketing/backfill/analyze`, `/api/marketing/backfill/commit`, `/api/insurance-guidelines/**` (route.ts, [id]/route.ts, all/route.ts, empty/route.ts).
+- `src/app/api/company/switch/route.ts` (new) — POST endpoint to change active company (verifies `user_companies` access first).
+
+_Test infrastructure (new):_
+- `vitest.config.ts` + `package.json` scripts (`test`, `test:watch`, `test:isolation`, `lint:no-raw-acv-queries`).
+- `__tests__/setup/env.ts`, `seed.ts`, `cleanup.ts` — real-Supabase test users + claims with `test-hamsportal-` prefix.
+- `__tests__/scoped-client.test.ts` — 6 unit tests for the Proxy wrapper.
+- `__tests__/isolation.test.ts` — 6 tests, MA-only user against EV claim + EV-only user against MA claim, covers SELECT/UPDATE/DELETE all 404-shaped.
+- `__tests__/insert-cannot-forge.test.ts` — MA user's INSERT with EV company_id in body → RLS with_check rejects.
+- `__tests__/cross-company-reassignment-blocked.test.ts` — service client cannot change company_id, trigger fires.
+- `__tests__/dual-user-switch.test.ts` — one admin user with both companies sees different data before/after switching active company.
+- `scripts/check-no-raw-claim-queries.mjs` — lint that fails if any API route uses raw service-client `.from('<claim-scoped>')` without `scopedClient()`.
+
+**Deploy status:** LIVE. `dpl_4c8RWm9ANbnmgCkpSEhuWPhie9nd` at `https://modern-tools-eywl5yzeg-henry-as-projects-88caed67.vercel.app`. Alias `modern-tools-rho.vercel.app` verified. `npx tsc --noEmit` clean; `npm run build` clean; `npm run lint:no-raw-acv-queries` clean; `npm run test:isolation` — all 9 tests pass against production DB.
+
+**Migration verification (Henry ran, counts confirmed):**
+- 2 companies (Modern Appraisers + Eagleview) ✓
+- 15 profiles with `active_company_id` set to MA ✓
+- 15 user_companies rows (every user granted MA access) ✓
+- 673 acv_history total = 673 MA + 0 EV ✓
+- 129 messages, 17 clients, 60 guidelines — all preserved ✓
+
+**Rollback commands:**
+
+Code rollback (Phase 1 → previous "closed_at + admin-only" build):
+```
+npx vercel promote https://modern-tools-g7dmaydi4-henry-as-projects-88caed67.vercel.app --scope henry-as-projects-88caed67 --yes
+```
+
+Migration rollback (multi-company → single-tenant): run `supabase/migration-multi-company-rollback.sql` in Supabase SQL Editor. Existing MA data preserved throughout.
+
+**In progress / broken / unknowns:**
+- **Henry should smoke-test on live** to confirm normal MA behavior: log in, dashboard renders, one claim opens, message sends, PDF generates. Every row count matches pre-migration.
+- Phase 2 (HamsPortal rebrand — login page swap, package name, browser title, auto-message senders) not started. Separate spec + plan when Henry gives the go.
+- Phase 3 (Eagleview go-live — add EV users, add EV logo file, first EV claim, empty-template state) not started.
+
+**Next:** Phase 2 plan when Henry approves. In the meantime, the app runs exactly as before for Modern Appraisers.
+
+---
+
 ## 2026-09-16 (night, even later) — /claims stats broken into four buckets
 
 **Worked on:** The stats line under the All Claims heading was showing only "N claims — X open, Y closed". Split into four color-coded pills: Open (green) · Submitted (blue) · Closed (gray) · Cancelled (red). Same color language as the row Status pills.
