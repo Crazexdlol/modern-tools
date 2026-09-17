@@ -105,10 +105,15 @@ function drawRect(ctx: Ctx, x: number, top: number, width: number, height: numbe
   })
 }
 
-// Read EV logo from disk at request time.
+// Read EV logo from disk at request time. Prefers the -on-dark variant
+// (dark text/shield inverted to white) because the header renders on a
+// navy background — the regular full-color logo needs a white pill behind
+// it to be readable, which Henry doesn't want.
 async function embedEvLogo(doc: PDFDocument): Promise<import('pdf-lib').PDFImage | null> {
-  const p = path.join(process.cwd(), 'public', 'companies', 'eagleview', 'logo.png')
-  if (!existsSync(p)) return null
+  const dark = path.join(process.cwd(), 'public', 'companies', 'eagleview', 'logo-on-dark.png')
+  const light = path.join(process.cwd(), 'public', 'companies', 'eagleview', 'logo.png')
+  const p = existsSync(dark) ? dark : (existsSync(light) ? light : null)
+  if (!p) return null
   try {
     return await doc.embedPng(readFileSync(p))
   } catch {
@@ -124,12 +129,9 @@ function drawHeader(ctx: Ctx, title: string, subtitle?: string) {
   drawRect(ctx, 0, HEADER_HEIGHT, PAGE.width, 3, GOLD)
   if (ctx.logo) {
     const maxH = 40
-    const scale = Math.min(maxH / ctx.logo.height, 160 / ctx.logo.width)
+    const scale = Math.min(maxH / ctx.logo.height, 180 / ctx.logo.width)
     const w = ctx.logo.width * scale
     const h = ctx.logo.height * scale
-    // White pill behind the logo so dark parts don't disappear on navy.
-    const padX = 8, padY = 5
-    drawRect(ctx, MARGIN - padX, (HEADER_HEIGHT - h) / 2 - padY, w + padX * 2, h + padY * 2, [1, 1, 1])
     ctx.page.drawImage(ctx.logo, {
       x: MARGIN,
       y: yFromTop((HEADER_HEIGHT - h) / 2 + h),
