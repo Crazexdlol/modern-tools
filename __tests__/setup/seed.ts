@@ -36,6 +36,10 @@ export async function seedForIsolation(): Promise<SeedHandles> {
   const maUser = await createUser('ma')
   const evUser = await createUser('ev')
   const dualUser = await createUser('dual')
+  // Make dualUser an admin so they see all claims scoped to their active
+  // company (the realistic scenario for the switch flow — admins switch
+  // between companies to work each book).
+  await svc.from('profiles').update({ role: 'admin' }).eq('id', dualUser.userId)
 
   // Grant company access via user_companies.
   await svc.from('user_companies').insert([
