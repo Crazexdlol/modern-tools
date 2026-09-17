@@ -9,12 +9,14 @@ import { PermissionsTab } from './_tabs/permissions-tab'
 import { FeesTab } from './_tabs/fees-tab'
 import { LicensesTab } from './_tabs/licenses-tab'
 import { DocumentsTab } from './_tabs/documents-tab'
+import { CompaniesTab } from './_tabs/companies-tab'
 
-type TabKey = 'info' | 'permissions' | 'fees' | 'licenses' | 'documents'
+type TabKey = 'info' | 'permissions' | 'companies' | 'fees' | 'licenses' | 'documents'
 
 const TABS: { key: TabKey; label: string }[] = [
   { key: 'info',        label: 'Information' },
   { key: 'permissions', label: 'Permissions' },
+  { key: 'companies',   label: 'Companies' },
   { key: 'fees',        label: 'Fees' },
   { key: 'licenses',    label: 'Licenses' },
   { key: 'documents',   label: 'Documents' },
@@ -74,6 +76,7 @@ export function ProfileDetailClient({ userId }: { userId: string }) {
       <div>
         {tab === 'info'        && <InfoTab profile={profile} onSaved={load} />}
         {tab === 'permissions' && <PermissionsTab profile={profile} onSaved={load} />}
+        {tab === 'companies'   && <CompaniesTab userId={profile.id} />}
         {tab === 'fees'        && <FeesTab userId={profile.id} />}
         {tab === 'licenses'    && <LicensesTab userId={profile.id} />}
         {tab === 'documents'   && <DocumentsTab userId={profile.id} />}
