@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-This file tells Claude Code (and every future session) how to work on **Modern Tools** without breaking Henry's live production tool.
+This file tells Claude Code (and every future session) how to work on **HamsPortal** (previously "Modern Tools" — renamed 2026-09-16 as part of the multi-company rollout) without breaking Henry's live production tool. Historical entries below and in `docs/SESSIONS.md` still say "Modern Tools" — that's the same platform.
 
 > **First thing every session, before anything else: read `docs/SESSIONS.md` (newest entry on top).** That tells you what was worked on last, what's live, what's in-progress, what's broken, and what's next. Then finish reading this file.
 
