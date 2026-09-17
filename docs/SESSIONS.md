@@ -18,6 +18,62 @@ Read `CLAUDE.md` first if you haven't. Then read the top entry here before touch
 
 ---
 
+## 2026-09-17 (afternoon/evening) — DV flatten fix, filename standardization, EV# labels + auto file numbers, dropdowns scoped by company, Eagleview ACV report built programmatically
+
+**Worked on:** Long session covering polish across both Modern (Modern Appraisers) and Eagleview surfaces. Big new artifact: a fully programmatic Eagleview ACV report with EV branding, evolved through several rounds of feedback into a clean 2-page layout.
+
+**Changed:**
+
+_Modern Appraisers polish:_
+- `src/lib/acv/dv-pdf-filler.ts` — added `form.flatten()` so printed DV reports are static text (matches ACV; no editable AcroForm fields in Adobe).
+- `src/components/claim/dv-tab.tsx`, `storage-tab.tsx`, `estimate-review-tab.tsx` — standardized default download filenames: `<MA#>-dvreport.pdf` (no more `-sedgwick`/`-wLoss` suffix), `<MA#>-storagereport.pdf`, `<MA#>-estimatedispute.pdf`.
+- `src/app/api/acv/generate-pdf/route.ts`, `generate-dv-pdf/route.ts`, `storage/generate-pdf/route.ts` — matching Content-Disposition headers (`-acvreport.pdf`, `-dvreport.pdf` using body's fileNumber, `-storagereport.pdf`).
+- `src/app/admin/settings/users/[id]/_tabs/licenses-tab.tsx` — License Type column has a `min-w-[280px]` floor + `text-sm` display; container widened to `max-w-6xl` so the Type text has room to breathe.
+
+_Eagleview go-live enhancements:_
+- `src/lib/company-labels.ts` (new) — `fileNumberLabel(slug)` / `fileNumberLongLabel(slug)` return 'MA #' / 'EV #' based on active company.
+- `src/components/claim/ClaimWorkspace.tsx`, `src/components/claims-table.tsx` — File-# labels swap per active company (workspace form, stats blocks, ReviewStep header, All Claims column).
+- `supabase/migration-eagleview-file-sequence.sql` + `-rollback.sql` (new) — Postgres sequence `eagleview_file_seq` starting at 222001 + a security-definer RPC `nextval_public_eagleview_file_seq()` so Supabase-js can call it via .rpc(). **Henry needs to run this migration** once for auto-numbering to activate; pre-migration the field stays manually editable.
+- `src/app/api/companies/next-file-number/route.ts` (new) — POST reserves the next EV file # atomically; returns `{ supported: false }` for MA users or pre-migration.
+- `ClaimWorkspace.tsx` ClaimInfoForm — on new EV claims, auto-fetches + populates the file # field and makes it read-only. Placeholder shows "222001" for EV, "MA-12345" for MA.
+
+_Company-scoped dropdowns:_
+- `src/app/api/companies/current/members/route.ts` (new) — GET returns userIds with access to the caller's active company.
+- `src/hooks/use-current-company-members.ts` (new) — client hook; returns `Set<string> | null` (null = "no filter, show all" fallback).
+- `ClaimWorkspace.tsx` — Handling Appraiser select + per-claim Reassign popover filter to only show appraisers who have access to the active company.
+- `claims-table.tsx` — bulk Reassign dropdown on All Claims applies the same filter.
+
+_Client picker fix:_
+- `src/components/claim/client-picker.tsx` — allows typing a free-text client name that isn't in the CRM. Press Enter or click the new "Use '<typed>' on this claim only" footer button to commit as free text (id=null, name only). Also re-hydrates the input for existing claims that only have `clientName` (no linked `client_id`) so old rows don't render blank.
+
+_Eagleview ACV report (fully programmatic, iterated):_
+- `src/lib/acv/eagleview-acv-pdf.ts` (new) — no template file. Builds an EV-branded PDF from scratch using pdf-lib with navy/gold palette + EV logo.
+- `src/lib/acv/pdf-filler.ts` — `fillACVPdf(slug, ...)` dispatches to `buildEagleviewACVPdf` for slug='eagleview', else uses the existing MA template flow. Modern Appraisers behavior fully unchanged.
+- Iterations (in order): initial single-page dense layout → replaced Δ (WinAnsi crash) with "Miles diff" + added `toSafe()` scrubber for all user-provided text (maps smart quotes/dashes to ASCII, unknown → `?`) → 2-page split with methodology block on page 1 → removed white pill behind logo (uses `logo-on-dark.png` variant so it sits directly on navy) → final polish: removed methodology block entirely, removed footers on both pages, stripped "Prepared" date subtitle from page 1 header, stripped file# subtitle from page 2 header, header title shortened to just "ACTUAL CASH VALUE", valuation section rewritten as a clean 2-column grouped table (Comp 1/2/3 → divider → Average → divider → non-zero Adjustments → divider → Sales tax → big ACV box). Zero-value adjustments are skipped for a cleaner view.
+
+**Deploy status:** LIVE. `dpl_GfcgMf4M8miudnQPZDELrvRSNZMg` at `modern-tools-rho.vercel.app` / `hamsportal.com`. tsc clean, build clean throughout all iterations.
+
+**Rollback path** (recent deploys, most recent first — pick the state you want):
+```
+dpl_GfcgMf4M8miudnQPZDELrvRSNZMg  ← current (EV ACV polish: no footers, no methodology, clean valuation)
+dpl_89xHh7kCjnVhNA13hxRZSosdBtat  ← 2-page EV ACV, no logo white pill
+dpl_2DBExpZU2yV8xwoyHwiTojxbgCGj  ← company-scoped dropdowns + client picker free-text
+dpl_4icEUKyYKGBxywepd6ZxNbZgwtNF  ← EV ACV v1 + EV# labels + auto file # seq (needs migration)
+dpl_HFJjMagdzGVWD4jMXKatxXozHCyg  ← licenses Type column widened
+dpl_nGb4y3ufNFwm69T6gEDmNcX3WX1a  ← standardized PDF filenames (dvreport/storagereport/estimatedispute/acvreport)
+dpl_3AXfEwXyxApeoJa77MmYf9Ps8iBp  ← DV form-flatten fix
+```
+Use: `npx vercel promote <URL for that dpl> --scope henry-as-projects-88caed67 --yes`.
+
+**In progress / broken / unknowns:**
+- **Henry needs to run `supabase/migration-eagleview-file-sequence.sql`** once in Supabase SQL Editor for EV file numbers to auto-generate starting at 222001. Verification SELECT at the end burns one number as sanity check; if you want the first real EV claim to land on exactly 222001 also run `select setval('public.eagleview_file_seq', 222000, true);` afterwards. Pre-migration the field falls back to manual entry.
+- EV ACV report is only the ACV format — DV, Award, Notes, Contract, Storage still return `NO_TEMPLATE` for EV (nothing changed there this session). Henry to design the remaining EV reports later.
+- Deferred backlog memory (`project_hamsportal_deferred.md`) still has the 5 open items from before.
+
+**Next:** Whatever Henry brings up. EV ACV is production-ready; MA is stable.
+
+---
+
 ## 2026-09-17 (morning) — Phase 3 polish + full debug pass
 
 **Worked on:** Post-Phase-3 UI polish based on live smoke testing, plus an end-to-end debug pass with real test data. Saved the 5-item deferred backlog to memory for future reference.
