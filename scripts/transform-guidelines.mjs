@@ -2,7 +2,7 @@
 // with heavy HTML entities + wall-of-text guidelines), decodes entities,
 // detects structural markers (ALL-CAPS headings, numbered lists, bullets),
 // and writes out a 2-column CSV (Insurance Company, Guidelines) that
-// imports cleanly via the Modern Tools guidelines importer.
+// imports cleanly via the HamsPortal guidelines importer.
 //
 // Usage:
 //   node scripts/transform-guidelines.mjs <input.csv> <output.csv>

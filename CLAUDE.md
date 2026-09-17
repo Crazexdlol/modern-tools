@@ -93,7 +93,7 @@ No test framework configured. `scripts/compare-apis.mjs` is a one-off API-covera
 
 ## Product context
 
-**Modern Tools** is Modern Appraisers' internal app. Henry is the insured's independent appraiser under the standard auto-policy appraisal clause; the opposing party is the insurance company's appraiser (**IA** / "Opposing Appraiser"). Preserve the "Us vs. IA" framing in any AI prompt or UI copy.
+**HamsPortal** is the platform. **Modern Appraisers** is the (initial) company using it — a second company, **Eagleview**, exists in the DB from 2026-09-16 forward but has no active users yet. Henry is the insured's independent appraiser under the standard auto-policy appraisal clause; the opposing party is the insurance company's appraiser (**IA** / "Opposing Appraiser"). Preserve the "Us vs. IA" framing in any AI prompt or UI copy.
 
 The app is **claim-centric**: every tool lives inside a claim workspace, and everything a tool produces saves onto that claim's single `acv_history` row. Generated report PDFs auto-file into the claim's Documents tab (Supabase storage bucket `claim-documents`).
 

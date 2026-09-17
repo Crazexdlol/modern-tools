@@ -152,7 +152,7 @@ for (const r of emptyMa) {
 }
 
 // PASS 3 — re-close ALL open digit-MA rows that aren't in the CSV.
-// Henry's rule: Modern Tools open queue must match the CSV exactly. No
+// Henry's rule: HamsPortal open queue must match the CSV exactly. No
 // data-exception — a row with real ACV work but missing from the CSV still
 // gets closed (data preserved, just off the dashboard).
 // Skip rows already handled by pass 1 (dedup owns them; older-dupe siblings

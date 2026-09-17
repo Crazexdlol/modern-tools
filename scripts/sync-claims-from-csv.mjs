@@ -1,6 +1,6 @@
 // scripts/sync-claims-from-csv.mjs
 //
-// One-time CSV → Modern Tools claim book sync.
+// One-time CSV → HamsPortal claim book sync.
 // Spec: docs/superpowers/specs/2026-09-11-csv-sync-and-handling-appraiser-list-design.md
 //
 // Usage:
@@ -14,7 +14,7 @@
 //  - If planned CLOSE count > 40, --apply refuses unless --confirm-closes=<count> matches.
 //
 // Matching key: acv_history.claim->>'maNumber' == csv.assignment_id (raw digits).
-// Modern Tools rows whose maNumber is empty or non-digit are SKIPPED (test/demo/legacy).
+// HamsPortal rows whose maNumber is empty or non-digit are SKIPPED (test/demo/legacy).
 //
 // Never touches: comps, adjustments, result, estimate, auction_listings,
 // documents, dv, invoice, reports_state, mileage_rate, summaries, storage.
@@ -35,7 +35,7 @@ const FABIAN_PROFILE = {
   role: 'appraiser',
 }
 
-// CSV phase label → Modern Tools status_phase code. Both are compared lower-cased.
+// CSV phase label → HamsPortal status_phase code. Both are compared lower-cased.
 const CSV_PHASE_MAP = {
   'pending payment': 'pending_payment',
   'umpire ruling':   'umpire',
