@@ -5,7 +5,7 @@ import path from 'node:path'
 export class NoTemplateError extends Error {
   code = 'NO_TEMPLATE' as const
   constructor(public companySlug: string, public templateRelPath: string) {
-    super(`No template configured for company '${companySlug}' at templates/${templateRelPath}. Contact your admin.`)
+    super(`This report isn't set up for the current company yet. Ask an admin to add the template, or switch to another company that has it configured.`)
     this.name = 'NoTemplateError'
   }
 }
