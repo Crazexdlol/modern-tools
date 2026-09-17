@@ -42,7 +42,7 @@ export function CompanySwitcher() {
     window.location.reload()
   }
 
-  // Two-company case → toggle button.
+  // Two-company case → compact toggle button showing the target company.
   if (companies.length === 2) {
     const other = companies.find(c => c.id !== activeCompanyId) ?? companies[0]
     return (
@@ -51,10 +51,11 @@ export function CompanySwitcher() {
         onClick={() => switchTo(other.id)}
         disabled={busy}
         title={`Switch to ${other.name}`}
-        className="flex items-center gap-1.5 px-2.5 py-1 rounded border border-gray-700 bg-gray-900 hover:bg-gray-800 text-xs font-medium text-gray-200 transition-colors disabled:opacity-50"
+        aria-label={`Switch to ${other.name}`}
+        className="flex items-center gap-1 px-2 py-1 rounded border border-gray-700 bg-gray-900 hover:bg-gray-800 text-xs font-medium text-gray-200 transition-colors disabled:opacity-50"
       >
-        <ArrowLeftRight className="w-3 h-3" />
-        Switch to {other.name}
+        <ArrowLeftRight className="w-3 h-3 text-gray-400" />
+        {other.name}
       </button>
     )
   }
