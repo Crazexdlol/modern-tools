@@ -1,45 +1,53 @@
 'use client'
 import { useEffect, useState } from 'react'
-import { createClient } from '@/lib/supabase/client'
+
+export interface ActiveCompany {
+  id: string
+  slug: string
+  name: string
+  logoPath: string
+  brandColor: string
+}
 
 /**
- * Reads the current user's profiles.active_company_id. Client-side write
- * paths must include company_id explicitly to satisfy RLS WITH CHECK; this
- * hook is the source of truth on the browser.
+ * Fetches /api/companies once on mount and exposes the caller's active
+ * company row. Returns { activeCompanyId, activeCompany, loading }.
  *
- * Returns null while loading, or if the user hasn't resolved a company
- * yet (multi-company user pre-picker), or pre-migration (column missing).
+ * Pre-migration this returns nulls — the endpoint returns activeCompanyId=null
+ * and an empty companies list.
  */
-export function useActiveCompany(): { activeCompanyId: string | null; loading: boolean } {
+export function useActiveCompany(): {
+  activeCompanyId: string | null
+  activeCompany: ActiveCompany | null
+  loading: boolean
+} {
   const [activeCompanyId, setActiveCompanyId] = useState<string | null>(null)
+  const [activeCompany, setActiveCompany] = useState<ActiveCompany | null>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     let cancelled = false
     ;(async () => {
-      const supabase = createClient()
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) { if (!cancelled) setLoading(false); return }
-      const { data, error } = await supabase
-        .from('profiles')
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        .select('active_company_id' as any)
-        .eq('id', user.id)
-        .maybeSingle()
-      if (!cancelled) {
-        if (error) {
-          // 42703 = column doesn't exist yet (pre-migration). Silent — the
-          // rest of the app uses fallback code paths.
-          setActiveCompanyId(null)
-        } else {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          setActiveCompanyId(((data as any)?.active_company_id ?? null) as string | null)
+      try {
+        const r = await fetch('/api/companies', { cache: 'no-store' })
+        if (!r.ok) { if (!cancelled) setLoading(false); return }
+        const json = await r.json() as {
+          activeCompanyId: string | null
+          companies: Array<{ id: string; slug: string; name: string; logo_path: string; brand_color: string }>
         }
-        setLoading(false)
+        if (cancelled) return
+        setActiveCompanyId(json.activeCompanyId)
+        const active = json.companies.find(c => c.id === json.activeCompanyId) ?? null
+        setActiveCompany(active ? {
+          id: active.id, slug: active.slug, name: active.name,
+          logoPath: active.logo_path, brandColor: active.brand_color,
+        } : null)
+      } finally {
+        if (!cancelled) setLoading(false)
       }
     })()
     return () => { cancelled = true }
   }, [])
 
-  return { activeCompanyId, loading }
+  return { activeCompanyId, activeCompany, loading }
 }
