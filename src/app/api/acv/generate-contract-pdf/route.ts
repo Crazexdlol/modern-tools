@@ -5,6 +5,7 @@ import { PDFDocument } from 'pdf-lib'
 import { readTemplate, NoTemplateError, NO_TEMPLATE_CODE } from '@/lib/pdf/template-path'
 import { getCompanySlug } from '@/lib/pdf/company-slug'
 import { createServiceClient } from '@/lib/supabase/service'
+import { scopedClient } from '@/lib/supabase/scoped'
 
 export const runtime = 'nodejs'
 
@@ -18,8 +19,8 @@ export async function POST(request: NextRequest) {
 
     // Resolve company slug from claim (or fall back to caller's active).
     let companySlug: string
-    if (claimId) {
-      const svc = createServiceClient()
+    if (claimId && caller!.activeCompanyId) {
+      const svc = scopedClient(createServiceClient(), caller!.activeCompanyId)
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { data } = await svc.from('acv_history').select('company_id' as any).eq('id', claimId).maybeSingle()
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
