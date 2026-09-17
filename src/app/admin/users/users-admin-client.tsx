@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { Trash2, Plus, X, Pencil, Check } from 'lucide-react'
+import { Trash2, Plus, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { fetchAllProfilesBrowser, type Profile, type Role } from '@/lib/supabase/profiles'
@@ -14,19 +14,9 @@ export function UsersAdminClient() {
   const [loading, setLoading] = useState(true)
   const [showAdd, setShowAdd] = useState(false)
   const [error, setError] = useState<string | null>(null)
-
-  // Edit mode: id of the row currently being edited (null = none).
-  // Drafts hold the in-flight edits until the user hits Save.
-  const [editingId, setEditingId] = useState<string | null>(null)
-  const [draftName, setDraftName] = useState('')
-  const [draftRole, setDraftRole] = useState<Role>('appraiser')
-  const [saving, setSaving] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<Profile | null>(null)
   const [deleteBusy, setDeleteBusy] = useState(false)
 
-  // Load the profile list. Initial `loading` state is true; the fetch clears
-  // it. On subsequent refreshes (after add/delete/role change) we skip the
-  // brief loading flicker since the table already has data.
   const load = async () => {
     const [rows, licenses] = await Promise.all([fetchAllProfilesBrowser(), fetchAllLicenses()])
     setProfiles(rows)
@@ -40,38 +30,10 @@ export function UsersAdminClient() {
     setLoading(false)
   }
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- mount-load pattern; setState fires only after the async fetch resolves
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- mount-load pattern
     void load()
   }, [])
 
-  const startEdit = (p: Profile) => {
-    setError(null)
-    setEditingId(p.id)
-    setDraftName(p.name ?? '')
-    setDraftRole(p.role)
-  }
-  const cancelEdit = () => {
-    setEditingId(null)
-    setDraftName('')
-    setDraftRole('appraiser')
-  }
-  const saveEdit = async (p: Profile) => {
-    setError(null)
-    const patch: { name?: string; role?: Role } = {}
-    if (draftName !== (p.name ?? '')) patch.name = draftName
-    if (draftRole !== p.role) patch.role = draftRole
-    if (Object.keys(patch).length === 0) { cancelEdit(); return }
-    setSaving(true)
-    const res = await fetch(`/api/admin/users/${p.id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(patch),
-    })
-    setSaving(false)
-    if (!res.ok) { const b = await res.json().catch(() => ({})); setError(b.error ?? 'Failed'); return }
-    cancelEdit()
-    load()
-  }
   const confirmDelete = async () => {
     if (!deleteTarget) return
     setDeleteBusy(true)
@@ -108,108 +70,51 @@ export function UsersAdminClient() {
             </tr>
           </thead>
           <tbody>
-            {profiles.map(p => {
-              const isEditing = editingId === p.id
-              return (
-                <tr key={p.id} className={`border-b border-gray-100 ${isEditing ? 'bg-blue-50/40' : ''}`}>
-                  <td className="px-4 py-3">
-                    {isEditing ? (
-                      <input
-                        autoFocus
-                        className="bg-white border border-gray-200 rounded px-2 py-1 text-sm text-gray-800 w-full focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        value={draftName}
-                        onChange={(e) => setDraftName(e.target.value)}
-                      />
-                    ) : (
-                      <Link
-                        href={`/admin/settings/users/${p.id}`}
-                        className="inline-flex items-center gap-1.5 text-sm text-blue-600 hover:text-blue-800 hover:underline"
-                      >
-                        {alertingUserIds.has(p.id) && (
-                          <span className="w-2 h-2 rounded-full bg-red-500 flex-shrink-0" title="License expiring or expired" />
-                        )}
-                        {p.name || <span className="text-gray-400 italic">No name</span>}
-                      </Link>
+            {profiles.map(p => (
+              <tr key={p.id} className="border-b border-gray-100">
+                <td className="px-4 py-3">
+                  <Link
+                    href={`/admin/settings/users/${p.id}`}
+                    className="inline-flex items-center gap-1.5 text-sm text-blue-600 hover:text-blue-800 hover:underline"
+                  >
+                    {alertingUserIds.has(p.id) && (
+                      <span className="w-2 h-2 rounded-full bg-red-500 flex-shrink-0" title="License expiring or expired" />
                     )}
-                  </td>
-                  <td className="px-4 py-3 text-gray-600">{p.email}</td>
-                  <td className="px-4 py-3">
-                    {isEditing ? (
-                      <select
-                        className="bg-white border border-gray-200 rounded px-2 py-1 text-sm"
-                        value={draftRole}
-                        onChange={(e) => setDraftRole(e.target.value as Role)}
-                      >
-                        <option value="appraiser">Appraiser</option>
-                        <option value="admin">Admin</option>
-                      </select>
-                    ) : (
-                      <span className={`text-xs font-semibold px-2 py-0.5 rounded-full border ${
-                        p.role === 'admin'
-                          ? 'text-purple-700 bg-purple-50 border-purple-200'
-                          : 'text-gray-700 bg-gray-100 border-gray-200'
-                      }`}>
-                        {p.role === 'admin' ? 'Admin' : 'Appraiser'}
-                      </span>
-                    )}
-                  </td>
-                  <td className="px-4 py-3">
-                    {p.isActive ? (
-                      <span className="text-xs font-semibold px-2 py-0.5 rounded-full border text-emerald-700 bg-emerald-50 border-emerald-200">
-                        Active
-                      </span>
-                    ) : (
-                      <span className="text-xs font-semibold px-2 py-0.5 rounded-full border text-gray-500 bg-gray-100 border-gray-200">
-                        Inactive
-                      </span>
-                    )}
-                  </td>
-                  <td className="px-4 py-3 text-right">
-                    <div className="flex items-center justify-end gap-2">
-                      {isEditing ? (
-                        <>
-                          <button
-                            onClick={() => saveEdit(p)}
-                            disabled={saving}
-                            className="text-emerald-600 hover:text-emerald-700 disabled:opacity-40"
-                            title="Save"
-                          >
-                            <Check className="w-4 h-4" />
-                          </button>
-                          <button
-                            onClick={cancelEdit}
-                            disabled={saving}
-                            className="text-gray-400 hover:text-gray-600 disabled:opacity-40"
-                            title="Cancel"
-                          >
-                            <X className="w-4 h-4" />
-                          </button>
-                        </>
-                      ) : (
-                        <>
-                          <button
-                            onClick={() => startEdit(p)}
-                            disabled={editingId !== null}
-                            className="text-gray-400 hover:text-blue-600 disabled:opacity-40"
-                            title="Edit user"
-                          >
-                            <Pencil className="w-4 h-4" />
-                          </button>
-                          <button
-                            onClick={() => setDeleteTarget(p)}
-                            disabled={editingId !== null}
-                            className="text-gray-400 hover:text-red-600 disabled:opacity-40"
-                            title="Delete user"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              )
-            })}
+                    {p.name || <span className="text-gray-400 italic">No name</span>}
+                  </Link>
+                </td>
+                <td className="px-4 py-3 text-gray-600">{p.email}</td>
+                <td className="px-4 py-3">
+                  <span className={`text-xs font-semibold px-2 py-0.5 rounded-full border ${
+                    p.role === 'admin'
+                      ? 'text-purple-700 bg-purple-50 border-purple-200'
+                      : 'text-gray-700 bg-gray-100 border-gray-200'
+                  }`}>
+                    {p.role === 'admin' ? 'Admin' : 'Appraiser'}
+                  </span>
+                </td>
+                <td className="px-4 py-3">
+                  {p.isActive ? (
+                    <span className="text-xs font-semibold px-2 py-0.5 rounded-full border text-emerald-700 bg-emerald-50 border-emerald-200">
+                      Active
+                    </span>
+                  ) : (
+                    <span className="text-xs font-semibold px-2 py-0.5 rounded-full border text-gray-500 bg-gray-100 border-gray-200">
+                      Inactive
+                    </span>
+                  )}
+                </td>
+                <td className="px-4 py-3 text-right">
+                  <button
+                    onClick={() => setDeleteTarget(p)}
+                    className="text-gray-400 hover:text-red-600"
+                    title="Delete user"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </td>
+              </tr>
+            ))}
           </tbody>
         </table>
       </div>

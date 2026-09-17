@@ -51,18 +51,26 @@ export function AppHeader() {
   }, [profile?.id, profile?.marketingAccess])
 
   const displayLabel = profile?.name || profile?.email || ''
-  const { activeCompany } = useActiveCompany()
+  const { activeCompany, loading: companyLoading } = useActiveCompany()
   // Header uses the -on-dark variant of the logo (white/light elements so the
   // dark bg-gray-950 header renders it cleanly). Each company ships a
   // logo-on-dark.png next to logo.png; the derived path just swaps the suffix.
-  const baseLogoPath = activeCompany?.logoPath ?? '/companies/modern-appraisers/logo.png'
-  const headerLogoPath = baseLogoPath.replace(/\.png$/, '-on-dark.png')
-  const headerCompanyName = activeCompany?.name ?? 'Modern Appraisers'
+  const headerLogoPath = activeCompany
+    ? activeCompany.logoPath.replace(/\.png$/, '-on-dark.png')
+    : null
+  const headerCompanyName = activeCompany?.name ?? ''
 
   return (
     <header className="no-print border-b border-gray-800 bg-gray-950 shadow-sm sticky top-0 z-10">
       <div className="max-w-7xl mx-auto px-6 py-4 flex items-center gap-8">
-        <Link href="/"><Image src={headerLogoPath} alt={headerCompanyName} width={160} height={48} className="h-9 w-auto" priority /></Link>
+        {/* Reserve the logo slot's space while /api/companies resolves so the
+            layout doesn't shift AND the previously-visible MA logo doesn't
+            flash on refresh for an EV user. */}
+        {companyLoading || !headerLogoPath ? (
+          <div className="h-9 w-40" aria-hidden />
+        ) : (
+          <Link href="/"><Image src={headerLogoPath} alt={headerCompanyName} width={160} height={48} className="h-9 w-auto" priority /></Link>
+        )}
         <nav className="flex items-center gap-6">
           {NAV_ITEMS.map(item => {
             // Marketing tab is flag-only — admin role does NOT grant implicit

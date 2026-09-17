@@ -69,10 +69,7 @@ export function CompaniesTab({ userId }: { userId: string }) {
 
   return (
     <div className="space-y-4 max-w-md">
-      <div>
-        <h3 className="text-sm font-semibold text-gray-900">Company access</h3>
-        <p className="text-xs text-gray-500 mt-1">Which companies can this user work claims for. Removing access hides that company&apos;s claims from them immediately. When you revoke their currently-active company, they get repointed to another one they still have (or nothing).</p>
-      </div>
+      <h3 className="text-sm font-semibold text-gray-900">Company access</h3>
       <div className="space-y-2">
         {companies.map(c => (
           <label key={c.id} className="flex items-center gap-3 p-3 rounded-lg border border-gray-200 hover:bg-gray-50 cursor-pointer">
