@@ -6,6 +6,7 @@ import type { ClaimInfo, SelectedComp, ACVAdjustments, ACVResult } from './types
 // Programmatic ACV report for Eagleview. Same data + methodology as Modern's
 // AcroForm-based ACV report but a distinct visual layout with EV branding.
 // No template file — the PDF is built from scratch each time. Letter size.
+// Two pages: page 1 is claim + vehicle details, page 2 is comps + valuation.
 
 const PAGE = { width: 612, height: 792 }
 const MARGIN = 48
@@ -23,6 +24,7 @@ interface Ctx {
   page: import('pdf-lib').PDFPage
   fontBody: import('pdf-lib').PDFFont
   fontBold: import('pdf-lib').PDFFont
+  logo: import('pdf-lib').PDFImage | null
 }
 
 function fmtCurrency(n: number): string {
@@ -43,34 +45,25 @@ function fmtDate(s: string | undefined): string {
   if (parts.length === 3) return `${parts[1]}/${parts[2]}/${parts[0]}`
   return s
 }
-// StandardFonts.Helvetica uses WinAnsi (CP1252) encoding — it throws on any
-// character outside that range (Δ, emoji, CJK, etc.). User-provided fields
-// (notes, insured name, address, ...) can contain anything, so we scrub to
-// WinAnsi-safe before drawing. Common typographic characters are mapped to
-// close ASCII equivalents; everything else becomes '?'.
+
+// StandardFonts.Helvetica uses WinAnsi (CP1252) — throws on any character
+// outside that range (Δ, emoji, CJK, etc.). Scrub user text before drawing.
 const WINANSI_REMAP: Record<string, string> = {
-  '–': '-',   // en dash
-  '—': '-',   // em dash
-  '‘': "'",   // left single quote
-  '’': "'",   // right single quote / apostrophe
-  '“': '"',   // left double quote
-  '”': '"',   // right double quote
-  '…': '...', // ellipsis
-  ' ': ' ',   // non-breaking space
+  '–': '-', '—': '-', '‘': "'", '’': "'", '“': '"', '”': '"', '…': '...', ' ': ' ',
 }
 function toSafe(s: string | undefined | null): string {
   if (!s) return ''
   let out = ''
   for (const ch of s) {
     const code = ch.charCodeAt(0)
-    if (code < 0x80) { out += ch; continue }                     // ASCII pass-through
+    if (code < 0x80) { out += ch; continue }
     if (WINANSI_REMAP[ch] !== undefined) { out += WINANSI_REMAP[ch]; continue }
-    // CP1252 covers 0xA0–0xFF. Approximate.
     if (code >= 0xA0 && code <= 0xFF) { out += ch; continue }
     out += '?'
   }
   return out
 }
+
 function yFromTop(top: number): number { return PAGE.height - top }
 
 function drawText(ctx: Ctx, text: string, opts: { x: number; top: number; size?: number; bold?: boolean; color?: [number, number, number]; maxWidth?: number }) {
@@ -112,8 +105,7 @@ function drawRect(ctx: Ctx, x: number, top: number, width: number, height: numbe
   })
 }
 
-// Read EV logo from disk at request time. Companies/eagleview/logo.png is the
-// full-color version; render at reduced height in the letterhead.
+// Read EV logo from disk at request time.
 async function embedEvLogo(doc: PDFDocument): Promise<import('pdf-lib').PDFImage | null> {
   const p = path.join(process.cwd(), 'public', 'companies', 'eagleview', 'logo.png')
   if (!existsSync(p)) return null
@@ -122,6 +114,77 @@ async function embedEvLogo(doc: PDFDocument): Promise<import('pdf-lib').PDFImage
   } catch {
     return null
   }
+}
+
+// Navy header bar with EV logo on the left + title on the right. Same on
+// every page so the report looks like one continuous document.
+function drawHeader(ctx: Ctx, title: string, subtitle?: string) {
+  const HEADER_HEIGHT = 68
+  drawRect(ctx, 0, 0, PAGE.width, HEADER_HEIGHT, NAVY)
+  drawRect(ctx, 0, HEADER_HEIGHT, PAGE.width, 3, GOLD)
+  if (ctx.logo) {
+    const maxH = 40
+    const scale = Math.min(maxH / ctx.logo.height, 160 / ctx.logo.width)
+    const w = ctx.logo.width * scale
+    const h = ctx.logo.height * scale
+    // White pill behind the logo so dark parts don't disappear on navy.
+    const padX = 8, padY = 5
+    drawRect(ctx, MARGIN - padX, (HEADER_HEIGHT - h) / 2 - padY, w + padX * 2, h + padY * 2, [1, 1, 1])
+    ctx.page.drawImage(ctx.logo, {
+      x: MARGIN,
+      y: yFromTop((HEADER_HEIGHT - h) / 2 + h),
+      width: w,
+      height: h,
+    })
+  } else {
+    drawText(ctx, 'EAGLEVIEW', { x: MARGIN, top: 22, size: 20, bold: true, color: [1, 1, 1] })
+  }
+  drawTextRight(ctx, title, { rightX: PAGE.width - MARGIN, top: 20, size: 15, bold: true, color: [1, 1, 1] })
+  if (subtitle) {
+    drawTextRight(ctx, subtitle, { rightX: PAGE.width - MARGIN, top: 42, size: 9, color: [0.85, 0.87, 0.92] })
+  }
+  return HEADER_HEIGHT + 3 // returns the bottom Y of the header block
+}
+
+// Little gold section-title with a navy hairline under it.
+function drawSectionTitle(ctx: Ctx, title: string, top: number): number {
+  drawText(ctx, title, { x: MARGIN, top, size: 9, bold: true, color: GOLD })
+  drawLine(ctx, MARGIN, top + 14, PAGE.width - MARGIN, top + 14, 0.7, NAVY)
+  return top + 22
+}
+
+// Two-column label/value grid — used for claim identity + vehicle spec.
+function drawLabeledGrid(
+  ctx: Ctx,
+  rows: Array<{ label: string; value: string }>,
+  opts: { top: number; cols: number; contentWidth: number; rowHeight?: number; labelSize?: number; valueSize?: number },
+): number {
+  const { top, cols, contentWidth } = opts
+  const rowHeight = opts.rowHeight ?? 34
+  const labelSize = opts.labelSize ?? 7
+  const valueSize = opts.valueSize ?? 11
+  const colWidth = contentWidth / cols
+  const numRows = Math.ceil(rows.length / cols)
+  rows.forEach((row, i) => {
+    const r = Math.floor(i / cols)
+    const c = i % cols
+    const x = MARGIN + c * colWidth
+    const y = top + r * rowHeight
+    drawText(ctx, row.label, { x, top: y, size: labelSize, bold: true, color: MUTED })
+    drawText(ctx, row.value || '—', { x, top: y + labelSize + 5, size: valueSize, bold: true, maxWidth: colWidth - 8 })
+  })
+  return top + numRows * rowHeight
+}
+
+function drawFooter(ctx: Ctx, claim: ClaimInfo, pageNum: number, totalPages: number) {
+  const FOOT_TOP = PAGE.height - MARGIN + 10
+  drawLine(ctx, MARGIN, FOOT_TOP - 12, PAGE.width - MARGIN, FOOT_TOP - 12, 0.4)
+  drawText(ctx, 'Prepared by Eagleview', { x: MARGIN, top: FOOT_TOP, size: 8, color: MUTED })
+  const today = new Date().toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' })
+  const fileStr = claim.maNumber ? `File ${toSafe(claim.maNumber)}` : ''
+  drawTextRight(ctx, `${fileStr}${fileStr ? '  ·  ' : ''}${today}  ·  Page ${pageNum} of ${totalPages}`, {
+    rightX: PAGE.width - MARGIN, top: FOOT_TOP, size: 8, color: MUTED,
+  })
 }
 
 export async function buildEagleviewACVPdf(
@@ -134,205 +197,204 @@ export async function buildEagleviewACVPdf(
   const fontBody = await doc.embedFont(StandardFonts.Helvetica)
   const fontBold = await doc.embedFont(StandardFonts.HelveticaBold)
   const logo = await embedEvLogo(doc)
-  const page = doc.addPage([PAGE.width, PAGE.height])
-  const ctx: Ctx = { doc, page, fontBody, fontBold }
-  const contentWidth = PAGE.width - MARGIN * 2
-
   const today = new Date().toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' })
-  const vehicleStr = [claim.year, claim.make, claim.model, claim.trim].filter(Boolean).join(' ')
+  const contentWidth = PAGE.width - MARGIN * 2
+  const TOTAL_PAGES = 2
 
-  // ── HEADER: navy bar with logo + title ─────────────────────────────────
-  const HEADER_HEIGHT = 72
-  drawRect(ctx, 0, 0, PAGE.width, HEADER_HEIGHT, NAVY)
-  // Gold underline strip
-  drawRect(ctx, 0, HEADER_HEIGHT, PAGE.width, 3, GOLD)
+  // ========================================================================
+  //  PAGE 1 — Claim identity, insured/adjuster, loss vehicle
+  // ========================================================================
+  const page1 = doc.addPage([PAGE.width, PAGE.height])
+  const ctx: Ctx = { doc, page: page1, fontBody, fontBold, logo }
 
-  if (logo) {
-    const maxH = 44
-    const scale = Math.min(maxH / logo.height, 160 / logo.width)
-    const w = logo.width * scale
-    const h = logo.height * scale
-    // Invert the dark parts of the EV logo to white for the navy header.
-    // The logo's dark elements read as navy-on-navy without inversion; we
-    // draw a white rectangle behind the logo to keep it visually clean.
-    const padX = 8, padY = 6
-    drawRect(ctx, MARGIN - padX, (HEADER_HEIGHT - h) / 2 - padY, w + padX * 2, h + padY * 2, [1, 1, 1])
-    page.drawImage(logo, {
-      x: MARGIN,
-      y: yFromTop((HEADER_HEIGHT - h) / 2 + h),
-      width: w,
-      height: h,
-    })
-  } else {
-    drawText(ctx, 'EAGLEVIEW', { x: MARGIN, top: 22, size: 22, bold: true, color: [1, 1, 1] })
-  }
-  drawTextRight(ctx, 'ACTUAL CASH VALUE REPORT', { rightX: PAGE.width - MARGIN, top: 22, size: 16, bold: true, color: [1, 1, 1] })
-  drawTextRight(ctx, `Prepared ${today}`, { rightX: PAGE.width - MARGIN, top: 46, size: 9, color: [0.85, 0.87, 0.92] })
+  const headerBottom = drawHeader(ctx, 'ACTUAL CASH VALUE REPORT', `Prepared ${today}`)
 
-  // ── CLAIM IDENTITY BLOCK ────────────────────────────────────────────────
-  const CLAIM_TOP = HEADER_HEIGHT + 3 + 24
-  drawText(ctx, 'CLAIM', { x: MARGIN, top: CLAIM_TOP, size: 8, bold: true, color: GOLD })
-  drawLine(ctx, MARGIN, CLAIM_TOP + 14, PAGE.width - MARGIN, CLAIM_TOP + 14, 0.6, NAVY)
+  // ── CLAIM IDENTITY ─────────────────────────────────────────────────────
+  let top = headerBottom + 32
+  top = drawSectionTitle(ctx, 'CLAIM INFORMATION', top)
+  top = drawLabeledGrid(ctx, [
+    { label: 'FILE #',        value: toSafe(claim.maNumber) },
+    { label: 'CLAIM #',       value: toSafe(claim.claimNumber) },
+    { label: 'DATE OF LOSS',  value: fmtDate(claim.dateOfLoss) },
+    { label: 'REPORT DATE',   value: today },
+    { label: 'INSURANCE CO',  value: toSafe(claim.insuranceCompany) },
+    { label: 'POLICY / DEDUCTIBLE', value: claim.deductible ? fmtCurrency(claim.deductible) : '—' },
+  ], { top, cols: 3, contentWidth, rowHeight: 40 })
 
-  const claimRow1: Array<{ label: string; value: string }> = [
-    { label: 'FILE #',       value: toSafe(claim.maNumber) || '—' },
-    { label: 'CLAIM #',      value: toSafe(claim.claimNumber) || '—' },
-    { label: 'INSURANCE CO', value: toSafe(claim.insuranceCompany) || '—' },
-    { label: 'DATE OF LOSS', value: fmtDate(claim.dateOfLoss) || '—' },
-  ]
-  const colW = contentWidth / 4
-  claimRow1.forEach((f, i) => {
-    const x = MARGIN + i * colW
-    drawText(ctx, f.label, { x, top: CLAIM_TOP + 22, size: 7, bold: true, color: MUTED })
-    drawText(ctx, f.value, { x, top: CLAIM_TOP + 34, size: 10.5, bold: true, maxWidth: colW - 6 })
-  })
+  // ── INSURED + ADJUSTER (side by side blocks) ───────────────────────────
+  top += 18
+  top = drawSectionTitle(ctx, 'PARTIES', top)
+  const halfW = contentWidth / 2 - 8
 
-  // Second row: Owner + Adjuster
-  const claimRow2Top = CLAIM_TOP + 58
-  drawText(ctx, 'INSURED / CLIENT', { x: MARGIN, top: claimRow2Top, size: 7, bold: true, color: MUTED })
-  drawText(ctx, toSafe(claim.insuredName) || '—', { x: MARGIN, top: claimRow2Top + 12, size: 10.5, bold: true, maxWidth: (contentWidth / 2) - 12 })
-  const ownerLine = [claim.ownerPhone, claim.ownerEmail].filter(Boolean).join(' · ')
-  if (ownerLine) drawText(ctx, toSafe(ownerLine), { x: MARGIN, top: claimRow2Top + 26, size: 9, color: MUTED, maxWidth: (contentWidth / 2) - 12 })
-  if (claim.ownerAddress) drawText(ctx, toSafe(claim.ownerAddress), { x: MARGIN, top: claimRow2Top + 39, size: 9, color: MUTED, maxWidth: (contentWidth / 2) - 12 })
+  // Insured / Client block
+  drawText(ctx, 'INSURED / CLIENT', { x: MARGIN, top, size: 7, bold: true, color: MUTED })
+  drawText(ctx, toSafe(claim.insuredName) || '—', { x: MARGIN, top: top + 12, size: 12, bold: true, maxWidth: halfW })
+  let insuredY = top + 30
+  if (claim.ownerPhone) { drawText(ctx, toSafe(claim.ownerPhone), { x: MARGIN, top: insuredY, size: 9.5, color: MUTED }); insuredY += 13 }
+  if (claim.ownerEmail) { drawText(ctx, toSafe(claim.ownerEmail), { x: MARGIN, top: insuredY, size: 9.5, color: MUTED, maxWidth: halfW }); insuredY += 13 }
+  if (claim.ownerAddress) { drawText(ctx, toSafe(claim.ownerAddress), { x: MARGIN, top: insuredY, size: 9.5, color: MUTED, maxWidth: halfW }); insuredY += 13 }
 
-  const adjX = MARGIN + contentWidth / 2
-  drawText(ctx, 'ASSIGNED ADJUSTER', { x: adjX, top: claimRow2Top, size: 7, bold: true, color: MUTED })
-  drawText(ctx, toSafe(claim.adjuster) || '—', { x: adjX, top: claimRow2Top + 12, size: 10.5, bold: true, maxWidth: (contentWidth / 2) - 12 })
-  const adjLine = [claim.adjusterPhone, claim.adjusterEmail].filter(Boolean).join(' · ')
-  if (adjLine) drawText(ctx, toSafe(adjLine), { x: adjX, top: claimRow2Top + 26, size: 9, color: MUTED, maxWidth: (contentWidth / 2) - 12 })
+  // Adjuster block
+  const adjX = MARGIN + contentWidth / 2 + 8
+  drawText(ctx, 'ASSIGNED ADJUSTER', { x: adjX, top, size: 7, bold: true, color: MUTED })
+  drawText(ctx, toSafe(claim.adjuster) || '—', { x: adjX, top: top + 12, size: 12, bold: true, maxWidth: halfW })
+  let adjY = top + 30
+  if (claim.adjusterPhone) { drawText(ctx, toSafe(claim.adjusterPhone), { x: adjX, top: adjY, size: 9.5, color: MUTED }); adjY += 13 }
+  if (claim.adjusterEmail) { drawText(ctx, toSafe(claim.adjusterEmail), { x: adjX, top: adjY, size: 9.5, color: MUTED, maxWidth: halfW }); adjY += 13 }
+
+  top = Math.max(insuredY, adjY) + 12
 
   // ── LOSS VEHICLE ────────────────────────────────────────────────────────
-  const VEH_TOP = claimRow2Top + 68
-  drawText(ctx, 'LOSS VEHICLE', { x: MARGIN, top: VEH_TOP, size: 8, bold: true, color: GOLD })
-  drawLine(ctx, MARGIN, VEH_TOP + 14, PAGE.width - MARGIN, VEH_TOP + 14, 0.6, NAVY)
-  drawText(ctx, toSafe(vehicleStr) || '—', { x: MARGIN, top: VEH_TOP + 22, size: 14, bold: true })
+  top += 14
+  top = drawSectionTitle(ctx, 'LOSS VEHICLE', top)
+  const vehicleStr = [claim.year, claim.make, claim.model, claim.trim].filter(Boolean).join(' ')
+  drawText(ctx, toSafe(vehicleStr) || '—', { x: MARGIN, top, size: 18, bold: true, maxWidth: contentWidth })
+  top += 30
 
-  const vehRow = [
-    { label: 'VIN',     value: toSafe(claim.vin) || '—' },
-    { label: 'MILEAGE', value: `${fmtNumber(claim.mileage)} mi` },
-    { label: 'ENGINE',  value: toSafe(claim.engine) || '—' },
-    { label: 'DRIVE',   value: toSafe(claim.drivetrain) || '—' },
+  // Vehicle details grid (3 columns).
+  top = drawLabeledGrid(ctx, [
+    { label: 'VIN',           value: toSafe(claim.vin) },
+    { label: 'MILEAGE',       value: `${fmtNumber(claim.mileage)} mi` },
+    { label: 'YEAR',          value: claim.year ? String(claim.year) : '—' },
+    { label: 'ENGINE',        value: toSafe(claim.engine) },
+    { label: 'TRANSMISSION',  value: toSafe(claim.transmission) },
+    { label: 'DRIVETRAIN',    value: toSafe(claim.drivetrain) },
+    { label: 'FUEL TYPE',     value: toSafe(claim.fuelType) },
+    { label: 'ZIP',           value: toSafe(claim.zip) },
+    { label: 'SEARCH RADIUS', value: claim.radius ? `${claim.radius} mi` : '—' },
+  ], { top, cols: 3, contentWidth, rowHeight: 40 })
+
+  // ── METHODOLOGY NOTE (bottom of page 1, gives context before comps) ─────
+  top += 22
+  drawRect(ctx, MARGIN, top, contentWidth, 78, BG_TINT, HAIRLINE)
+  drawText(ctx, 'METHODOLOGY', { x: MARGIN + 14, top: top + 10, size: 8, bold: true, color: GOLD })
+  const methodLines = [
+    'The Actual Cash Value is derived from three comparable vehicles selected from the local',
+    'private-party and dealer market within the search radius above. Each comparable is adjusted',
+    'for mileage and model year variance versus the loss vehicle. The mean of the three adjusted',
+    'values, less private-party market deduction, plus applicable sales tax, produces the ACV shown',
+    'on page 2.',
   ]
-  vehRow.forEach((f, i) => {
-    const x = MARGIN + i * colW
-    drawText(ctx, f.label, { x, top: VEH_TOP + 48, size: 7, bold: true, color: MUTED })
-    drawText(ctx, f.value, { x, top: VEH_TOP + 60, size: 10, bold: true, maxWidth: colW - 6 })
+  methodLines.forEach((l, i) => {
+    drawText(ctx, l, { x: MARGIN + 14, top: top + 26 + i * 11, size: 9, color: [0.2, 0.25, 0.35] })
   })
 
-  // ── COMPARABLE VEHICLES (3 comps as horizontal cards) ───────────────────
-  const COMP_TOP = VEH_TOP + 90
-  drawText(ctx, 'COMPARABLE VEHICLES', { x: MARGIN, top: COMP_TOP, size: 8, bold: true, color: GOLD })
-  drawLine(ctx, MARGIN, COMP_TOP + 14, PAGE.width - MARGIN, COMP_TOP + 14, 0.6, NAVY)
+  drawFooter(ctx, claim, 1, TOTAL_PAGES)
 
-  // 3 comp cards, side by side, each ~168pt wide × 158pt tall.
-  const CARD_TOP = COMP_TOP + 22
-  const CARD_GAP = 8
+  // ========================================================================
+  //  PAGE 2 — Comps + valuation
+  // ========================================================================
+  const page2 = doc.addPage([PAGE.width, PAGE.height])
+  ctx.page = page2
+
+  const p2HeaderBottom = drawHeader(ctx, 'COMPARABLES & VALUATION',
+    claim.maNumber ? `File ${toSafe(claim.maNumber)}` : undefined)
+
+  // ── COMPARABLE VEHICLES ─────────────────────────────────────────────────
+  top = p2HeaderBottom + 28
+  top = drawSectionTitle(ctx, 'COMPARABLE VEHICLES', top)
+
+  // 3 comp cards side-by-side, taller than v1 for better spacing.
+  const CARD_GAP = 10
   const CARD_W = (contentWidth - CARD_GAP * 2) / 3
-  const CARD_H = 152
+  const CARD_H = 220
 
   comps.slice(0, 3).forEach((c, i) => {
     const cx = MARGIN + i * (CARD_W + CARD_GAP)
-    // Card container.
-    drawRect(ctx, cx, CARD_TOP, CARD_W, CARD_H, BG_TINT, HAIRLINE)
-    // Comp number badge (top-left, gold pill).
-    drawRect(ctx, cx + 10, CARD_TOP + 10, 42, 16, GOLD)
-    drawText(ctx, `COMP ${i + 1}`, { x: cx + 15, top: CARD_TOP + 13, size: 8, bold: true, color: [1, 1, 1] })
+    drawRect(ctx, cx, top, CARD_W, CARD_H, BG_TINT, HAIRLINE)
+    // Gold badge with comp number.
+    drawRect(ctx, cx + 12, top + 12, 48, 18, GOLD)
+    drawText(ctx, `COMP ${i + 1}`, { x: cx + 18, top: top + 15, size: 8, bold: true, color: [1, 1, 1] })
 
-    // Comp header (year make model trim)
-    const compTitle = [c.year, c.make, c.model, c.trim].filter(Boolean).join(' ')
-    drawText(ctx, toSafe(compTitle), { x: cx + 10, top: CARD_TOP + 34, size: 10, bold: true, maxWidth: CARD_W - 20 })
+    // Title (year/make/model/trim) — wraps to 2 lines if needed.
+    const compTitle = [c.year, c.make, c.model].filter(Boolean).join(' ')
+    drawText(ctx, toSafe(compTitle), { x: cx + 12, top: top + 40, size: 11, bold: true, maxWidth: CARD_W - 24 })
+    if (c.trim) drawText(ctx, toSafe(c.trim), { x: cx + 12, top: top + 55, size: 9, color: MUTED, maxWidth: CARD_W - 24 })
 
-    // Listing details.
-    const detailTop = CARD_TOP + 52
-    const rowH = 12
+    // Details block, generously spaced.
+    const detailTop = top + 78
+    const rowH = 16
     const details: Array<[string, string]> = [
-      ['Listed', fmtCurrency(c.price)],
+      ['Listed price', fmtCurrency(c.price)],
       ['Miles', `${fmtNumber(c.miles)} mi`],
       ['Miles diff', `${c.mileageDiffRaw > 0 ? '+' : ''}${fmtNumber(c.mileageDiffRaw)}`],
       ['Mileage adj', fmtCurrency(c.mileageAdjDollar)],
       ['Year adj', fmtCurrency(c.yearAdjDollar)],
     ]
     details.forEach((d, di) => {
-      drawText(ctx, d[0], { x: cx + 10, top: detailTop + di * rowH, size: 8, color: MUTED })
-      drawTextRight(ctx, d[1], { rightX: cx + CARD_W - 10, top: detailTop + di * rowH, size: 8, bold: true })
+      drawText(ctx, d[0], { x: cx + 12, top: detailTop + di * rowH, size: 9, color: MUTED })
+      drawTextRight(ctx, d[1], { rightX: cx + CARD_W - 12, top: detailTop + di * rowH, size: 9, bold: true })
     })
 
-    // Comp final value — highlighted at bottom with navy strip.
-    const valueTop = CARD_TOP + CARD_H - 26
-    drawRect(ctx, cx, valueTop, CARD_W, 26, NAVY)
-    drawText(ctx, 'COMP VALUE', { x: cx + 10, top: valueTop + 6, size: 7, bold: true, color: [0.85, 0.87, 0.92] })
-    drawTextRight(ctx, fmtCurrency(c.compValue), { rightX: cx + CARD_W - 10, top: valueTop + 5, size: 13, bold: true, color: [1, 1, 1] })
+    // Final value strip at bottom.
+    const valueTop = top + CARD_H - 32
+    drawRect(ctx, cx, valueTop, CARD_W, 32, NAVY)
+    drawText(ctx, 'COMP VALUE', { x: cx + 12, top: valueTop + 7, size: 7, bold: true, color: [0.85, 0.87, 0.92] })
+    drawTextRight(ctx, fmtCurrency(c.compValue), { rightX: cx + CARD_W - 12, top: valueTop + 6, size: 16, bold: true, color: [1, 1, 1] })
   })
 
-  // ── VALUATION SUMMARY ───────────────────────────────────────────────────
-  const VAL_TOP = CARD_TOP + CARD_H + 22
-  drawText(ctx, 'VALUATION', { x: MARGIN, top: VAL_TOP, size: 8, bold: true, color: GOLD })
-  drawLine(ctx, MARGIN, VAL_TOP + 14, PAGE.width - MARGIN, VAL_TOP + 14, 0.6, NAVY)
+  top += CARD_H + 30
 
-  // Left column: the equation. Right column: the answer.
-  const eqTop = VAL_TOP + 26
-  const eqRows: Array<{ label: string; value: number; hint?: string }> = [
-    { label: 'Comp 1 value',                value: result.comp1Value },
-    { label: 'Comp 2 value',                value: result.comp2Value },
-    { label: 'Comp 3 value',                value: result.comp3Value },
-    { label: 'Average of comparables',      value: result.averageValue,     hint: '(sum / 3)' },
-    { label: 'Vehicle history adjustment',  value: adjustments.vehicleHistory,  hint: adjustments.vehicleHistoryNote || undefined },
-    { label: 'Prior damage adjustment',     value: adjustments.priorDamages,    hint: adjustments.priorDamagesNote  || undefined },
-    { label: 'Additions',                   value: adjustments.additions,       hint: adjustments.additionsNote     || undefined },
-    { label: 'Dealer vs. private',          value: adjustments.deductions,      hint: adjustments.deductionsNote    || 'private-party market' },
+  // ── VALUATION ────────────────────────────────────────────────────────────
+  top = drawSectionTitle(ctx, 'VALUATION', top)
+
+  const eqRows: Array<{ label: string; value: number; hint?: string; emphasize?: boolean }> = [
+    { label: 'Comparable 1 value',                value: result.comp1Value },
+    { label: 'Comparable 2 value',                value: result.comp2Value },
+    { label: 'Comparable 3 value',                value: result.comp3Value },
+    { label: 'Average of comparables',            value: result.averageValue,        hint: 'sum / 3', emphasize: true },
+    { label: 'Vehicle history adjustment',        value: adjustments.vehicleHistory, hint: adjustments.vehicleHistoryNote || undefined },
+    { label: 'Prior damage adjustment',           value: adjustments.priorDamages,   hint: adjustments.priorDamagesNote  || undefined },
+    { label: 'Additions',                         value: adjustments.additions,      hint: adjustments.additionsNote     || undefined },
+    { label: 'Dealer vs. private market',         value: adjustments.deductions,     hint: adjustments.deductionsNote    || 'private-party basis' },
     { label: `Sales tax (${(adjustments.taxRate ?? 0).toFixed(2).replace(/\.00$/, '')}%)`, value: result.taxAmount },
   ]
-  const rowH2 = 15
-  const labelX = MARGIN + 10
-  const valueRightX = MARGIN + contentWidth - 10
+  const rowH2 = 18
+  const labelX = MARGIN + 12
+  const valueRightX = MARGIN + contentWidth - 12
   eqRows.forEach((r, ri) => {
-    const t = eqTop + ri * rowH2
-    drawText(ctx, r.label, { x: labelX, top: t, size: 9, color: r.value === 0 ? MUTED : BLACK, bold: ri === 3 })
+    const t = top + ri * rowH2
+    drawText(ctx, r.label, { x: labelX, top: t, size: 10, color: r.value === 0 && !r.emphasize ? MUTED : BLACK, bold: r.emphasize })
     if (r.hint) {
-      const labelWidth = fontBody.widthOfTextAtSize(r.label, 9)
-      drawText(ctx, `— ${toSafe(r.hint)}`, { x: labelX + labelWidth + 6, top: t, size: 8, color: MUTED })
+      const labelWidth = fontBody.widthOfTextAtSize(r.label, 10)
+      drawText(ctx, `— ${toSafe(r.hint)}`, { x: labelX + labelWidth + 8, top: t, size: 8.5, color: MUTED })
     }
-    drawTextRight(ctx, fmtCurrencyCents(r.value), { rightX: valueRightX, top: t, size: 9, bold: ri === 3 })
-    if (ri === 3) drawLine(ctx, MARGIN, t + rowH2 - 2, PAGE.width - MARGIN, t + rowH2 - 2, 0.4)
+    drawTextRight(ctx, fmtCurrencyCents(r.value), { rightX: valueRightX, top: t, size: 10, bold: r.emphasize })
+    if (r.emphasize) drawLine(ctx, MARGIN, t + rowH2 - 2, PAGE.width - MARGIN, t + rowH2 - 2, 0.4)
   })
 
-  // Final ACV — big navy box.
-  const acvTop = eqTop + eqRows.length * rowH2 + 12
-  const acvBoxH = 44
+  // Final ACV box (bigger, more presence).
+  const acvTop = top + eqRows.length * rowH2 + 16
+  const acvBoxH = 56
   drawRect(ctx, MARGIN, acvTop, contentWidth, acvBoxH, NAVY)
-  drawText(ctx, 'ACTUAL CASH VALUE', { x: MARGIN + 16, top: acvTop + 10, size: 10, bold: true, color: [0.85, 0.87, 0.92] })
-  drawText(ctx, 'Final settlement basis', { x: MARGIN + 16, top: acvTop + 24, size: 8, color: [0.7, 0.75, 0.85] })
-  drawTextRight(ctx, fmtCurrencyCents(result.acv), { rightX: MARGIN + contentWidth - 16, top: acvTop + 12, size: 24, bold: true, color: GOLD })
+  drawText(ctx, 'ACTUAL CASH VALUE', { x: MARGIN + 20, top: acvTop + 12, size: 11, bold: true, color: [0.85, 0.87, 0.92] })
+  drawText(ctx, 'Final settlement basis (inc. sales tax)', { x: MARGIN + 20, top: acvTop + 30, size: 9, color: [0.7, 0.75, 0.85] })
+  drawTextRight(ctx, fmtCurrencyCents(result.acv), { rightX: MARGIN + contentWidth - 20, top: acvTop + 14, size: 28, bold: true, color: GOLD })
 
   // ── NOTES (if any) ──────────────────────────────────────────────────────
   if (adjustments.notes && adjustments.notes.trim().length > 0) {
-    const notesTop = acvTop + acvBoxH + 18
+    const notesTop = acvTop + acvBoxH + 26
     drawText(ctx, 'NOTES', { x: MARGIN, top: notesTop, size: 8, bold: true, color: MUTED })
     drawLine(ctx, MARGIN, notesTop + 12, PAGE.width - MARGIN, notesTop + 12, 0.4)
-    // Simple wrap
-    const size = 9
+    const size = 9.5
     const maxW = contentWidth
     const words = toSafe(adjustments.notes.trim()).split(/\s+/)
     let line = ''
-    let y = notesTop + 20
+    let y = notesTop + 22
     for (const w of words) {
       const cand = line ? `${line} ${w}` : w
       if (fontBody.widthOfTextAtSize(cand, size) <= maxW) {
         line = cand
       } else {
         drawText(ctx, line, { x: MARGIN, top: y, size })
-        y += size + 3
+        y += size + 4
         line = w
       }
     }
     if (line) drawText(ctx, line, { x: MARGIN, top: y, size })
   }
 
-  // ── FOOTER ──────────────────────────────────────────────────────────────
-  const FOOT_TOP = PAGE.height - MARGIN + 4
-  drawLine(ctx, MARGIN, FOOT_TOP - 12, PAGE.width - MARGIN, FOOT_TOP - 12, 0.4)
-  drawText(ctx, 'Prepared by Eagleview', { x: MARGIN, top: FOOT_TOP, size: 8, color: MUTED })
-  drawTextRight(ctx, `File ${claim.maNumber || ''}  ·  ${today}`, { rightX: PAGE.width - MARGIN, top: FOOT_TOP, size: 8, color: MUTED })
+  drawFooter(ctx, claim, 2, TOTAL_PAGES)
 
   return doc.save()
 }
