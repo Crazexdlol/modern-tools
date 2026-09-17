@@ -1,6 +1,5 @@
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib'
-import fs from 'fs'
-import path from 'path'
+import { readTemplate } from '@/lib/pdf/template-path'
 
 export type AwardVariant = 'acv' | 'dv' | 'estimate'
 
@@ -36,9 +35,8 @@ function formatDate(dateStr: string): string {
   return dateStr
 }
 
-export async function fillAwardPdf(data: AwardPdfData): Promise<Uint8Array> {
-  const templatePath = path.join(process.cwd(), 'public', 'award-template.pdf')
-  const templateBytes = fs.readFileSync(templatePath)
+export async function fillAwardPdf(companySlug: string, data: AwardPdfData): Promise<Uint8Array> {
+  const templateBytes = readTemplate(companySlug, 'award-template.pdf')
   const doc = await PDFDocument.load(templateBytes)
   const form = doc.getForm()
   const timesRoman = await doc.embedFont(StandardFonts.TimesRoman)

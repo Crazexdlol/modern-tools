@@ -1,6 +1,5 @@
 import { PDFDocument, PDFName, PDFBool, PDFString, StandardFonts, rgb } from 'pdf-lib'
-import fs from 'fs'
-import path from 'path'
+import { readTemplate } from '@/lib/pdf/template-path'
 
 export interface NotesPdfData {
   date: string
@@ -59,9 +58,8 @@ function captureAndBlankDropdown(
   }
 }
 
-export async function fillNotesPdf(data: NotesPdfData): Promise<Uint8Array> {
-  const templatePath = path.join(process.cwd(), 'public', 'notes-template.pdf')
-  const templateBytes = fs.readFileSync(templatePath)
+export async function fillNotesPdf(companySlug: string, data: NotesPdfData): Promise<Uint8Array> {
+  const templateBytes = readTemplate(companySlug, 'notes-template.pdf')
   const doc = await PDFDocument.load(templateBytes)
   const form = doc.getForm()
 

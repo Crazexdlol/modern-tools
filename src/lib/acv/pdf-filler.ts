@@ -1,7 +1,6 @@
 import { PDFDocument, PDFName, PDFBool, PDFArray, PDFString, rgb, StandardFonts } from 'pdf-lib'
-import fs from 'fs'
-import path from 'path'
 import type { ClaimInfo, SelectedComp, ACVAdjustments, ACVResult } from './types'
+import { readTemplate } from '@/lib/pdf/template-path'
 
 function fmt(val: number): string {
   if (!val) return '$0.00'
@@ -48,13 +47,13 @@ function setDropdown(form: ReturnType<PDFDocument['getForm']>, name: string, val
 }
 
 export async function fillACVPdf(
+  companySlug: string,
   claim: ClaimInfo,
   comps: SelectedComp[],
   adjustments: ACVAdjustments,
   result: ACVResult
 ): Promise<Uint8Array> {
-  const templatePath = path.join(process.cwd(), 'public', 'acv-template.pdf')
-  const templateBytes = fs.readFileSync(templatePath)
+  const templateBytes = readTemplate(companySlug, 'acv-template.pdf')
   const doc = await PDFDocument.load(templateBytes)
   const form = doc.getForm()
   const timesRoman = await doc.embedFont(StandardFonts.TimesRoman)
