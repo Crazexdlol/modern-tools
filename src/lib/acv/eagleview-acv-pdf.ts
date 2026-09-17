@@ -43,6 +43,34 @@ function fmtDate(s: string | undefined): string {
   if (parts.length === 3) return `${parts[1]}/${parts[2]}/${parts[0]}`
   return s
 }
+// StandardFonts.Helvetica uses WinAnsi (CP1252) encoding — it throws on any
+// character outside that range (Δ, emoji, CJK, etc.). User-provided fields
+// (notes, insured name, address, ...) can contain anything, so we scrub to
+// WinAnsi-safe before drawing. Common typographic characters are mapped to
+// close ASCII equivalents; everything else becomes '?'.
+const WINANSI_REMAP: Record<string, string> = {
+  '–': '-',   // en dash
+  '—': '-',   // em dash
+  '‘': "'",   // left single quote
+  '’': "'",   // right single quote / apostrophe
+  '“': '"',   // left double quote
+  '”': '"',   // right double quote
+  '…': '...', // ellipsis
+  ' ': ' ',   // non-breaking space
+}
+function toSafe(s: string | undefined | null): string {
+  if (!s) return ''
+  let out = ''
+  for (const ch of s) {
+    const code = ch.charCodeAt(0)
+    if (code < 0x80) { out += ch; continue }                     // ASCII pass-through
+    if (WINANSI_REMAP[ch] !== undefined) { out += WINANSI_REMAP[ch]; continue }
+    // CP1252 covers 0xA0–0xFF. Approximate.
+    if (code >= 0xA0 && code <= 0xFF) { out += ch; continue }
+    out += '?'
+  }
+  return out
+}
 function yFromTop(top: number): number { return PAGE.height - top }
 
 function drawText(ctx: Ctx, text: string, opts: { x: number; top: number; size?: number; bold?: boolean; color?: [number, number, number]; maxWidth?: number }) {
@@ -147,9 +175,9 @@ export async function buildEagleviewACVPdf(
   drawLine(ctx, MARGIN, CLAIM_TOP + 14, PAGE.width - MARGIN, CLAIM_TOP + 14, 0.6, NAVY)
 
   const claimRow1: Array<{ label: string; value: string }> = [
-    { label: 'FILE #',       value: claim.maNumber || '—' },
-    { label: 'CLAIM #',      value: claim.claimNumber || '—' },
-    { label: 'INSURANCE CO', value: claim.insuranceCompany || '—' },
+    { label: 'FILE #',       value: toSafe(claim.maNumber) || '—' },
+    { label: 'CLAIM #',      value: toSafe(claim.claimNumber) || '—' },
+    { label: 'INSURANCE CO', value: toSafe(claim.insuranceCompany) || '—' },
     { label: 'DATE OF LOSS', value: fmtDate(claim.dateOfLoss) || '—' },
   ]
   const colW = contentWidth / 4
@@ -162,28 +190,28 @@ export async function buildEagleviewACVPdf(
   // Second row: Owner + Adjuster
   const claimRow2Top = CLAIM_TOP + 58
   drawText(ctx, 'INSURED / CLIENT', { x: MARGIN, top: claimRow2Top, size: 7, bold: true, color: MUTED })
-  drawText(ctx, claim.insuredName || '—', { x: MARGIN, top: claimRow2Top + 12, size: 10.5, bold: true, maxWidth: (contentWidth / 2) - 12 })
+  drawText(ctx, toSafe(claim.insuredName) || '—', { x: MARGIN, top: claimRow2Top + 12, size: 10.5, bold: true, maxWidth: (contentWidth / 2) - 12 })
   const ownerLine = [claim.ownerPhone, claim.ownerEmail].filter(Boolean).join(' · ')
-  if (ownerLine) drawText(ctx, ownerLine, { x: MARGIN, top: claimRow2Top + 26, size: 9, color: MUTED, maxWidth: (contentWidth / 2) - 12 })
-  if (claim.ownerAddress) drawText(ctx, claim.ownerAddress, { x: MARGIN, top: claimRow2Top + 39, size: 9, color: MUTED, maxWidth: (contentWidth / 2) - 12 })
+  if (ownerLine) drawText(ctx, toSafe(ownerLine), { x: MARGIN, top: claimRow2Top + 26, size: 9, color: MUTED, maxWidth: (contentWidth / 2) - 12 })
+  if (claim.ownerAddress) drawText(ctx, toSafe(claim.ownerAddress), { x: MARGIN, top: claimRow2Top + 39, size: 9, color: MUTED, maxWidth: (contentWidth / 2) - 12 })
 
   const adjX = MARGIN + contentWidth / 2
   drawText(ctx, 'ASSIGNED ADJUSTER', { x: adjX, top: claimRow2Top, size: 7, bold: true, color: MUTED })
-  drawText(ctx, claim.adjuster || '—', { x: adjX, top: claimRow2Top + 12, size: 10.5, bold: true, maxWidth: (contentWidth / 2) - 12 })
+  drawText(ctx, toSafe(claim.adjuster) || '—', { x: adjX, top: claimRow2Top + 12, size: 10.5, bold: true, maxWidth: (contentWidth / 2) - 12 })
   const adjLine = [claim.adjusterPhone, claim.adjusterEmail].filter(Boolean).join(' · ')
-  if (adjLine) drawText(ctx, adjLine, { x: adjX, top: claimRow2Top + 26, size: 9, color: MUTED, maxWidth: (contentWidth / 2) - 12 })
+  if (adjLine) drawText(ctx, toSafe(adjLine), { x: adjX, top: claimRow2Top + 26, size: 9, color: MUTED, maxWidth: (contentWidth / 2) - 12 })
 
   // ── LOSS VEHICLE ────────────────────────────────────────────────────────
   const VEH_TOP = claimRow2Top + 68
   drawText(ctx, 'LOSS VEHICLE', { x: MARGIN, top: VEH_TOP, size: 8, bold: true, color: GOLD })
   drawLine(ctx, MARGIN, VEH_TOP + 14, PAGE.width - MARGIN, VEH_TOP + 14, 0.6, NAVY)
-  drawText(ctx, vehicleStr || '—', { x: MARGIN, top: VEH_TOP + 22, size: 14, bold: true })
+  drawText(ctx, toSafe(vehicleStr) || '—', { x: MARGIN, top: VEH_TOP + 22, size: 14, bold: true })
 
   const vehRow = [
-    { label: 'VIN',     value: claim.vin || '—' },
+    { label: 'VIN',     value: toSafe(claim.vin) || '—' },
     { label: 'MILEAGE', value: `${fmtNumber(claim.mileage)} mi` },
-    { label: 'ENGINE',  value: claim.engine || '—' },
-    { label: 'DRIVE',   value: claim.drivetrain || '—' },
+    { label: 'ENGINE',  value: toSafe(claim.engine) || '—' },
+    { label: 'DRIVE',   value: toSafe(claim.drivetrain) || '—' },
   ]
   vehRow.forEach((f, i) => {
     const x = MARGIN + i * colW
@@ -212,7 +240,7 @@ export async function buildEagleviewACVPdf(
 
     // Comp header (year make model trim)
     const compTitle = [c.year, c.make, c.model, c.trim].filter(Boolean).join(' ')
-    drawText(ctx, compTitle, { x: cx + 10, top: CARD_TOP + 34, size: 10, bold: true, maxWidth: CARD_W - 20 })
+    drawText(ctx, toSafe(compTitle), { x: cx + 10, top: CARD_TOP + 34, size: 10, bold: true, maxWidth: CARD_W - 20 })
 
     // Listing details.
     const detailTop = CARD_TOP + 52
@@ -220,7 +248,7 @@ export async function buildEagleviewACVPdf(
     const details: Array<[string, string]> = [
       ['Listed', fmtCurrency(c.price)],
       ['Miles', `${fmtNumber(c.miles)} mi`],
-      ['Δ Miles', `${c.mileageDiffRaw > 0 ? '+' : ''}${fmtNumber(c.mileageDiffRaw)}`],
+      ['Miles diff', `${c.mileageDiffRaw > 0 ? '+' : ''}${fmtNumber(c.mileageDiffRaw)}`],
       ['Mileage adj', fmtCurrency(c.mileageAdjDollar)],
       ['Year adj', fmtCurrency(c.yearAdjDollar)],
     ]
@@ -262,7 +290,7 @@ export async function buildEagleviewACVPdf(
     drawText(ctx, r.label, { x: labelX, top: t, size: 9, color: r.value === 0 ? MUTED : BLACK, bold: ri === 3 })
     if (r.hint) {
       const labelWidth = fontBody.widthOfTextAtSize(r.label, 9)
-      drawText(ctx, `— ${r.hint}`, { x: labelX + labelWidth + 6, top: t, size: 8, color: MUTED })
+      drawText(ctx, `— ${toSafe(r.hint)}`, { x: labelX + labelWidth + 6, top: t, size: 8, color: MUTED })
     }
     drawTextRight(ctx, fmtCurrencyCents(r.value), { rightX: valueRightX, top: t, size: 9, bold: ri === 3 })
     if (ri === 3) drawLine(ctx, MARGIN, t + rowH2 - 2, PAGE.width - MARGIN, t + rowH2 - 2, 0.4)
@@ -284,7 +312,7 @@ export async function buildEagleviewACVPdf(
     // Simple wrap
     const size = 9
     const maxW = contentWidth
-    const words = adjustments.notes.trim().split(/\s+/)
+    const words = toSafe(adjustments.notes.trim()).split(/\s+/)
     let line = ''
     let y = notesTop + 20
     for (const w of words) {
