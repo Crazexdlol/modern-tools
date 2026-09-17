@@ -41,8 +41,8 @@ export default function LoginPage() {
       <div className="w-full max-w-sm">
         <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-8">
           <div className="flex flex-col items-center mb-8">
-            <Image src="/logo.png" alt="Modern Appraisers" width={160} height={48} className="h-12 w-auto mb-4" priority />
-            <h1 className="text-lg font-bold text-gray-900">Modern Tools</h1>
+            <Image src="/hamsportal-logo.png" alt="HamsPortal" width={64} height={64} className="h-16 w-16 mb-4" priority />
+            <h1 className="text-lg font-bold text-gray-900">HamsPortal</h1>
             <p className="text-sm text-gray-400 mt-1">Sign in to continue</p>
           </div>
 
