@@ -8,6 +8,10 @@ interface CallerContext {
   userId: string
   role: Role
   isSuperAdmin: boolean
+  // Post-multi-company: the company the caller is currently working as.
+  // Null pre-migration (column doesn't exist) or if the user has never
+  // resolved a company (multi-company user landing pre-picker).
+  activeCompanyId: string | null
 }
 
 // Reads the session from cookies (via @supabase/ssr), then reads the caller's
@@ -49,19 +53,35 @@ async function getCaller(): Promise<
   if (!user) {
     return { caller: null, errorResponse: NextResponse.json({ error: 'Not authenticated' }, { status: 401 }) }
   }
-  const { data: profile } = await supabase
+  // Try the full column set first; fall back to legacy set if active_company_id
+  // hasn't been migrated yet (pre-Phase-1 code paths remain callable).
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let profileData: any = null
+  const full = await supabase
     .from('profiles')
-    .select('id, role, is_super_admin')
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    .select('id, role, is_super_admin, active_company_id' as any)
     .eq('id', user.id)
     .maybeSingle()
-  if (!profile) {
+  if (full.error && full.error.code === '42703') {
+    const legacy = await supabase
+      .from('profiles')
+      .select('id, role, is_super_admin')
+      .eq('id', user.id)
+      .maybeSingle()
+    profileData = legacy.data
+  } else {
+    profileData = full.data
+  }
+  if (!profileData) {
     return { caller: null, errorResponse: NextResponse.json({ error: 'No profile' }, { status: 403 }) }
   }
   return {
     caller: {
-      userId: profile.id,
-      role: profile.role as Role,
-      isSuperAdmin: (profile as { is_super_admin?: boolean }).is_super_admin === true,
+      userId: profileData.id,
+      role: profileData.role as Role,
+      isSuperAdmin: profileData.is_super_admin === true,
+      activeCompanyId: profileData.active_company_id ?? null,
     },
     errorResponse: null,
   }
@@ -80,6 +100,32 @@ export async function requireSuperAdmin(): Promise<
   return authed
 }
 
+// Ensures the caller has an active_company_id set. Use in any route that
+// writes company-scoped data via the service client.
+//
+// Returns 400 if activeCompanyId is missing — either the migration hasn't run
+// yet (developer will see this in dev) or a multi-company user hasn't picked
+// a company yet (they'll be redirected to /select-company by the UI).
+export async function requireCompanyContext(): Promise<
+  { activeCompanyId: string; caller: CallerContext; errorResponse: null } |
+  { activeCompanyId: null; caller: null; errorResponse: NextResponse }
+> {
+  const authed = await requireAuth()
+  if (authed.errorResponse) return { activeCompanyId: null, caller: null, errorResponse: authed.errorResponse }
+  const caller = authed.caller!
+  if (!caller.activeCompanyId) {
+    return {
+      activeCompanyId: null,
+      caller: null,
+      errorResponse: NextResponse.json(
+        { error: 'No active company. Log out and back in to pick a company.' },
+        { status: 400 },
+      ),
+    }
+  }
+  return { activeCompanyId: caller.activeCompanyId, caller, errorResponse: null }
+}
+
 export interface WorkflowClaim {
   id: string
   status: 'open' | 'closed'
@@ -87,22 +133,46 @@ export interface WorkflowClaim {
   submittedAt: string | null
   statusPhase: string | null
   userId: string
+  companyId: string | null
 }
 
-export async function fetchClaim(id: string): Promise<WorkflowClaim | null> {
+// Fetches a claim scoped to a company. When companyId is passed, the row must
+// match — otherwise returns null (routes turn this into 404, matching the
+// "don't leak existence" contract). When companyId is undefined this function
+// behaves as before (used by super-admin cross-company paths or pre-migration
+// callers when the caller has no activeCompanyId yet).
+export async function fetchClaim(id: string, companyId?: string | null): Promise<WorkflowClaim | null> {
   const service = createServiceClient()
-  const { data, error } = await service
+  // Try selecting company_id; fall back if the column doesn't exist yet.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let row: any = null
+  const full = await service
     .from('acv_history')
-    .select('id, status, assigned_to, submitted_at, status_phase, user_id')
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    .select('id, status, assigned_to, submitted_at, status_phase, user_id, company_id' as any)
     .eq('id', id)
     .maybeSingle()
-  if (error || !data) return null
+  if (full.error && full.error.code === '42703') {
+    const legacy = await service
+      .from('acv_history')
+      .select('id, status, assigned_to, submitted_at, status_phase, user_id')
+      .eq('id', id)
+      .maybeSingle()
+    row = legacy.data
+  } else {
+    row = full.data
+  }
+  if (!row) return null
+  // Enforce company scoping when the caller provided a companyId AND the row
+  // has one. Missing row.company_id (pre-migration) falls through as OK.
+  if (companyId && row.company_id && row.company_id !== companyId) return null
   return {
-    id: data.id,
-    status: (data.status === 'closed' ? 'closed' : 'open'),
-    assignedTo: data.assigned_to,
-    submittedAt: data.submitted_at,
-    statusPhase: data.status_phase,
-    userId: data.user_id,
+    id: row.id,
+    status: (row.status === 'closed' ? 'closed' : 'open'),
+    assignedTo: row.assigned_to,
+    submittedAt: row.submitted_at,
+    statusPhase: row.status_phase,
+    userId: row.user_id,
+    companyId: row.company_id ?? null,
   }
 }
