@@ -16,6 +16,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/service'
 import { createClient as createServerClient } from '@/lib/supabase/server'
+import { scopedClient } from '@/lib/supabase/scoped'
 
 export const runtime = 'nodejs'
 export const maxDuration = 300
@@ -30,10 +31,18 @@ export async function POST(request: NextRequest) {
   const supa = await createServerClient()
   const { data: { user } } = await supa.auth.getUser()
   if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
-  const { data: prof } = await supa.from('profiles').select('marketing_access').eq('id', user.id).maybeSingle()
-  if (!prof || prof.marketing_access !== true) {
+  const { data: prof } = await supa
+    .from('profiles')
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    .select('marketing_access, active_company_id' as any)
+    .eq('id', user.id)
+    .maybeSingle()
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const profAny = prof as any
+  if (!profAny || profAny.marketing_access !== true) {
     return NextResponse.json({ error: 'marketing access required' }, { status: 403 })
   }
+  const activeCompanyId = (profAny.active_company_id as string | null | undefined) ?? null
 
   const body = await request.json().catch(() => null) as { approvals?: Approval[] } | null
   const approvals = Array.isArray(body?.approvals) ? body!.approvals! : []
@@ -41,7 +50,13 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'no approvals to commit' }, { status: 400 })
   }
 
-  const service = createServiceClient()
+  // Scope every claim-scoped read/write (acv_history + clients) to the
+  // caller's active company. New clients get stamped with company_id; claim
+  // backfills only look at claims in the current company.
+  const rawService = createServiceClient()
+  const service = activeCompanyId
+    ? scopedClient(rawService, activeCompanyId)
+    : rawService
   const results = {
     clientsCreated: 0,
     clientsReused: 0,

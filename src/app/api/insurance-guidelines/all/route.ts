@@ -1,17 +1,21 @@
 import { NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/service'
 import { requireAdmin } from '@/lib/auth/require-admin'
+import { scopedClient } from '@/lib/supabase/scoped'
 
 export const runtime = 'nodejs'
 
 // DELETE /api/insurance-guidelines/all
-// Deletes every guideline row. Admin-only. Returns the count deleted.
-// Use this before a fresh reimport to guarantee a clean slate.
+// Deletes every guideline row IN THE CALLER'S ACTIVE COMPANY. Admin-only.
+// Returns the count deleted. Use before a fresh reimport within a company.
 export async function DELETE() {
-  const { errorResponse } = await requireAdmin()
+  const { caller, errorResponse } = await requireAdmin()
   if (errorResponse) return errorResponse
 
-  const service = createServiceClient()
+  const rawService = createServiceClient()
+  const service = caller!.activeCompanyId
+    ? scopedClient(rawService, caller!.activeCompanyId)
+    : rawService
   const { data: rows, error: selErr } = await service
     .from('insurance_guidelines')
     .select('id')

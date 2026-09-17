@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/service'
 import { requireAdmin } from '@/lib/auth/require-admin'
+import { scopedClient } from '@/lib/supabase/scoped'
 
 export const runtime = 'nodejs'
 
@@ -8,14 +9,17 @@ export async function DELETE(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const { errorResponse } = await requireAdmin()
+  const { caller, errorResponse } = await requireAdmin()
   if (errorResponse) return errorResponse
 
   const { id } = await params
   if (typeof id !== 'string' || !id.trim()) {
     return NextResponse.json({ error: 'id required' }, { status: 400 })
   }
-  const service = createServiceClient()
+  const rawService = createServiceClient()
+  const service = caller!.activeCompanyId
+    ? scopedClient(rawService, caller!.activeCompanyId)
+    : rawService
   // 404 explicitly if the row doesn't exist so the admin knows the click
   // did nothing (previously a bad id returned {ok:true} with 0 rows touched).
   const { data: existing } = await service

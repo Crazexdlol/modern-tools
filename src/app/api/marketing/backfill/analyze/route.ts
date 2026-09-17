@@ -10,6 +10,7 @@ import { NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/service'
 import { requireAuth } from '@/lib/auth/require-admin'
 import { createClient as createServerClient } from '@/lib/supabase/server'
+import { scopedClient } from '@/lib/supabase/scoped'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
@@ -89,7 +90,7 @@ function similarity(a: string, b: string): number {
 }
 
 export async function GET() {
-  const { errorResponse } = await requireAuth()
+  const { caller, errorResponse } = await requireAuth()
   if (errorResponse) return errorResponse
 
   // Access gate: caller must have marketing_access. RLS on clients enforces
@@ -103,7 +104,12 @@ export async function GET() {
     return NextResponse.json({ error: 'marketing access required' }, { status: 403 })
   }
 
-  const service = createServiceClient()
+  // Scope acv_history reads to the caller's active company — analysis returns
+  // clusters for the current company only.
+  const rawService = createServiceClient()
+  const service = caller!.activeCompanyId
+    ? scopedClient(rawService, caller!.activeCompanyId)
+    : rawService
   // Pull raw clientName + client_id from every claim. Cheap select.
   const { data, error } = await service
     .from('acv_history')

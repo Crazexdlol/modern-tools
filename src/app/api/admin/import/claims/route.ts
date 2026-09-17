@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/service'
 import { requireAdmin } from '@/lib/auth/require-admin'
+import { scopedClient } from '@/lib/supabase/scoped'
 
 export const runtime = 'nodejs'
 
@@ -191,12 +192,18 @@ export async function POST(request: NextRequest) {
     return obj
   })
 
-  const service = createServiceClient()
+  // Scope every acv_history read/write to the admin's active company. Rows
+  // get imported into that company; duplicate-MA# check only looks at that
+  // company's existing rows so an MA# collision across companies is allowed.
+  const rawService = createServiceClient()
+  const service = caller!.activeCompanyId
+    ? scopedClient(rawService, caller!.activeCompanyId)
+    : rawService
 
   // Pull existing MA numbers for duplicate detection + profiles for assignee resolution.
   const [existingMAResult, profilesResult] = await Promise.all([
     service.from('acv_history').select('ma_number').not('ma_number', 'is', null),
-    service.from('profiles').select('id, name, email'),
+    rawService.from('profiles').select('id, name, email'),
   ])
   if (existingMAResult.error) return NextResponse.json({ error: existingMAResult.error.message }, { status: 500 })
   if (profilesResult.error)   return NextResponse.json({ error: profilesResult.error.message }, { status: 500 })

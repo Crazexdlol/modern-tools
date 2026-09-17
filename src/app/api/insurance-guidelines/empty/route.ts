@@ -1,17 +1,21 @@
 import { NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/service'
 import { requireAdmin } from '@/lib/auth/require-admin'
+import { scopedClient } from '@/lib/supabase/scoped'
 
 export const runtime = 'nodejs'
 
 // DELETE /api/insurance-guidelines/empty
 // Removes every guideline row whose `guidelines` text is empty or
-// whitespace-only. Admin-only. Returns the count deleted.
+// whitespace-only, IN THE CALLER'S ACTIVE COMPANY. Admin-only.
 export async function DELETE() {
-  const { errorResponse } = await requireAdmin()
+  const { caller, errorResponse } = await requireAdmin()
   if (errorResponse) return errorResponse
 
-  const service = createServiceClient()
+  const rawService = createServiceClient()
+  const service = caller!.activeCompanyId
+    ? scopedClient(rawService, caller!.activeCompanyId)
+    : rawService
 
   // Find all empty rows first (so we can return the exact deleted count).
   // Uses regex '^\s*$' — matches empty or whitespace-only.

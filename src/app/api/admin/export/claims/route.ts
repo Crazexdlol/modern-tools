@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/service'
 import { requireAdmin } from '@/lib/auth/require-admin'
+import { scopedClient } from '@/lib/supabase/scoped'
 
 export const runtime = 'nodejs'
 
@@ -59,7 +60,7 @@ function fmtDate(v: string | null | undefined): string {
 // GET /api/admin/export/claims?status=all|open|closed&from=YYYY-MM-DD&to=YYYY-MM-DD
 // Returns a CSV file download. Admin-only.
 export async function GET(request: NextRequest) {
-  const { errorResponse } = await requireAdmin()
+  const { caller, errorResponse } = await requireAdmin()
   if (errorResponse) return errorResponse
 
   const url = new URL(request.url)
@@ -67,7 +68,12 @@ export async function GET(request: NextRequest) {
   const from = url.searchParams.get('from') // YYYY-MM-DD
   const to = url.searchParams.get('to')     // YYYY-MM-DD
 
-  const service = createServiceClient()
+  // Scope to the admin's active company. Falls back to raw service client
+  // when activeCompanyId is null (pre-migration).
+  const rawService = createServiceClient()
+  const service = caller!.activeCompanyId
+    ? scopedClient(rawService, caller!.activeCompanyId)
+    : rawService
 
   let query = service
     .from('acv_history')

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/service'
 import { requireAuth } from '@/lib/auth/require-admin'
+import { scopedClient } from '@/lib/supabase/scoped'
 
 export const runtime = 'nodejs'
 
@@ -66,7 +67,14 @@ export async function GET(request: NextRequest) {
     })
   }
 
-  const service = createServiceClient()
+  // Duplicates search is scoped to the caller's active company — a Modern
+  // Appraisers user searching by VIN won't get matches from Eagleview claims
+  // (and vice versa). Falls back to unscoped raw service client when the
+  // caller has no active company (pre-migration; column doesn't exist yet).
+  const rawService = createServiceClient()
+  const service = caller!.activeCompanyId
+    ? scopedClient(rawService, caller!.activeCompanyId)
+    : rawService
   const isAdmin = caller!.role === 'admin'
 
   let vinMatches: Match[] = []

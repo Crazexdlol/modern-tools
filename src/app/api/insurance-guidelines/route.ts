@@ -2,15 +2,19 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/service'
 import { requireAdmin, requireAuth } from '@/lib/auth/require-admin'
 import { normalizeCompanyKey } from '@/lib/supabase/insurance-guidelines'
+import { scopedClient } from '@/lib/supabase/scoped'
 
 export const runtime = 'nodejs'
 
 // GET — list every guideline. Any authenticated caller.
 export async function GET() {
-  const { errorResponse } = await requireAuth()
+  const { caller, errorResponse } = await requireAuth()
   if (errorResponse) return errorResponse
 
-  const service = createServiceClient()
+  const rawService = createServiceClient()
+  const service = caller!.activeCompanyId
+    ? scopedClient(rawService, caller!.activeCompanyId)
+    : rawService
   const { data, error } = await service
     .from('insurance_guidelines')
     .select('*')
@@ -38,7 +42,10 @@ export async function POST(request: NextRequest) {
   if (!name) return NextResponse.json({ error: 'name cannot be empty' }, { status: 400 })
   const nameKey = normalizeCompanyKey(name)
 
-  const service = createServiceClient()
+  const rawService = createServiceClient()
+  const service = caller!.activeCompanyId
+    ? scopedClient(rawService, caller!.activeCompanyId)
+    : rawService
   const nowIso = new Date().toISOString()
 
   // If body.id is given, update that exact row (allows renames without
