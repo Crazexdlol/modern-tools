@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/service'
 import { requireAdmin } from '@/lib/auth/require-admin'
 import { normalizeCompanyKey } from '@/lib/supabase/insurance-guidelines'
+import { scopedClient } from '@/lib/supabase/scoped'
 
 export const runtime = 'nodejs'
 
@@ -68,7 +69,10 @@ export async function POST(request: NextRequest) {
     }, { status: 400 })
   }
 
-  const service = createServiceClient()
+  const rawService = createServiceClient()
+  const service = caller!.activeCompanyId
+    ? scopedClient(rawService, caller!.activeCompanyId)
+    : rawService
   const { data: existing, error: exErr } = await service
     .from('insurance_guidelines')
     .select('id, name_key')

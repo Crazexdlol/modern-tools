@@ -9,7 +9,8 @@
     "lint": "eslint",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:isolation": "vitest run __tests__/isolation.test.ts __tests__/insert-cannot-forge.test.ts __tests__/cross-company-reassignment-blocked.test.ts __tests__/dual-user-switch.test.ts"
+    "test:isolation": "vitest run __tests__/isolation.test.ts __tests__/insert-cannot-forge.test.ts __tests__/cross-company-reassignment-blocked.test.ts __tests__/dual-user-switch.test.ts",
+    "lint:no-raw-acv-queries": "node scripts/check-no-raw-claim-queries.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",
