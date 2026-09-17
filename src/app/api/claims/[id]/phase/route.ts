@@ -77,7 +77,7 @@ export async function POST(
     id: crypto.randomUUID(),
     claim_id: id,
     sender_id: null,
-    sender_name: 'Modern Tools (Auto)',
+    sender_name: 'HamsPortal (Auto)',
     recipient_ids: [],
     recipient_names: [],
     body: msgBody,

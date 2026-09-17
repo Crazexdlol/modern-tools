@@ -12,7 +12,7 @@ const FIRST_NAG_BUSINESS_DAYS = 2
 const REPEAT_NAG_BUSINESS_DAYS = 1
 
 const NAG_BODY =
-  'This is an automated status request from Modern Tools. Please post a quick ' +
+  'This is an automated status request from HamsPortal. Please post a quick ' +
   'update on this claim (what’s next, any blockers, expected close date).'
 
 interface ClaimRow {
@@ -164,7 +164,7 @@ export async function GET(request: NextRequest) {
       id,
       claim_id: n.claimId,
       sender_id: null,
-      sender_name: 'Modern Tools (Auto)',
+      sender_name: 'HamsPortal (Auto)',
       recipient_ids: [n.recipientId],
       recipient_names: [n.recipientName],
       body: NAG_BODY,

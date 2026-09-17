@@ -3570,7 +3570,7 @@ function ClaimWorkspaceInner({ claimId }: { claimId: string }) {
       fetch(`/api/claims/${encodeURIComponent(id)}/auto-message`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ body: noteBody, senderName: 'Modern Tools (Auto)' }),
+        body: JSON.stringify({ body: noteBody, senderName: 'HamsPortal (Auto)' }),
       }).catch((e) => console.warn('auto-message post failed:', e))
     }
     setCreatingClaim(false)
