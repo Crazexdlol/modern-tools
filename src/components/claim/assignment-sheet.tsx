@@ -94,7 +94,7 @@ export function AssignmentSheet({ data }: { data: AssignmentSheetData }) {
         <div className="header">
           <div className="header-left">
             {/* eslint-disable-next-line @next/next/no-img-element -- plain <img> renders more reliably than next/image in a print portal */}
-            <img src="/logo.png" alt="Modern Appraisers" className="logo" />
+            <img src="/companies/modern-appraisers/logo.png" alt="Modern Appraisers" className="logo" />
           </div>
           <div className="header-right">
             <div className="title">Assignment Sheet</div>
