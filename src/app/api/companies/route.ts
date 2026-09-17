@@ -18,9 +18,12 @@ export async function GET() {
   if (error && error.code !== '42P01') {
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
-  const companies = ((data ?? []) as Array<{ companies: { id: string; slug: string; name: string; logo_path: string; brand_color: string } | null }>)
-    .map(r => r.companies)
-    .filter((c): c is NonNullable<typeof c> => !!c)
+  // Supabase-js sometimes types the join relation as an array — normalize.
+  type CompanyRow = { id: string; slug: string; name: string; logo_path: string; brand_color: string }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const rows = (data ?? []) as Array<{ companies: CompanyRow | CompanyRow[] | null }>
+  const companies: CompanyRow[] = rows
+    .flatMap(r => Array.isArray(r.companies) ? r.companies : (r.companies ? [r.companies] : []))
 
   return NextResponse.json({
     activeCompanyId: caller!.activeCompanyId,
