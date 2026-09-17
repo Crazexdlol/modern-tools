@@ -18,6 +18,69 @@ Read `CLAUDE.md` first if you haven't. Then read the top entry here before touch
 
 ---
 
+## 2026-09-17 (early morning) — HamsPortal Phase 3: Eagleview go-live — company switcher, admin UI, per-company templates
+
+**Worked on:** Phase 3 of the HamsPortal multi-company rollout. Eagleview is now an operational second company. An admin can grant EV access to any user via a new Companies tab in user settings; users with 2+ companies see a switcher pill in the header; switching flips the header logo, filters data to that company, and reloads. Report PDFs are company-scoped — MA reports still work, EV attempts to generate any PDF return a friendly "no template configured" message.
+
+**Plan:** `docs/superpowers/plans/2026-09-16-hamsportal-eagleview-golive-phase-3.md` (18 tasks, all completed)
+
+**Changed:**
+
+_Asset reorg:_
+- `public/companies/modern-appraisers/logo.png` (moved from `public/logo.png`).
+- `public/companies/modern-appraisers/templates/*.pdf` — moved every root PDF (acv, award, notes, acv-contract, certificate-of-appraisal) and the `dv-templates/` + `invoice-templates/` subdirs.
+- `public/companies/eagleview/logo.png` (staged from backups).
+- `public/companies/eagleview/templates/.gitkeep` — empty folder, ready for Henry to drop EV templates in.
+- Deleted `public/logo.png`, `public/*.pdf` at root, `public/dv-templates/`, `public/invoice-templates/`.
+
+_New helpers:_
+- `src/lib/pdf/template-path.ts` — `getTemplatePath(slug, filename)` + `NoTemplateError` class with `code = 'NO_TEMPLATE'`. Message is user-friendly for direct display.
+- `src/lib/pdf/company-slug.ts` — `getCompanySlug(companyId)` with in-memory cache.
+
+_PDF fillers now company-aware:_
+- `src/lib/acv/pdf-filler.ts`, `award-pdf-filler.ts`, `notes-pdf-filler.ts`, `dv-pdf-filler.ts` — accept `companySlug` as first param, load via `readTemplate`.
+- `src/lib/invoice/invoice-pdf-filler.ts` — same.
+- `src/lib/storage/pdf.ts` — throws `NoTemplateError` for non-MA slug (programmatic PDF; when Henry builds EV storage layout, this gate widens).
+- `src/app/api/acv/generate-contract-pdf/route.ts` — inline template load uses `readTemplate`; scopedClient reads claim's company_id.
+
+_All 7 PDF generate routes updated:_
+- `/api/acv/generate-{pdf,award-pdf,notes-pdf,dv-pdf,contract-pdf}/route.ts`, `/api/invoices/generate-pdf/route.ts`, `/api/storage/generate-pdf/route.ts` — resolve companySlug via `getCompanySlug(caller.activeCompanyId)`, pass to filler, catch `NoTemplateError` → return `{ error, code: 'NO_TEMPLATE', companySlug }` with 400.
+
+_Company data + UI:_
+- `src/app/api/companies/route.ts` (new) — GET returns caller's `user_companies` + `activeCompanyId`.
+- `src/app/api/admin/companies/route.ts` (new) — GET returns every company (admin picker).
+- `src/app/api/admin/users/[id]/companies/route.ts` (new) — GET returns target user's memberships; PUT syncs to a target `companyIds[]`. Auto-repoints active_company_id if the currently-active company gets revoked.
+- `src/hooks/use-active-company.ts` — now returns `{ activeCompanyId, activeCompany, loading }` with full company row (logo, slug, name, brand color).
+- `src/hooks/use-user-companies.ts` (new) — hook for the switcher.
+- `src/components/company-switcher.tsx` (new) — pill with dropdown, renders only for users with 2+ companies, POSTs `/api/company/switch` + reloads.
+- `src/components/app-header.tsx` — logo path is dynamic (active company); `<CompanySwitcher />` mounted next to it.
+- `src/components/claim/assignment-sheet.tsx`, `src/lib/supabase/middleware.ts` — updated to reference `/companies/modern-appraisers/logo.png` and exempt `/companies/*` from auth.
+- `src/app/admin/settings/users/[id]/_tabs/companies-tab.tsx` (new) — checkbox panel driven by the two admin APIs.
+- `src/app/admin/settings/users/[id]/profile-detail-client.tsx` — Companies tab wired in between Permissions and Fees.
+
+**Deploy status:** LIVE. `dpl_7cnkmvNVzJhEELvweeKYqAvy6PCk`. Alias `modern-tools-rho.vercel.app` verified flipped, ● Ready. `npx tsc --noEmit` clean; `npm run build` clean; `npm run lint:no-raw-acv-queries` clean; 6/6 scoped-client unit tests + 9/9 isolation tests all pass.
+
+**Rollback:**
+```
+npx vercel promote https://modern-tools-pre99i3lx-henry-as-projects-88caed67.vercel.app --scope henry-as-projects-88caed67 --yes
+```
+That's `dpl_E5mY5o3mjUBheJAyyynfG5cukU8E` — the Phase 2 build. No DB rollback needed for Phase 3 — schema hasn't changed since Phase 1.
+
+**In progress / broken / unknowns:**
+- **Henry to smoke test on live**: (1) log in as admin, go to `/admin/settings/users/<henry's-id>` → new Companies tab, check Eagleview + Save, (2) refresh — a "Modern Appraisers ▾" pill appears next to the logo in the header (that's the switcher), (3) click it → pick Eagleview → page reloads with blue-H Eagleview logo in header + 0 claims dashboard, (4) once inside EV, try to generate a PDF from any hypothetical EV claim — should show the friendly "This report isn't set up for the current company yet" message rather than a broken download, (5) switch back to Modern Appraisers → full MA view restored.
+- Eagleview has zero claims, zero templates, zero guidelines by design. Henry seeds when ready.
+- `src/lib/storage/logo-data.ts` still base64-embeds the MA logo (used only by the storage-charges programmatic PDF, which is now MA-only until Henry builds EV's version).
+
+**Deferred to a possible Phase 4 or later:**
+- Insurance guidelines "Import from other company" button (per Henry's earlier ask). EV starts with 0 guidelines; scoped read/write already in place.
+- Per-user-per-company email (`user_companies.email_in_company`) editable in UI. Column exists in schema.
+- Per-company brand colors in the UI theme (companies.brand_color exists; only header logo consumes company data today).
+- Per-company AI framing tweaks in the help assistant prompt.
+
+**Next:** Whatever Henry brings up next. HamsPortal + multi-company rollout is functionally complete.
+
+---
+
 ## 2026-09-16 (very late night) — HamsPortal Phase 2: login-page rebrand + platform-name swap deployed
 
 **Worked on:** Phase 2 of the HamsPortal rebrand. The pre-login surface + every platform-name identifier flip from "Modern Tools" to "HamsPortal". Post-login header still shows the Modern Appraisers logo (that's the company inside the platform; Eagleview joins in Phase 3).
