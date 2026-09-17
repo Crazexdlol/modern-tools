@@ -52,7 +52,11 @@ export function AppHeader() {
 
   const displayLabel = profile?.name || profile?.email || ''
   const { activeCompany } = useActiveCompany()
-  const headerLogoPath = activeCompany?.logoPath ?? '/companies/modern-appraisers/logo.png'
+  // Header uses the -on-dark variant of the logo (white/light elements so the
+  // dark bg-gray-950 header renders it cleanly). Each company ships a
+  // logo-on-dark.png next to logo.png; the derived path just swaps the suffix.
+  const baseLogoPath = activeCompany?.logoPath ?? '/companies/modern-appraisers/logo.png'
+  const headerLogoPath = baseLogoPath.replace(/\.png$/, '-on-dark.png')
   const headerCompanyName = activeCompany?.name ?? 'Modern Appraisers'
 
   return (
