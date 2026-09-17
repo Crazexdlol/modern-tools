@@ -18,6 +18,49 @@ Read `CLAUDE.md` first if you haven't. Then read the top entry here before touch
 
 ---
 
+## 2026-09-16 (very late night) — HamsPortal Phase 2: login-page rebrand + platform-name swap deployed
+
+**Worked on:** Phase 2 of the HamsPortal rebrand. The pre-login surface + every platform-name identifier flip from "Modern Tools" to "HamsPortal". Post-login header still shows the Modern Appraisers logo (that's the company inside the platform; Eagleview joins in Phase 3).
+
+**Plan:** `docs/superpowers/plans/2026-09-16-hamsportal-rebrand-phase-2.md` (14 tasks, all completed)
+
+**Changed:**
+- `public/hamsportal-logo.png` (new) — HAMS blue-H logo, 315KB, staged from backups.
+- `src/app/login/page.tsx` — swapped `/logo.png` (Modern Appraisers) → `/hamsportal-logo.png`; heading text "Modern Tools" → "HamsPortal". 64x64 square logo instead of 160x48 rectangular.
+- `src/app/layout.tsx` — `metadata.title` = "HamsPortal"; description updated to platform-neutral wording.
+- `package.json` + `package-lock.json` — package `name` field flipped from "modern-tools" to "hamsportal". `npm install` succeeded post-rename.
+- `src/app/help/help-client.tsx` — 2 user-visible strings ("Ask me anything about how to do something in HamsPortal", "Henry only answers how-to questions about HamsPortal").
+- `src/app/api/help/ask/route.ts` — 5 "Modern Tools" mentions in the Henry AI system prompt now say "HamsPortal" (referring to the platform); "Modern Appraisers" preserved wherever it refers to the company.
+- `src/app/api/claims/[id]/auto-message/route.ts`, `.../phase/route.ts`, `src/app/api/cron/status-requests/route.ts`, `src/components/claim/ClaimWorkspace.tsx` — auto-message `sender_name` and cron nag body use "HamsPortal (Auto)" and "from HamsPortal".
+- `scripts/seed-help-articles.mjs` — 4 KB articles reference HamsPortal (existing DB rows unchanged; re-run the seeder to refresh).
+- `scripts/cleanup-post-sync.mjs`, `scripts/sync-claims-from-csv.mjs`, `scripts/transform-guidelines.mjs` — internal comments updated.
+- `CLAUDE.md` — intro line + product-context section updated. Historical body preserved with a note explaining the rename.
+
+**Explicitly preserved (per plan):**
+- `docs/SESSIONS.md` older entries — history.
+- `supabase/migration-*.sql` header comments — history.
+- `docs/superpowers/**` older specs/plans — history.
+- `public/logo.png` at that literal path — post-login header still uses it (Phase 3 moves it under `public/companies/modern-appraisers/`).
+- Local folder path `C:\XSFA\Modern Tools Official` — Henry's decision to not rename.
+- Vercel project name (`modern-tools`) and legacy alias (`modern-tools-rho.vercel.app`) — kept working forever alongside `hamsportal.com`.
+- GitHub repo `Crazexdlol/modern-tools` — Henry hasn't asked to rename yet.
+
+**Deploy status:** LIVE. `dpl_E5mY5o3mjUBheJAyyynfG5cukU8E`. Alias `modern-tools-rho.vercel.app` verified flipped, status ● Ready. `npx tsc --noEmit` clean; `npm run build` clean; `npm run lint:no-raw-acv-queries` clean; scoped-client unit tests pass.
+
+**Rollback:**
+```
+npx vercel promote https://modern-tools-eywl5yzeg-henry-as-projects-88caed67.vercel.app --scope henry-as-projects-88caed67 --yes
+```
+That's `dpl_4c8RWm9ANbnmgCkpSEhuWPhie9nd` — the Phase 1 deploy from earlier tonight (still branded "Modern Tools"). No DB rollback needed — Phase 2 is pure code / assets.
+
+**In progress / broken / unknowns:**
+- Henry to eyeball live login page in a private/incognito window: HAMS logo shows, heading reads "HamsPortal", browser tab title reads "HamsPortal". Post-login should be unchanged.
+- Phase 3 (Eagleview go-live) not started: adds first EV users, EV logo, empty-template state, company switcher for dual-company users, per-company template resolution.
+
+**Next:** Phase 3 when Henry gives the go.
+
+---
+
 ## 2026-09-16 (late night) — HamsPortal Phase 1: multi-company infrastructure deployed (no visible change)
 
 **Worked on:** Phase 1 of the HamsPortal rebrand + multi-company retrofit. Adds companies (Modern Appraisers + Eagleview seeded) and per-company data isolation without touching any user-visible behavior. Modern Appraisers users log in and see everything exactly as before; Eagleview exists in the DB but has zero users, zero claims, zero logo.
