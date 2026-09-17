@@ -64,7 +64,7 @@ A claim can use one, two, or all three. Leaving Claim Type empty shows every too
   },
   {
     question: 'How do I upload documents to a claim?',
-    answer: `Open the claim, go to the Documents tab. Drag files in from your desktop (PDF, JPG, PNG, TIFF, etc.) or click to browse. Files are stored privately for the claim and visible to every signed-in team member. Report PDFs that Modern Tools generates (ACV Report, Award, Closing Notes, DV Report, Invoice, Estimate Review) auto-file here when you produce them.`,
+    answer: `Open the claim, go to the Documents tab. Drag files in from your desktop (PDF, JPG, PNG, TIFF, etc.) or click to browse. Files are stored privately for the claim and visible to every signed-in team member. Report PDFs that HamsPortal generates (ACV Report, Award, Closing Notes, DV Report, Invoice, Estimate Review) auto-file here when you produce them.`,
     tags: ['documents', 'upload'],
   },
   {
@@ -122,12 +122,12 @@ The first is business-partner-specific text; the second is documents attached to
   },
   {
     question: 'Who is Henry (the assistant on this page)?',
-    answer: `Henry is the built-in help assistant for Modern Tools. Type a question in the search box and click "Ask Henry" — Henry answers using the curated articles above and knowledge about how the app is used. Henry only answers "how do I do X in Modern Tools" questions. For business rules, pricing, or anything Henry says he doesn't know, ask an admin directly.`,
+    answer: `Henry is the built-in help assistant for HamsPortal. Type a question in the search box and click "Ask Henry" — Henry answers using the curated articles above and knowledge about how the app is used. Henry only answers "how do I do X in HamsPortal" questions. For business rules, pricing, or anything Henry says he doesn't know, ask an admin directly.`,
     tags: ['help', 'henry'],
   },
   {
     question: 'Can Henry answer questions about how the app is built, its data, or its setup?',
-    answer: `No. Henry only answers "how do I do X in Modern Tools." He won't discuss technology, security, data storage, integrations, business policy, pricing, or anything beyond how to use the app. Those questions get politely refused. If you're an admin or developer who needs that info, contact the tech lead directly.`,
+    answer: `No. Henry only answers "how do I do X in HamsPortal." He won't discuss technology, security, data storage, integrations, business policy, pricing, or anything beyond how to use the app. Those questions get politely refused. If you're an admin or developer who needs that info, contact the tech lead directly.`,
     tags: ['help', 'henry'],
   },
 
@@ -201,7 +201,7 @@ There's also a standalone Invoice builder at Reports → Invoice for one-off inv
   },
   {
     question: `What is Comp Finder and how do I use it?`,
-    answer: `Comp Finder is inside the ACV Report tool. It searches for comparable vehicles based on the loss vehicle's year, make, model, trim, mileage, and ZIP. You pick which comparables to include, adjust for mileage and year differences, and Modern Tools computes the ACV from your selections. Toggle between Comp Finder and Loss Search using the switch inside the ACV tab.`,
+    answer: `Comp Finder is inside the ACV Report tool. It searches for comparable vehicles based on the loss vehicle's year, make, model, trim, mileage, and ZIP. You pick which comparables to include, adjust for mileage and year differences, and HamsPortal computes the ACV from your selections. Toggle between Comp Finder and Loss Search using the switch inside the ACV tab.`,
     tags: ['acv', 'comp-finder', 'tools'],
   },
   {
