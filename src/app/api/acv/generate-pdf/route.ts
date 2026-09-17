@@ -4,13 +4,15 @@ import { calculateACV } from '@/lib/acv/calculations'
 import type { ClaimInfo, SelectedComp, ACVAdjustments } from '@/lib/acv/types'
 import { requireAuth } from '@/lib/auth/require-admin'
 import { sanitizeFilename } from '@/lib/sanitize-filename'
+import { getCompanySlug } from '@/lib/pdf/company-slug'
+import { NoTemplateError, NO_TEMPLATE_CODE } from '@/lib/pdf/template-path'
 
 // pdf-lib + fs.readFileSync require the Node runtime; keep this explicit
 // so a future edge default flip doesn't silently break the route.
 export const runtime = 'nodejs'
 
 export async function POST(request: NextRequest) {
-  const { errorResponse } = await requireAuth()
+  const { caller, errorResponse } = await requireAuth()
   if (errorResponse) return errorResponse
   try {
     const body = await request.json()
@@ -20,8 +22,9 @@ export async function POST(request: NextRequest) {
       adjustments,
     }: { claim: ClaimInfo; comps: SelectedComp[]; adjustments: ACVAdjustments } = body
 
+    const companySlug = await getCompanySlug(caller!.activeCompanyId)
     const result = calculateACV(comps, adjustments)
-    const pdfBytes = await fillACVPdf(claim, comps, adjustments, result)
+    const pdfBytes = await fillACVPdf(companySlug, claim, comps, adjustments, result)
     const buffer = Buffer.from(pdfBytes)
 
     return new NextResponse(buffer, {
@@ -31,6 +34,12 @@ export async function POST(request: NextRequest) {
       },
     })
   } catch (err) {
+    if (err instanceof NoTemplateError) {
+      return NextResponse.json(
+        { error: err.message, code: NO_TEMPLATE_CODE, companySlug: err.companySlug },
+        { status: 400 },
+      )
+    }
     console.error('PDF generation error:', err)
     return NextResponse.json(
       { error: err instanceof Error ? err.message : 'PDF generation failed' },
