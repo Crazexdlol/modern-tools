@@ -2,21 +2,32 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/lib/auth/require-admin'
 import { sanitizeFilename } from '@/lib/sanitize-filename'
 import { PDFDocument } from 'pdf-lib'
-import fs from 'fs'
-import path from 'path'
+import { readTemplate, NoTemplateError, NO_TEMPLATE_CODE } from '@/lib/pdf/template-path'
+import { getCompanySlug } from '@/lib/pdf/company-slug'
+import { createServiceClient } from '@/lib/supabase/service'
 
 export const runtime = 'nodejs'
 
 export async function POST(request: NextRequest) {
-  const { errorResponse } = await requireAuth()
+  const { caller, errorResponse } = await requireAuth()
   if (errorResponse) return errorResponse
 
   try {
     const body = await request.json()
-    const { values, maNumber }: { values: Record<string, string | boolean>; maNumber?: string } = body
+    const { values, maNumber, claimId }: { values: Record<string, string | boolean>; maNumber?: string; claimId?: string } = body
 
-    const templatePath = path.join(process.cwd(), 'public', 'acv-contract-template.pdf')
-    const templateBytes = fs.readFileSync(templatePath)
+    // Resolve company slug from claim (or fall back to caller's active).
+    let companySlug: string
+    if (claimId) {
+      const svc = createServiceClient()
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data } = await svc.from('acv_history').select('company_id' as any).eq('id', claimId).maybeSingle()
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      companySlug = await getCompanySlug((data as any)?.company_id ?? caller!.activeCompanyId)
+    } else {
+      companySlug = await getCompanySlug(caller!.activeCompanyId)
+    }
+    const templateBytes = readTemplate(companySlug, 'acv-contract-template.pdf')
     const pdfDoc = await PDFDocument.load(templateBytes)
     const form = pdfDoc.getForm()
 
@@ -75,6 +86,12 @@ export async function POST(request: NextRequest) {
       },
     })
   } catch (err) {
+    if (err instanceof NoTemplateError) {
+      return NextResponse.json(
+        { error: err.message, code: NO_TEMPLATE_CODE, companySlug: err.companySlug },
+        { status: 400 },
+      )
+    }
     console.error('[generate-contract-pdf] error:', err)
     return NextResponse.json(
       { error: err instanceof Error ? err.message : 'PDF generation failed' },

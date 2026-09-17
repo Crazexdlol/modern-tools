@@ -1,6 +1,5 @@
 import { PDFDocument, PDFName, PDFBool, PDFString, StandardFonts } from 'pdf-lib'
-import fs from 'fs'
-import path from 'path'
+import { readTemplate } from '@/lib/pdf/template-path'
 import type { InvoiceVariant, InvoicePdfData } from './types'
 
 const TEMPLATE_FILES: Record<InvoiceVariant, string> = {
@@ -50,9 +49,8 @@ function setField(form: ReturnType<PDFDocument['getForm']>, name: string, value:
   } catch { /* field may not exist in this template */ }
 }
 
-export async function fillInvoicePdf(variant: InvoiceVariant, data: InvoicePdfData): Promise<Uint8Array> {
-  const templatePath = path.join(process.cwd(), 'public', 'invoice-templates', TEMPLATE_FILES[variant])
-  const templateBytes = fs.readFileSync(templatePath)
+export async function fillInvoicePdf(companySlug: string, variant: InvoiceVariant, data: InvoicePdfData): Promise<Uint8Array> {
+  const templateBytes = readTemplate(companySlug, `invoice-templates/${TEMPLATE_FILES[variant]}`)
   const doc = await PDFDocument.load(templateBytes)
   const form = doc.getForm()
 

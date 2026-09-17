@@ -1,6 +1,7 @@
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib'
 import type { ClaimInfo, StorageState } from '@/lib/acv/types'
 import { LOGO_PNG_BASE64 } from './logo-data'
+import { NoTemplateError } from '@/lib/pdf/template-path'
 
 // Programmatic PDF for the Storage Charges tool. Matches the visual tone of
 // the other Modern Appraisers reports: black text on white, hairline rules,
@@ -131,9 +132,16 @@ async function embedLogo(doc: PDFDocument): Promise<import('pdf-lib').PDFImage |
 }
 
 export async function buildStorageChargesPdf(
+  companySlug: string,
   claim: ClaimInfo,
   state: StorageState,
 ): Promise<Uint8Array> {
+  // Storage PDF is programmatic (base64-embedded MA logo). Phase 3 gates it
+  // to MA only. When Henry builds EV's storage-charges layout, this check
+  // widens.
+  if (companySlug !== 'modern-appraisers') {
+    throw new NoTemplateError(companySlug, 'storage-pdf')
+  }
   const doc = await PDFDocument.create()
   const fontBody = await doc.embedFont(StandardFonts.Helvetica)
   const fontBold = await doc.embedFont(StandardFonts.HelveticaBold)

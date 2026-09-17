@@ -1,6 +1,5 @@
 import { PDFDocument, StandardFonts } from 'pdf-lib'
-import fs from 'fs'
-import path from 'path'
+import { readTemplate } from '@/lib/pdf/template-path'
 
 // Four report variants = (Nationwide | with-Prior-Loss) x (Attorney | Sedgwick).
 // Attorney (consumer) uses KBB "Fair Purchase Price" / "Trade-In Fair Value";
@@ -66,9 +65,8 @@ function formatDate(dateStr: string): string {
   return dateStr
 }
 
-export async function fillDVPdf(variant: DVVariant, data: DVPdfData): Promise<Uint8Array> {
-  const templatePath = path.join(process.cwd(), 'public', 'dv-templates', TEMPLATE_FILES[variant])
-  const templateBytes = fs.readFileSync(templatePath)
+export async function fillDVPdf(companySlug: string, variant: DVVariant, data: DVPdfData): Promise<Uint8Array> {
+  const templateBytes = readTemplate(companySlug, `dv-templates/${TEMPLATE_FILES[variant]}`)
   const doc = await PDFDocument.load(templateBytes, { ignoreEncryption: true })
   const form = doc.getForm()
   const helvetica = await doc.embedFont(StandardFonts.Helvetica)
