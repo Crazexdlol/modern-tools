@@ -18,6 +18,44 @@ Read `CLAUDE.md` first if you haven't. Then read the top entry here before touch
 
 ---
 
+## 2026-09-17 (morning) — Phase 3 polish + full debug pass
+
+**Worked on:** Post-Phase-3 UI polish based on live smoke testing, plus an end-to-end debug pass with real test data. Saved the 5-item deferred backlog to memory for future reference.
+
+**Changed:**
+
+_Header + switcher polish (multiple micro-deploys):_
+- `src/components/app-header.tsx` — restored MA logo to its original wide banner size (was rendering as a tiny 40x40 square after Phase 3). Then moved `<CompanySwitcher />` from next to the logo to just left of the username dropdown. Finally, added a loading-state slot so the header no longer flashes the MA logo for a split-second when refreshing as an EV user (`companyLoading || !headerLogoPath` renders a same-width blank div).
+- `src/components/company-switcher.tsx` — switcher is now a single compact toggle button for 2-company users (arrow icon + target company name only, no "Switch to" prefix; tooltip covers intent). Dark-theme styling to fit `bg-gray-950` header. 3+ company case keeps a dropdown fallback.
+- `public/companies/eagleview/logo-on-dark.png` (new) — programmatically generated via `scripts/make-eagleview-on-dark.mjs` (uses sharp to invert dark pixels to white; preserves the gold VIEW + orange eagle icon). Header consumes this via a `.png` → `-on-dark.png` suffix swap.
+- `public/companies/modern-appraisers/logo-on-dark.png` (new) — MA logo copied to the -on-dark variant so the header logic is uniform (both companies always resolve `-on-dark`).
+
+_Admin UX polish (this session):_
+- `src/app/admin/users/users-admin-client.tsx` — removed the inline pencil-edit for name/role. The users list is view-only now; changing a user's name/role is done inside their settings page (Info tab). Delete button preserved.
+- `src/app/admin/settings/users/[id]/_tabs/companies-tab.tsx` — stripped the "Which companies can this user work claims for..." descriptive paragraph. Only the "Company access" heading and the checkboxes remain.
+
+_Debug infrastructure:_
+- `scripts/debug-full-workflow.mjs` (new) — end-to-end debug script. Seeds 2 ACV + 1 DV test claims tagged `test-debug-`, verifies company scoping, loads every MA PDF template (11 files across ACV/Award/Notes/Contract/Certificate/4 DV variants/2 Invoice variants) via pdf-lib to prove they're intact, tests reassign + approve/completed + reopen + approve/cancelled flows, confirms the immutability trigger blocks cross-company UPDATEs, then reports pass/fail. All 27 subtests passed against production DB.
+- `scripts/delete-test-claims.mjs` (new) — companion cleanup. Deleted all 3 test claims; MA count back to 673 exactly.
+- Backup artifacts: `backups/debug-2026-09-17/results.json`.
+
+_Memory:_
+- `.claude/projects/.../memory/project_hamsportal_deferred.md` (new) — the 5 deferred items from the phased rollout (insurance-guidelines cross-company import, per-user-per-company email UI, per-company brand colors, per-company AI framing, first EV template drop-in). Added to `MEMORY.md` index.
+
+**Deploy status:** LIVE. `dpl_3bt93J8V5Hq9afjzPAvsYEk5cgKe`. Alias `modern-tools-rho.vercel.app` verified. Full green: tsc + build + lint + 6 unit + 9 isolation tests + 27 debug subtests.
+
+**Rollback:**
+```
+npx vercel promote https://modern-tools-31eovsfzu-henry-as-projects-88caed67.vercel.app --scope henry-as-projects-88caed67 --yes
+```
+That's `dpl_Bqhig2kqJB13UzdsCQBGKy38Xpk8` — the compact-switcher deploy right before the polish batch.
+
+**In progress / broken / unknowns:** Nothing. HamsPortal + Eagleview multi-company rollout is functionally done and smoke-clean.
+
+**Next:** Whatever Henry brings up. Deferred backlog in memory has 5 candidate items.
+
+---
+
 ## 2026-09-17 (early morning) — HamsPortal Phase 3: Eagleview go-live — company switcher, admin UI, per-company templates
 
 **Worked on:** Phase 3 of the HamsPortal multi-company rollout. Eagleview is now an operational second company. An admin can grant EV access to any user via a new Companies tab in user settings; users with 2+ companies see a switcher pill in the header; switching flips the header logo, filters data to that company, and reloads. Report PDFs are company-scoped — MA reports still work, EV attempts to generate any PDF return a friendly "no template configured" message.
