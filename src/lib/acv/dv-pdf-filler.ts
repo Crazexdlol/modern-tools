@@ -141,5 +141,10 @@ export async function fillDVPdf(companySlug: string, variant: DVVariant, data: D
     if (data.licenseState) states.select(data.licenseState)
   } catch { /* dropdown missing or option not present */ }
 
+  // Flatten AcroForm fields so the printed PDF is clean static text — no
+  // editable fields, matches the ACV report behavior. Appearances were
+  // already updated to Helvetica above, so flatten renders them as-is.
+  form.flatten()
+
   return doc.save()
 }
