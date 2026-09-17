@@ -8,6 +8,8 @@ import { ChevronDown, User as UserIcon, Settings } from 'lucide-react'
 import { LogoutButton } from '@/components/logout-button'
 import { useCurrentProfile } from '@/lib/supabase/profiles'
 import { fetchDueForRemarketingCount } from '@/lib/supabase/clients'
+import { useActiveCompany } from '@/hooks/use-active-company'
+import { CompanySwitcher } from '@/components/company-switcher'
 
 interface NavItem {
   label: string
@@ -49,11 +51,17 @@ export function AppHeader() {
   }, [profile?.id, profile?.marketingAccess])
 
   const displayLabel = profile?.name || profile?.email || ''
+  const { activeCompany } = useActiveCompany()
+  const headerLogoPath = activeCompany?.logoPath ?? '/companies/modern-appraisers/logo.png'
+  const headerCompanyName = activeCompany?.name ?? 'Modern Appraisers'
 
   return (
     <header className="no-print border-b border-gray-800 bg-gray-950 shadow-sm sticky top-0 z-10">
       <div className="max-w-7xl mx-auto px-6 py-4 flex items-center gap-8">
-        <Link href="/"><Image src="/companies/modern-appraisers/logo.png" alt="Modern Appraisers" width={160} height={48} className="h-9 w-auto" priority /></Link>
+        <div className="flex items-center gap-3">
+          <Link href="/"><Image src={headerLogoPath} alt={headerCompanyName} width={40} height={40} className="h-9 w-9 object-contain" priority /></Link>
+          <CompanySwitcher />
+        </div>
         <nav className="flex items-center gap-6">
           {NAV_ITEMS.map(item => {
             // Marketing tab is flag-only — admin role does NOT grant implicit
