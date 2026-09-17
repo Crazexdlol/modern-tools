@@ -14,8 +14,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Modern Tools — Modern Appraisers",
-  description: "Internal services platform for Modern Appraisers",
+  title: "HamsPortal",
+  description: "HamsPortal — the platform Modern Appraisers uses to handle auto-appraisal claims.",
 };
 
 export default function RootLayout({
