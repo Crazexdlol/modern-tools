@@ -102,7 +102,7 @@ export function LicensesTab({ userId }: { userId: string }) {
   if (loading) return <div className="text-sm text-gray-500">Loading licenses…</div>
 
   return (
-    <div className="space-y-4 max-w-5xl">
+    <div className="space-y-4 max-w-6xl">
       <div className="flex justify-end">
         <button
           onClick={startAdd}
@@ -119,7 +119,7 @@ export function LicensesTab({ userId }: { userId: string }) {
             <tr>
               <th className="text-left px-3 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider w-24">State</th>
               <th className="text-left px-3 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider w-44">License #</th>
-              <th className="text-left px-3 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">Type</th>
+              <th className="text-left px-3 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider min-w-[280px]">Type</th>
               <th className="text-left px-3 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider w-36">Expires</th>
               <th className="text-left px-3 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider w-44">Status</th>
               <th className="text-right px-3 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider w-48">Actions</th>
@@ -159,7 +159,7 @@ export function LicensesTab({ userId }: { userId: string }) {
                     <>
                       <td className="px-3 py-2 font-mono text-xs">{row.state}</td>
                       <td className="px-3 py-2 font-mono text-xs">{row.licenseNumber}</td>
-                      <td className="px-3 py-2 text-xs text-gray-700">{row.licenseType || <span className="text-gray-300">—</span>}</td>
+                      <td className="px-3 py-2 text-sm text-gray-700 break-words">{row.licenseType || <span className="text-gray-300">—</span>}</td>
                       <td className="px-3 py-2 text-xs text-gray-700">{row.expirationDate}</td>
                       <td className="px-3 py-2">
                         <div className="flex items-center gap-1.5 flex-wrap">
