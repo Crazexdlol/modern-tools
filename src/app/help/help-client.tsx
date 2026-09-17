@@ -17,7 +17,7 @@ interface ChatMessage {
 
 const GREETING: ChatMessage = {
   role: 'assistant',
-  content: `Hi — I'm Henry. Ask me anything about how to do something in Modern Tools and I'll walk you through it.`,
+  content: `Hi — I'm Henry. Ask me anything about how to do something in HamsPortal and I'll walk you through it.`,
 }
 
 // Simple case-insensitive multi-token score for the article browser.
@@ -288,7 +288,7 @@ export function HelpClient() {
             </button>
           </div>
           <p className="text-[11px] text-gray-400 mt-2 px-1">
-            Henry only answers how-to questions about Modern Tools. Verify anything important with an admin.
+            Henry only answers how-to questions about HamsPortal. Verify anything important with an admin.
           </p>
         </div>
       </div>
