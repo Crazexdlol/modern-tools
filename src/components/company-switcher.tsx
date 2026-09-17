@@ -49,7 +49,7 @@ export function CompanySwitcher() {
         type="button"
         onClick={() => setOpen(o => !o)}
         disabled={busy}
-        className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 text-sm font-medium text-gray-800 transition-colors"
+        className="flex items-center gap-2 px-2.5 py-1 rounded border border-gray-700 bg-gray-900 hover:bg-gray-800 text-xs font-medium text-gray-200 transition-colors"
         title={`Working as ${active.name} — click to switch`}
       >
         <Image src={active.logoPath} alt={active.name} width={20} height={20} className="h-5 w-5 object-contain" />

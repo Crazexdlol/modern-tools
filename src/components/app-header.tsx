@@ -58,10 +58,7 @@ export function AppHeader() {
   return (
     <header className="no-print border-b border-gray-800 bg-gray-950 shadow-sm sticky top-0 z-10">
       <div className="max-w-7xl mx-auto px-6 py-4 flex items-center gap-8">
-        <div className="flex items-center gap-3">
-          <Link href="/"><Image src={headerLogoPath} alt={headerCompanyName} width={40} height={40} className="h-9 w-9 object-contain" priority /></Link>
-          <CompanySwitcher />
-        </div>
+        <Link href="/"><Image src={headerLogoPath} alt={headerCompanyName} width={160} height={48} className="h-9 w-auto" priority /></Link>
         <nav className="flex items-center gap-6">
           {NAV_ITEMS.map(item => {
             // Marketing tab is flag-only — admin role does NOT grant implicit
@@ -98,6 +95,7 @@ export function AppHeader() {
           })}
         </nav>
         <div className="ml-auto flex items-center gap-2">
+          <CompanySwitcher />
           {displayLabel && (
             <div className="relative" ref={menuRef}>
               <button
