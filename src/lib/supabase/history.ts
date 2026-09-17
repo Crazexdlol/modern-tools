@@ -207,7 +207,11 @@ export async function setClaimStatus(id: string, status: ClaimStatus) {
   if (error) console.error('Failed to set claim status:', error)
 }
 
-export async function saveACVHistory(entry: ACVHistoryEntry, editId?: string | null) {
+export async function saveACVHistory(
+  entry: ACVHistoryEntry,
+  editId?: string | null,
+  activeCompanyId?: string | null,
+) {
   const supabase = createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return
@@ -301,10 +305,21 @@ export async function saveACVHistory(entry: ACVHistoryEntry, editId?: string | n
     .maybeSingle()
   const insertPayload: Record<string, unknown> = { id, user_id: user.id, ...payload }
   if (profile?.role !== 'admin') insertPayload.assigned_to = user.id
+  // Post-migration RLS WITH CHECK requires company_id = active_company_id().
+  // Stamp when we know it; RLS blocks the insert if we don't and the column
+  // exists (which is the correct fail-loud behavior).
+  if (activeCompanyId) insertPayload.company_id = activeCompanyId
 
-  const { error: insertError } = await supabase
+  let { error: insertError } = await supabase
     .from('acv_history')
     .insert(insertPayload)
+  if (insertError && insertError.code === '42703') {
+    // Pre-migration fallback: drop company_id and retry.
+    delete insertPayload.company_id
+    ;({ error: insertError } = await supabase
+      .from('acv_history')
+      .insert(insertPayload))
+  }
   if (insertError) {
     // Throw so the caller can surface a real error state (toast, retry, etc)
     // instead of leaving the "unsaved changes" pill stuck without explanation.

@@ -44,6 +44,7 @@ import {
 } from '@/lib/acv/calculations'
 import { saveACVHistory, fetchACVEntry, deleteACVHistory, type ClaimStatus } from '@/lib/supabase/history'
 import { useCurrentProfile, fetchAllProfilesBrowser, type Profile } from '@/lib/supabase/profiles'
+import { useActiveCompany } from '@/hooks/use-active-company'
 import { LossSearchTab, type LossListing } from '@/components/claim/loss-search-tab'
 import { ClientPicker } from '@/components/claim/client-picker'
 import { EstimateTab } from '@/components/claim/estimate-tab'
@@ -79,6 +80,7 @@ async function saveToHistory(
   mileageRate?: number,
   reportsState?: ReportsState,
   extras?: { status?: ClaimStatus; auctionListings?: LossListing[]; estimate?: unknown; documents?: ClaimDocument[]; dv?: DVState | null; invoice?: InvoiceReportState | null; storage?: StorageState | null; clientId?: string | null },
+  activeCompanyId?: string | null,
 ) {
   const id = editId || `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
   const entry = {
@@ -104,7 +106,7 @@ async function saveToHistory(
     storage: extras?.storage ?? undefined,
     clientId: extras?.clientId,
   }
-  await saveACVHistory(entry, editId)
+  await saveACVHistory(entry, editId, activeCompanyId)
   return id
 }
 
@@ -2848,6 +2850,7 @@ function ClaimWorkspaceInner({ claimId }: { claimId: string }) {
   // Insurance Company autocomplete so typed values match a guideline exactly.
   const [insuranceCompanyOptions, setInsuranceCompanyOptions] = useState<string[]>([])
   const { profile } = useCurrentProfile()
+  const { activeCompanyId } = useActiveCompany()
   // Direct-URL guard: if a non-admin without the create grant lands on
   // /claims/new (e.g. bookmark, address-bar), silently bounce to the
   // dashboard. RLS blocks the insert anyway; this just prevents a
@@ -3024,7 +3027,7 @@ function ClaimWorkspaceInner({ claimId }: { claimId: string }) {
         editingIdRef.current = id
         setEditingId(id)
       }
-      saveToHistory(claim, builtComps, adjustments, result, modeRef.current, id, mileageRate, reportsState, { status, auctionListings, estimate, documents, dv, invoice, storage, clientId })
+      saveToHistory(claim, builtComps, adjustments, result, modeRef.current, id, mileageRate, reportsState, { status, auctionListings, estimate, documents, dv, invoice, storage, clientId }, activeCompanyId)
         .then(() => {
           setHasUnsavedChanges(false)
           // Promote a /claims/new session to its real URL after the first save.
@@ -3362,7 +3365,7 @@ function ClaimWorkspaceInner({ claimId }: { claimId: string }) {
 
   const handleSaveClaim = async () => {
     if (builtComps.length < 1) return
-    const savedId = await saveToHistory(claim, builtComps, adjustments, result, modeRef.current, editingId, mileageRate, reportsState, saveExtras)
+    const savedId = await saveToHistory(claim, builtComps, adjustments, result, modeRef.current, editingId, mileageRate, reportsState, saveExtras, activeCompanyId)
     if (!editingId) setEditingId(savedId)
     editingIdRef.current = savedId
     setHasUnsavedChanges(false)
@@ -3536,7 +3539,7 @@ function ClaimWorkspaceInner({ claimId }: { claimId: string }) {
   const handleVinDecoded = async (updatedClaim: ClaimInfo) => {
     // Save with the CURRENT comps/result — previously this saved an empty
     // comps array, wiping the claim's saved comps whenever a VIN was re-decoded.
-    const savedId = await saveToHistory(updatedClaim, builtComps, adjustments, result, modeRef.current, editingId, mileageRate, reportsState, saveExtras)
+    const savedId = await saveToHistory(updatedClaim, builtComps, adjustments, result, modeRef.current, editingId, mileageRate, reportsState, saveExtras, activeCompanyId)
     if (!editingId) setEditingId(savedId)
     editingIdRef.current = savedId
   }
@@ -3554,7 +3557,7 @@ function ClaimWorkspaceInner({ claimId }: { claimId: string }) {
       editingIdRef.current = id
       setEditingId(id)
     }
-    await saveToHistory(claim, builtComps, adjustments, result, modeRef.current, id, mileageRate, reportsState, saveExtras)
+    await saveToHistory(claim, builtComps, adjustments, result, modeRef.current, id, mileageRate, reportsState, saveExtras, activeCompanyId)
     setHasUnsavedChanges(false)
     promotedIdRef.current = id
     localStorage.removeItem(COMP_FINDER_SESSION_KEY)

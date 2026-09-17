@@ -1,5 +1,26 @@
 import { createClient as createBrowserClient } from './client'
 
+// Fetches the caller's active company id from profiles. Used to stamp
+// company_id on client / contact / log INSERTs so post-migration RLS
+// WITH CHECK is satisfied. Cached per session to avoid repeated round-trips.
+let _activeCompanyIdCache: string | null | undefined
+async function getActiveCompanyId(): Promise<string | null> {
+  if (_activeCompanyIdCache !== undefined) return _activeCompanyIdCache
+  const supabase = createBrowserClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) { _activeCompanyIdCache = null; return null }
+  const { data, error } = await supabase
+    .from('profiles')
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    .select('active_company_id' as any)
+    .eq('id', user.id)
+    .maybeSingle()
+  if (error) { _activeCompanyIdCache = null; return null }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  _activeCompanyIdCache = ((data as any)?.active_company_id ?? null) as string | null
+  return _activeCompanyIdCache
+}
+
 export type ClientType = 'adjuster' | 'body_shop' | 'attorney' | 'insurance_company'
 
 export const CLIENT_TYPE_LABELS: Record<ClientType, string> = {
@@ -315,12 +336,13 @@ export interface NewContactInput {
 
 export async function createContact(input: NewContactInput): Promise<ClientContact | null> {
   const supabase = createBrowserClient()
+  const activeCompanyId = await getActiveCompanyId()
   // If setting primary, clear existing primary first (partial unique index
   // enforces one-primary-per-client).
   if (input.isPrimary) {
     await supabase.from('client_contacts').update({ is_primary: false }).eq('client_id', input.clientId).eq('is_primary', true)
   }
-  const { data, error } = await supabase.from('client_contacts').insert({
+  const contactPayload: Record<string, unknown> = {
     client_id: input.clientId,
     name: input.name.trim(),
     title: input.title?.trim() || null,
@@ -328,7 +350,11 @@ export async function createContact(input: NewContactInput): Promise<ClientConta
     email: input.email?.trim() || null,
     is_primary: !!input.isPrimary,
     notes: input.notes?.trim() || null,
-  }).select().single()
+  }
+  if (activeCompanyId) contactPayload.company_id = activeCompanyId
+  const { data, error } = await supabase.from('client_contacts')
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    .insert(contactPayload as any).select().single()
   if (error) { console.error('createContact failed:', error); return null }
   return rowToContact(data as ContactRow)
 }
@@ -407,13 +433,18 @@ export interface LogTouchInput {
 export async function logTouch(input: LogTouchInput): Promise<ClientMarketingLog | null> {
   const supabase = createBrowserClient()
   const { data: { user } } = await supabase.auth.getUser()
-  const { data, error } = await supabase.from('client_marketing_log').insert({
+  const activeCompanyId = await getActiveCompanyId()
+  const logPayload: Record<string, unknown> = {
     client_id: input.clientId,
     marketed_at: input.marketedAt,
     method: input.method,
     notes: input.notes?.trim() || null,
     logged_by: user?.id ?? null,
-  }).select().single()
+  }
+  if (activeCompanyId) logPayload.company_id = activeCompanyId
+  const { data, error } = await supabase.from('client_marketing_log')
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    .insert(logPayload as any).select().single()
   if (error) { console.error('logTouch failed:', error); return null }
   // Also bump last_marketed_at on the client. Best-effort — the log entry is
   // the source of truth, this is just a cache for the "next remarket" sort.
@@ -467,16 +498,20 @@ export interface NewClientInput {
 
 export async function createClient(input: NewClientInput): Promise<Client | null> {
   const supabase = createBrowserClient()
+  const activeCompanyId = await getActiveCompanyId()
+  const payload: Record<string, unknown> = {
+    name: input.name.trim(),
+    type: input.type,
+    city: input.city?.trim() || null,
+    state: input.state?.trim().toUpperCase() || null,
+    phone: input.phone?.trim() || null,
+    email: input.email?.trim() || null,
+  }
+  if (activeCompanyId) payload.company_id = activeCompanyId
   const { data, error } = await supabase
     .from('clients')
-    .insert({
-      name: input.name.trim(),
-      type: input.type,
-      city: input.city?.trim() || null,
-      state: input.state?.trim().toUpperCase() || null,
-      phone: input.phone?.trim() || null,
-      email: input.email?.trim() || null,
-    })
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    .insert(payload as any)
     .select()
     .single()
   if (error) { console.error('createClient failed:', error); return null }
