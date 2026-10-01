@@ -28,7 +28,9 @@ alter table public.email_threads
   add constraint email_threads_status_check
   check (status in ('needs_response', 'responded', 'ignored', 'spam', 'unmatched'));
 
-create or replace function public.negotiations_counters()
+drop function if exists public.negotiations_counters();
+
+create function public.negotiations_counters()
 returns table (
   needs_response  bigint,
   unmatched       bigint,

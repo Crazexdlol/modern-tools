@@ -30,7 +30,11 @@ alter table public.email_threads
   check (status in ('needs_response', 'responded', 'ignored', 'spam', 'unmatched', 'closed_claim'));
 
 -- 2. Update the counters RPC to include closed_claim.
-create or replace function public.negotiations_counters()
+--    Postgres rejects CREATE OR REPLACE when the return column set changes,
+--    so drop the function first (safe — no persisted state, only the body).
+drop function if exists public.negotiations_counters();
+
+create function public.negotiations_counters()
 returns table (
   needs_response  bigint,
   unmatched       bigint,
