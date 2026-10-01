@@ -239,12 +239,12 @@ async function countByStatus(
   supabase: ReturnType<typeof createServiceClient>,
   status: string,
 ): Promise<number> {
-  // 'planned' uses pg_class stats — instant on any table size — and is
-  // accurate to within a few rows once ANALYZE has run (it does automatically
-  // via autovacuum). For a badge counter that's plenty accurate.
+  // 'exact' — accurate every time regardless of ANALYZE lag. The index on
+  // email_threads.status makes this a sub-100ms count over <300 rows total,
+  // so correctness beats the microsecond win from the 'planned' estimator.
   const { count, error } = await supabase
     .from('email_threads')
-    .select('id', { count: 'planned', head: true })
+    .select('id', { count: 'exact', head: true })
     .eq('status', status)
   if (error) return 0
   return count ?? 0
@@ -260,7 +260,7 @@ async function countByStatusWithSinceOutbound(
   startOfToday.setHours(0, 0, 0, 0)
   const { count, error } = await supabase
     .from('email_threads')
-    .select('id', { count: 'estimated', head: true })
+    .select('id', { count: 'exact', head: true })
     .eq('status', status)
     .gte('last_outbound_at', startOfToday.toISOString())
   if (error) return 0

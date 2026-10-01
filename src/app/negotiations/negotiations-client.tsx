@@ -199,12 +199,12 @@ export function NegotiationsClient() {
   const didInitialMountRef = useRef(false)
   const lastSyncAtRef = useRef<number>(0)
   useEffect(() => {
-    const isFirstMount = !didInitialMountRef.current
-    fetchThreads(filter, debouncedSearch, { withCounters: isFirstMount })
-    if (isFirstMount) {
+    // Always request counters so the badges reflect reality on every nav
+    // (filter clicks, search, mount). The counts query is a handful of exact
+    // COUNT(*)s over an indexed status column — cheap enough to run always.
+    fetchThreads(filter, debouncedSearch, { withCounters: true })
+    if (!didInitialMountRef.current) {
       didInitialMountRef.current = true
-      // Auto-sync on first page open so Henry doesn't have to click Sync to see
-      // the latest. Filter changes and search typing do NOT re-sync.
       lastSyncAtRef.current = Date.now()
       runSync()
     }
