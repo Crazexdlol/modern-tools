@@ -6,7 +6,7 @@ const stripSubjectNoise = (subject) => {
   if (!subject) return ''
   let out = subject
   let prev = ''
-  const prefix = /^\s*(?:\[(?:spam|external|ext|secure)\]|re|fw|fwd)\s*:?\s*/i
+  const prefix = /^\s*(?:\[(?:spam|external|ext|secure)\]|fwd|fw|re)\s*:?\s*/i
   while (out !== prev) { prev = out; out = out.replace(prefix, '') }
   return out.trim()
 }
@@ -38,6 +38,8 @@ const CASES = [
   { subj: 'RE: Amber Aiton | 2021 Ford F-150 Lariat | CL# 4683005 | MA# 3950817',
     expect: ['3950817', '4683005'] },
   { subj: 'Re: GREGORY GALE | 2017 JAYCO M-213 JAY FEATHER | File # 3951773 | Claim # 000830291050',
+    expect: ['3951773', '000830291050'] },
+  { subj: 'Fwd: GREGORY GALE | 2017 JAYCO M-213 | File # 3951773 | Claim # 000830291050',
     expect: ['3951773', '000830291050'] },
   { subj: 'Fwd: unrelated marketing update',
     expect: [] },

@@ -7,7 +7,7 @@ export function stripSubjectNoise(subject: string): string {
   if (!subject) return ''
   let out = subject
   let prev = ''
-  const prefix = /^\s*(?:\[(?:spam|external|ext|secure)\]|re|fw|fwd)\s*:?\s*/i
+  const prefix = /^\s*(?:\[(?:spam|external|ext|secure)\]|fwd|fw|re)\s*:?\s*/i
   while (out !== prev) {
     prev = out
     out = out.replace(prefix, '')
