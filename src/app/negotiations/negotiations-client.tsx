@@ -195,10 +195,17 @@ export function NegotiationsClient() {
   // requests counters so the badge counts aren't stale on first paint. Any
   // earlier split caused a race where the mount's counters request was
   // aborted by the main effect's call — leaving counters zeroed until Sync.
-  const didInitialCountersRef = useRef(false)
+  const didInitialMountRef = useRef(false)
   useEffect(() => {
-    fetchThreads(filter, debouncedSearch, { withCounters: !didInitialCountersRef.current })
-    didInitialCountersRef.current = true
+    const isFirstMount = !didInitialMountRef.current
+    fetchThreads(filter, debouncedSearch, { withCounters: isFirstMount })
+    if (isFirstMount) {
+      didInitialMountRef.current = true
+      // Auto-sync on first page open so Henry doesn't have to click Sync to see
+      // the latest. Filter changes and search typing do NOT re-sync.
+      runSync()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filter, debouncedSearch, fetchThreads])
 
   const onLinkedManually = useCallback(async () => {
