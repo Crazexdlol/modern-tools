@@ -6,8 +6,6 @@ import type { ThreadFilter, ThreadListResponse, ThreadListItem } from '@/app/api
 import type { ClaimSearchResult } from '@/app/api/negotiations/search-claims/route'
 import { RefreshCw, AlertTriangle, Paperclip, ExternalLink, Link as LinkIcon, X, Car, ArrowRight, Sparkles, Search, Trash2, Archive, MoreVertical } from 'lucide-react'
 
-const REFRESH_INTERVAL_MS = 60_000
-
 interface SyncState {
   running: boolean
   lastSyncedAt: string | null
@@ -187,28 +185,20 @@ export function NegotiationsClient() {
     }
   }, [filter, search, fetchThreads])
 
-  useEffect(() => {
-    fetchThreads(filter, '', { withCounters: true })
-    // No auto-sync on mount — Henry triggers IMAP sync via the Sync button only.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
-  useEffect(() => {
-    const id = window.setInterval(() => {
-      if (document.visibilityState !== 'visible') return
-      fetchThreads(filter, debouncedSearch)
-    }, REFRESH_INTERVAL_MS)
-    return () => window.clearInterval(id)
-  }, [filter, debouncedSearch, fetchThreads])
-
   // Debounce search input: waits 250ms after typing stops before firing.
   useEffect(() => {
     const t = window.setTimeout(() => setDebouncedSearch(search), 250)
     return () => window.clearTimeout(t)
   }, [search])
 
+  // Single effect handles mount, filter change, and search. First call also
+  // requests counters so the badge counts aren't stale on first paint. Any
+  // earlier split caused a race where the mount's counters request was
+  // aborted by the main effect's call — leaving counters zeroed until Sync.
+  const didInitialCountersRef = useRef(false)
   useEffect(() => {
-    fetchThreads(filter, debouncedSearch)
+    fetchThreads(filter, debouncedSearch, { withCounters: !didInitialCountersRef.current })
+    didInitialCountersRef.current = true
   }, [filter, debouncedSearch, fetchThreads])
 
   const onLinkedManually = useCallback(async () => {
@@ -406,7 +396,7 @@ export function NegotiationsClient() {
                     isSelected={selectedIds.has(primary.id)}
                     onToggleSelect={() => toggleSelect(primary.id)}
                     onLinkClaim={() => setPickerThreadId(primary.id)}
-                    onChanged={() => fetchThreads(filter, search)}
+                    onChanged={() => fetchThreads(filter, search, { withCounters: true })}
                   />
                 )
               })}

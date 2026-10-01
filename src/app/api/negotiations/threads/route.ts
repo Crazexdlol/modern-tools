@@ -64,14 +64,12 @@ export async function GET(request: Request) {
 
   const supabase = createServiceClient()
 
-  // 1) Fetch threads for the requested filter — no counts here, no joins.
-  // Cost: single index scan on (status, latest_sent_at) once the migration
-  // is in place; a full scan on status alone before that. Either way this is
-  // the only query that MUST run before we can render the page.
-  let threads: ThreadRow[] | null = null
+  // 1) Threads SELECT (required) runs IN PARALLEL with the counters RPC
+  //    (when requested). They touch independent query plans and we don't need
+  //    the thread rows to compute counters.
   let perfMigrationApplied = true
-  let threadsErr: PostgrestError | null = null
-  {
+
+  const threadsP: Promise<{ threads: ThreadRow[] | null; err: PostgrestError | null }> = (async () => {
     let q = supabase.from('email_threads').select(DENORM_COLS)
     if (filter !== 'all') q = q.eq('status', filter)
     if (search) {
@@ -85,59 +83,58 @@ export async function GET(request: Request) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const res = await q.order('latest_sent_at' as any, { ascending: false, nullsFirst: false }).limit(PAGE_SIZE)
     if (res.error && res.error.code === '42703') {
-      // Migration not applied — fall back.
       perfMigrationApplied = false
       let q2 = supabase.from('email_threads').select(LEGACY_COLS)
       if (filter !== 'all') q2 = q2.eq('status', filter)
       const res2 = await q2.order('last_inbound_at', { ascending: false, nullsFirst: false }).limit(PAGE_SIZE)
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      threads = (res2.data as any) ?? null
-      threadsErr = res2.error
-    } else {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      threads = (res.data as any) ?? null
-      threadsErr = res.error
+      return { threads: (res2.data as any) ?? null, err: res2.error }
     }
-  }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return { threads: (res.data as any) ?? null, err: res.error }
+  })()
 
+  const countersP: Promise<NonNullable<ThreadListResponse['counters']> | undefined> = includeCounters
+    ? (async () => {
+        const { data: rpcData, error: rpcErr } = await supabase.rpc('negotiations_counters')
+        if (!rpcErr && Array.isArray(rpcData) && rpcData.length > 0) {
+          const r = rpcData[0] as { needs_response: number; unmatched: number; spam: number; responded_today: number; closed_claim?: number }
+          return {
+            needs_response: Number(r.needs_response ?? 0),
+            unmatched: Number(r.unmatched ?? 0),
+            spam: Number(r.spam ?? 0),
+            responded_today: Number(r.responded_today ?? 0),
+            closed_claim: Number(r.closed_claim ?? 0),
+            awaiting_oa_reply: 0,
+          }
+        }
+        const [needs, unmatched, spam, responded, closedClaim] = await Promise.all([
+          countByStatus(supabase, 'needs_response'),
+          countByStatus(supabase, 'unmatched'),
+          countByStatus(supabase, 'spam'),
+          countByStatusWithSinceOutbound(supabase, 'responded'),
+          countByStatus(supabase, 'closed_claim'),
+        ])
+        return {
+          needs_response: needs,
+          unmatched,
+          spam,
+          responded_today: responded,
+          closed_claim: closedClaim,
+          awaiting_oa_reply: 0,
+        }
+      })()
+    : Promise.resolve(undefined)
+
+  const [{ threads, err: threadsErr }, countersInitial] = await Promise.all([threadsP, countersP])
   if (threadsErr) {
     return NextResponse.json({ error: threadsErr.message }, { status: 500 })
   }
   const rows = threads ?? []
 
-  // 2) Counters — only when the client asked for them (page mount / post-sync).
-  // Single RPC round-trip via public.negotiations_counters(); falls back to
-  // per-status planned counts if the RPC isn't there yet.
-  let counters: NonNullable<ThreadListResponse['counters']> | undefined
-  if (includeCounters) {
-    const { data: rpcData, error: rpcErr } = await supabase.rpc('negotiations_counters')
-    if (!rpcErr && Array.isArray(rpcData) && rpcData.length > 0) {
-      const r = rpcData[0] as { needs_response: number; unmatched: number; spam: number; responded_today: number; closed_claim?: number }
-      counters = {
-        needs_response: Number(r.needs_response ?? 0),
-        unmatched: Number(r.unmatched ?? 0),
-        spam: Number(r.spam ?? 0),
-        responded_today: Number(r.responded_today ?? 0),
-        closed_claim: Number(r.closed_claim ?? 0),
-        awaiting_oa_reply: 0,
-      }
-    } else {
-      const [needs, unmatched, spam, responded, closedClaim] = await Promise.all([
-        countByStatus(supabase, 'needs_response'),
-        countByStatus(supabase, 'unmatched'),
-        countByStatus(supabase, 'spam'),
-        countByStatusWithSinceOutbound(supabase, 'responded'),
-        countByStatus(supabase, 'closed_claim'),
-      ])
-      counters = {
-        needs_response: needs,
-        unmatched,
-        spam,
-        responded_today: responded,
-        closed_claim: closedClaim,
-        awaiting_oa_reply: 0,
-      }
-    }
+  // 2) Finalize counters by filling in the page-derived "awaiting OA reply".
+  let counters: NonNullable<ThreadListResponse['counters']> | undefined = countersInitial
+  if (counters) {
     // "awaiting OA reply" is an approximation from the current page — full
     // count would need column-to-column comparison, deferred until we care.
     counters.awaiting_oa_reply = rows.reduce((acc, t) => {
