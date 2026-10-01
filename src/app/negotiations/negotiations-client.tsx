@@ -130,6 +130,7 @@ export function NegotiationsClient() {
   }, [])
 
   const runSync = useCallback(async () => {
+    lastSyncAtRef.current = Date.now()
     setSync(s => ({ ...s, running: true, lastError: null, lastReport: null }))
     let totalNew = 0
     let totalMatched = 0
@@ -196,6 +197,7 @@ export function NegotiationsClient() {
   // earlier split caused a race where the mount's counters request was
   // aborted by the main effect's call — leaving counters zeroed until Sync.
   const didInitialMountRef = useRef(false)
+  const lastSyncAtRef = useRef<number>(0)
   useEffect(() => {
     const isFirstMount = !didInitialMountRef.current
     fetchThreads(filter, debouncedSearch, { withCounters: isFirstMount })
@@ -203,10 +205,31 @@ export function NegotiationsClient() {
       didInitialMountRef.current = true
       // Auto-sync on first page open so Henry doesn't have to click Sync to see
       // the latest. Filter changes and search typing do NOT re-sync.
+      lastSyncAtRef.current = Date.now()
       runSync()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filter, debouncedSearch, fetchThreads])
+
+  // Re-sync whenever the tab regains focus after > 60s, so counts update when
+  // Henry comes back from his email client after replying to things. The
+  // 60s floor prevents thrashing when he's rapid-tabbing between windows.
+  useEffect(() => {
+    const onVisibility = () => {
+      if (document.visibilityState !== 'visible') return
+      const now = Date.now()
+      if (now - lastSyncAtRef.current < 60_000) return
+      lastSyncAtRef.current = now
+      runSync()
+    }
+    document.addEventListener('visibilitychange', onVisibility)
+    window.addEventListener('focus', onVisibility)
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibility)
+      window.removeEventListener('focus', onVisibility)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const onLinkedManually = useCallback(async () => {
     setPickerThreadId(null)
