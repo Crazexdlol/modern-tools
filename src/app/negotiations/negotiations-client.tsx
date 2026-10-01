@@ -353,11 +353,16 @@ function ThreadRow({ thread, onLinkClaim, onChanged }: { thread: ThreadListItem;
     if (!window.confirm(`Mute ${label}? Future emails will skip the triage view.`)) return
     setBusy('spam')
     try {
-      await fetch('/api/negotiations/mute', {
+      const res = await fetch('/api/negotiations/mute', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify(payload),
       })
+      if (!res.ok) {
+        const detail = await res.text().catch(() => '')
+        window.alert(`Mute failed (${res.status}). ${detail}`.trim())
+        return
+      }
       onChanged()
     } finally { setBusy(null); setMenuOpen(false) }
   }

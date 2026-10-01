@@ -21,7 +21,11 @@ export function MutedClient() {
 
   const unmute = async (id: string) => {
     if (!window.confirm('Unmute? Future emails will show up in triage again. Already-muted threads stay in spam.')) return
-    await fetch(`/api/negotiations/mute/${id}`, { method: 'DELETE' })
+    const res = await fetch(`/api/negotiations/mute/${id}`, { method: 'DELETE' })
+    if (!res.ok) {
+      setError(`Unmute failed (${res.status})`)
+      return
+    }
     setEntries(prev => (prev ?? []).filter(e => e.id !== id))
   }
 
