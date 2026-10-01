@@ -22,6 +22,7 @@ interface SyncState {
 const FILTERS: { id: ThreadFilter; label: string }[] = [
   { id: 'needs_response', label: 'Needs response' },
   { id: 'unmatched', label: 'Unmatched' },
+  { id: 'closed_claim', label: 'Closed claim' },
   { id: 'spam', label: 'Spam' },
   { id: 'responded', label: 'Responded' },
 ]
@@ -89,7 +90,18 @@ export function NegotiationsClient() {
   const [loading, setLoading] = useState(true)
   const [sync, setSync] = useState<SyncState>({ running: false, lastSyncedAt: null, lastError: null, configMissing: null, lastReport: null })
   const [pickerThreadId, setPickerThreadId] = useState<string | null>(null)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [bulkBusy, setBulkBusy] = useState(false)
   const abortRef = useRef<AbortController | null>(null)
+
+  const toggleSelect = useCallback((id: string) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id); else next.add(id)
+      return next
+    })
+  }, [])
+  const clearSelection = useCallback(() => setSelectedIds(new Set()), [])
 
   const fetchThreads = useCallback(async (nextFilter: ThreadFilter, nextSearch: string, opts?: { withCounters?: boolean }) => {
     abortRef.current?.abort()
@@ -108,7 +120,7 @@ export function NegotiationsClient() {
       setData(prev => ({
         threads: json.threads,
         // Preserve prior counters when the current response didn't include them.
-        counters: json.counters ?? prev?.counters ?? { needs_response: 0, unmatched: 0, spam: 0, responded_today: 0, awaiting_oa_reply: 0 },
+        counters: json.counters ?? prev?.counters ?? { needs_response: 0, unmatched: 0, spam: 0, responded_today: 0, awaiting_oa_reply: 0, closed_claim: 0 },
         meta: json.meta,
       }))
     } catch (e: unknown) {
@@ -204,6 +216,48 @@ export function NegotiationsClient() {
     await fetchThreads(filter, search)
   }, [filter, search, fetchThreads])
 
+  // Clear bulk selection whenever the filter changes — the displayed list
+  // is now different, and leftover selections would be invisible.
+  useEffect(() => { clearSelection() }, [filter, clearSelection])
+
+  const bulkStatus = useCallback(async (status: 'ignored' | 'spam' | 'closed_claim') => {
+    const ids = Array.from(selectedIds)
+    if (ids.length === 0) return
+    const verb = status === 'ignored' ? 'archive' : status === 'spam' ? 'mark as spam' : 'move to Closed claim'
+    if (!window.confirm(`${verb} ${ids.length} thread${ids.length === 1 ? '' : 's'}?`)) return
+    setBulkBusy(true)
+    try {
+      await Promise.all(ids.map(id =>
+        fetch(`/api/negotiations/threads/${id}/status`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ status }),
+        })
+      ))
+      clearSelection()
+      await fetchThreads(filter, search, { withCounters: true })
+    } finally { setBulkBusy(false) }
+  }, [selectedIds, clearSelection, fetchThreads, filter, search])
+
+  const bulkDelete = useCallback(async () => {
+    const ids = Array.from(selectedIds)
+    if (ids.length === 0) return
+    if (!window.confirm(`Permanently delete ${ids.length} thread${ids.length === 1 ? '' : 's'}? This removes the emails from HamsPortal — the mail stays in your mailbox.`)) return
+    setBulkBusy(true)
+    try {
+      await Promise.all(ids.map(id =>
+        fetch(`/api/negotiations/threads/${id}/delete`, { method: 'POST' })
+      ))
+      clearSelection()
+      await fetchThreads(filter, search, { withCounters: true })
+    } finally { setBulkBusy(false) }
+  }, [selectedIds, clearSelection, fetchThreads, filter, search])
+
+  const selectAllVisible = useCallback(() => {
+    if (!data) return
+    setSelectedIds(new Set(data.threads.map(t => t.id)))
+  }, [data])
+
   return (
     <div>
       {sync.configMissing && sync.configMissing.length > 0 && (
@@ -218,9 +272,10 @@ export function NegotiationsClient() {
       )}
 
       {/* Counter cards — click a counter to jump to that filter. */}
-      <div className="grid grid-cols-4 gap-3 mb-5">
+      <div className="grid grid-cols-5 gap-3 mb-5">
         <Counter label="Needs response" value={data?.counters?.needs_response ?? 0} tone="red"    onClick={() => setFilter('needs_response')} active={filter === 'needs_response'} />
         <Counter label="Unmatched"      value={data?.counters?.unmatched ?? 0}       tone="amber"  onClick={() => setFilter('unmatched')} active={filter === 'unmatched'} />
+        <Counter label="Closed claim"   value={data?.counters?.closed_claim ?? 0}    tone="slate"  onClick={() => setFilter('closed_claim')} active={filter === 'closed_claim'} />
         <Counter label="Awaiting reply" value={data?.counters?.awaiting_oa_reply ?? 0} tone="slate" />
         <Counter label="Responded today" value={data?.counters?.responded_today ?? 0} tone="green" onClick={() => setFilter('responded')} active={filter === 'responded'} />
       </div>
@@ -288,6 +343,7 @@ export function NegotiationsClient() {
             <div className="text-sm text-gray-500 mb-1">
               {filter === 'needs_response' ? 'Inbox zero.' :
                filter === 'unmatched'      ? 'Nothing unmatched.' :
+               filter === 'closed_claim'   ? 'No emails on closed claims.' :
                filter === 'responded'      ? 'No responded threads yet.' :
                'No emails in this view.'}
             </div>
@@ -297,24 +353,65 @@ export function NegotiationsClient() {
           </div>
         )}
         {data && data.threads.length > 0 && (
-          <ul className="divide-y divide-gray-100">
-            {groupByClaim(data.threads).map(g => {
-              // One row per claim. For claims with multiple chains, show the
-              // most-recent thread and badge the extra count — the detail page
-              // surfaces the other chains for review.
-              const primary = g.threads[0]
-              const extraChains = g.threads.length - 1
-              return (
-                <ThreadRow
-                  key={primary.id}
-                  thread={primary}
-                  extraChains={extraChains}
-                  onLinkClaim={() => setPickerThreadId(primary.id)}
-                  onChanged={() => fetchThreads(filter, search)}
-                />
-              )
-            })}
-          </ul>
+          <>
+            {selectedIds.size > 0 && (
+              <div className="sticky top-0 z-10 bg-slate-900 text-white px-4 py-2 flex items-center gap-3 border-b border-slate-800">
+                <span className="text-sm font-medium">{selectedIds.size} selected</span>
+                <button
+                  onClick={() => bulkStatus('ignored')}
+                  disabled={bulkBusy}
+                  className="text-xs px-3 py-1 rounded-md bg-slate-700 hover:bg-slate-600 transition disabled:opacity-50"
+                >Archive</button>
+                <button
+                  onClick={() => bulkStatus('spam')}
+                  disabled={bulkBusy}
+                  className="text-xs px-3 py-1 rounded-md bg-slate-700 hover:bg-slate-600 transition disabled:opacity-50"
+                >Spam</button>
+                <button
+                  onClick={() => bulkStatus('closed_claim')}
+                  disabled={bulkBusy}
+                  className="text-xs px-3 py-1 rounded-md bg-slate-700 hover:bg-slate-600 transition disabled:opacity-50"
+                >Closed claim</button>
+                <button
+                  onClick={bulkDelete}
+                  disabled={bulkBusy}
+                  className="text-xs px-3 py-1 rounded-md bg-red-700 hover:bg-red-600 transition disabled:opacity-50"
+                >Delete</button>
+                <div className="ml-auto flex items-center gap-2">
+                  <button
+                    onClick={selectAllVisible}
+                    disabled={bulkBusy}
+                    className="text-xs px-2 py-1 rounded-md hover:bg-slate-800 transition disabled:opacity-50"
+                  >Select all visible</button>
+                  <button
+                    onClick={clearSelection}
+                    disabled={bulkBusy}
+                    className="text-xs px-2 py-1 rounded-md hover:bg-slate-800 transition disabled:opacity-50"
+                  >Clear</button>
+                </div>
+              </div>
+            )}
+            <ul className="divide-y divide-gray-100">
+              {groupByClaim(data.threads).map(g => {
+                // One row per claim. For claims with multiple chains, show the
+                // most-recent thread and badge the extra count — the detail page
+                // surfaces the other chains for review.
+                const primary = g.threads[0]
+                const extraChains = g.threads.length - 1
+                return (
+                  <ThreadRow
+                    key={primary.id}
+                    thread={primary}
+                    extraChains={extraChains}
+                    isSelected={selectedIds.has(primary.id)}
+                    onToggleSelect={() => toggleSelect(primary.id)}
+                    onLinkClaim={() => setPickerThreadId(primary.id)}
+                    onChanged={() => fetchThreads(filter, search)}
+                  />
+                )
+              })}
+            </ul>
+          </>
         )}
       </div>
 
@@ -373,7 +470,7 @@ function Counter({ label, value, tone, onClick, active }: { label: string; value
   )
 }
 
-function ThreadRow({ thread, onLinkClaim, onChanged, extraChains = 0 }: { thread: ThreadListItem; onLinkClaim: () => void; onChanged: () => void; extraChains?: number }) {
+function ThreadRow({ thread, onLinkClaim, onChanged, extraChains = 0, isSelected = false, onToggleSelect }: { thread: ThreadListItem; onLinkClaim: () => void; onChanged: () => void; extraChains?: number; isSelected?: boolean; onToggleSelect?: () => void }) {
   const senderDisplay = thread.lastFromName || thread.lastFromAddr.split('@')[0]
   const senderDomain = thread.lastFromAddr.split('@')[1] ?? ''
   const dt = new Date(thread.lastSentAt)
@@ -435,6 +532,16 @@ function ThreadRow({ thread, onLinkClaim, onChanged, extraChains = 0 }: { thread
       <StatusAccent status={thread.status} />
       <div className="pl-4 pr-4 py-3.5 hover:bg-gray-50/70 transition">
         <div className="flex items-start gap-4">
+          {onToggleSelect && (
+            <input
+              type="checkbox"
+              checked={isSelected}
+              onChange={onToggleSelect}
+              onClick={(e) => e.stopPropagation()}
+              className="mt-3 w-4 h-4 rounded border-gray-300 text-slate-900 focus:ring-slate-500 shrink-0 cursor-pointer"
+              aria-label="Select thread"
+            />
+          )}
           <SenderAvatar name={senderDisplay} status={thread.status} />
 
           <div className="flex-1 min-w-0">
@@ -578,6 +685,7 @@ function StatusAccent({ status }: { status: string }) {
     status === 'responded'      ? 'bg-emerald-500' :
     status === 'unmatched'      ? 'bg-amber-400' :
     status === 'spam'           ? 'bg-slate-300' :
+    status === 'closed_claim'   ? 'bg-slate-400' :
                                   'bg-slate-300'
   return <div className={`absolute left-0 top-0 bottom-0 w-1 ${cls}`} aria-hidden />
 }
@@ -606,6 +714,7 @@ function StatusPill({ status }: { status: string }) {
     unmatched:      { label: 'Unmatched',   className: 'bg-amber-50 text-amber-700 border-amber-200' },
     ignored:        { label: 'Ignored',     className: 'bg-slate-50 text-slate-600 border-slate-200' },
     spam:           { label: 'Spam',        className: 'bg-slate-50 text-slate-500 border-slate-200' },
+    closed_claim:   { label: 'Closed claim', className: 'bg-slate-100 text-slate-600 border-slate-300' },
   }
   const s = map[status] ?? { label: status, className: 'bg-slate-50 text-slate-700 border-slate-200' }
   return (

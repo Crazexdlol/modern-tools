@@ -165,7 +165,14 @@ async function processOneThread(
         matchedByUser: null,
       })
       if (linked) {
-        threadPatch.status = 'needs_response'
+        // If the matched claim is closed, park the thread in 'closed_claim' so
+        // it stays visible but out of triage. Otherwise it's a live negotiation.
+        const { data: claimRow } = await supabase
+          .from('acv_history')
+          .select('status')
+          .eq('id', match.matchedClaimId)
+          .maybeSingle()
+        threadPatch.status = claimRow?.status === 'closed' ? 'closed_claim' : 'needs_response'
         result.autoMatched++
       }
     }

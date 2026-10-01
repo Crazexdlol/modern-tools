@@ -294,13 +294,16 @@ async function updateThreadFromMessage(
     .maybeSingle()
 
   const patch: Record<string, unknown> = {}
+  // Terminal statuses — once set, inbound/outbound traffic doesn't flip them.
+  // 'closed_claim' means the claim is closed; replies aren't actionable.
+  const PRESERVED = new Set(['ignored', 'spam', 'closed_claim'])
   if (isOutbound) {
     if (!thread?.last_outbound_at || iso > (thread.last_outbound_at as string)) {
       patch.last_outbound_at = iso
     }
     // If the newest message overall is now outbound (a reply), the thread
-    // moves to 'responded'. Preserve manual 'ignored' or 'spam' overrides.
-    if (thread && thread.status !== 'ignored' && thread.status !== 'spam') {
+    // moves to 'responded'. Preserve PRESERVED statuses.
+    if (thread && !PRESERVED.has(thread.status as string)) {
       const lastInbound = thread.last_inbound_at as string | null
       if (!lastInbound || iso > lastInbound) patch.status = 'responded'
     }
@@ -309,8 +312,8 @@ async function updateThreadFromMessage(
       patch.last_inbound_at = iso
     }
     // New inbound after a prior outbound → moves back to 'needs_response'
-    // (or stays 'unmatched' if never matched). Preserve manual overrides.
-    if (thread && thread.status !== 'ignored' && thread.status !== 'spam') {
+    // (or stays 'unmatched' if never matched). Preserve PRESERVED statuses.
+    if (thread && !PRESERVED.has(thread.status as string)) {
       const lastOutbound = thread.last_outbound_at as string | null
       if (thread.status === 'responded' && (!lastOutbound || iso > lastOutbound)) {
         patch.status = 'needs_response'
