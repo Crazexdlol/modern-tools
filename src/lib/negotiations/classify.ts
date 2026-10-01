@@ -112,6 +112,28 @@ export async function classifyMessage(
   const subject = msg.subject || ''
   const body = (msg.textBody || '') + '\n' + stripHtml(msg.htmlBody || '')
 
+  // Rule 0: muted sender / domain (persistent allowlist Henry curates via UI).
+  // Pre-migration safe: if the table doesn't exist, this check is a no-op.
+  if (from) {
+    const atIdx = from.indexOf('@')
+    const domain = atIdx > 0 ? from.slice(atIdx + 1) : ''
+    const mutedQuery = supabase
+      .from('negotiation_muted_senders')
+      .select('id, email, domain')
+      .or(domain ? `email.eq.${from},domain.eq.${domain}` : `email.eq.${from}`)
+      .limit(1)
+    const { data: mutedRows, error: mutedErr } = await mutedQuery.maybeSingle()
+    if (!mutedErr && mutedRows) {
+      const reason = mutedRows.email ? 'muted sender' : 'muted domain'
+      return { classification: 'automated', confidence: 1.0, reason }
+    }
+    // 42P01 = table doesn't exist. Silent fallback = no mute applied.
+    // Any other error: log and continue (don't fail classification).
+    if (mutedErr && mutedErr.code && mutedErr.code !== '42P01') {
+      console.warn('[negotiations/classify] mute lookup error', mutedErr.message)
+    }
+  }
+
   // Rule 1: automated sender pattern.
   for (const p of AUTOMATED_SENDER_PATTERNS) {
     if (p.test(from)) {
