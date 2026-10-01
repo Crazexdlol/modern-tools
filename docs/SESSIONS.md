@@ -18,6 +18,299 @@ Read `CLAUDE.md` first if you haven't. Then read the top entry here before touch
 
 ---
 
+## 2026-10-01 — Negotiations auto-link v2 + multi-chain grouping + sender muting
+
+**Worked on:** The Negotiations tab was asking Henry to manually link threads even when the subject line had the MA# or claim# in plain sight. Also: one claim could have multiple email chains that showed up as separate rows with no grouping, and automated no-reply senders (e.g. `moderngroupinc@claimleader.com`) kept slipping into "needs response" because they didn't match the hard-coded automated-sender regexes. Spec: `docs/superpowers/specs/2026-10-01-negotiations-auto-link-and-triage-design.md`. Plan: `docs/superpowers/plans/2026-10-01-negotiations-auto-link-and-triage.md`. Executed via subagent-driven-development with spec + code quality review after every task.
+
+**Diagnosis before the fix:** verified via `scripts/check-neg-match.mjs` that three real production subjects Henry pasted all referenced open HamsPortal claims with exact-matching stored data — so the matcher *should* have been nailing them. Three root causes: (1) `MA#` / `CL#` with `#` touching the digits unparseable by the current regex; (2) threads classified-but-unmatched never retried once `classification IS NOT NULL`; (3) carrier claim#s with suffix variants (e.g. `CA0021715171-02` vs stored `CA0021715171`) failed strict equality.
+
+**Changed:**
+- `supabase/migration-negotiations-matcher-v2.sql` + rollback — adds `email_threads.matcher_version smallint not null default 0` with a partial index `where status='unmatched'`, and the new `negotiation_muted_senders` table (email XOR domain, muted_by FK to profiles, RLS gated on `has_negotiations_access()`). Idempotent. Henry ran it — all 3 verification rows returned 1.
+- `src/lib/negotiations/classify.ts` — exported `stripSubjectNoise()` that strips `[SPAM] / [External] / [Secure] / Re: / Fwd: / FW:` iteratively until stable. Alternation ordered longest-first (`fwd|fw|re`) so `Fwd:` isn't half-eaten. `MA_REGEX` now accepts `[\s\-#:.]*` between the `MA` and digits, so `MA#3950817`, `MA# 3950817`, `MA-3950817`, `MA:3950817` all parse. New `CL_REGEX` for `CL# 4683005` style carrier shorthand. MA# captures normalize to digits-only (`3950817`) because `acv_history.ma_number` stores bare digits. Rule 0 at the top of `classifyMessage` queries `negotiation_muted_senders` (`.or(email.eq.X,domain.eq.Y)`) and short-circuits to `{ classification: 'automated', confidence: 1.0 }` on a hit. 42P01 silently falls through so pre-migration is safe.
+- `src/lib/negotiations/match.ts` — new exported `normalizeClaimNumber` (strip non-alphanumeric + uppercase) and `fuzzyClaimMatch` (equal OR prefix OR suffix with ≥ 6 char overlap). The insurance-claim-# step now runs strict first, tracks hits in a `Set`, then does a fuzzy fallback over up to 500 open claims (RLS scopes to active company). `matchedBy` label widened so fuzzy reasons also map to `'auto:claim_no'` instead of falling through to `'auto:oa_email'`.
+- `src/lib/negotiations/process.ts` — exported `CURRENT_MATCHER_VERSION = 2`. Thread-selection switched from `.is('classification', null)` to `.lt('matcher_version', CURRENT_MATCHER_VERSION)`, with 42703 fallback to the legacy guard. New `updateThreadWithVersionFallback(supabase, threadId, patch)` helper wraps all three `email_threads.update(...)` sites inside `processOneThread` and drops `matcher_version` on 42703 so pre-migration updates still succeed. On next Sync, every pre-existing thread (default version 0) gets re-processed exactly once.
+- `src/app/api/negotiations/mute/route.ts` *(new)* — `GET` lists mutes (newest-first, 500 cap, returns `migrationPending: true` on 42P01). `POST` validates XOR email/domain, lowercases + strips leading `@`, inserts with `muted_by: caller.userId`, handles 23505 by fetching the existing row, 42P01 returns 503. Backfill: marks existing `status='needs_response'` threads from that sender/domain as spam so Henry's backlog clears without a sync pass.
+- `src/app/api/negotiations/mute/[id]/route.ts` *(new)* — `DELETE` removes a mute. Intentionally does NOT un-spam old threads (avoids a notification burst).
+- `src/app/negotiations/negotiations-client.tsx` — `ThreadRow` gained a `mute('sender'|'domain')` handler + two new kebab-menu buttons ("Mute this sender" / "Mute entire domain") before the Delete item. Both check `res.ok` and `window.alert` on failure (silent-pass bug caught by code review). Header gained an Archive-icon gear link to `/negotiations/muted`. New `groupByClaim(threads)` helper + `ClaimGroupRow` component — threads sharing a `claimId` collapse into one card showing vehicle + MA# + "N chains · M needs reply", auto-expanded when any need reply. Single-chain claims and unmatched threads still render as plain `ThreadRow` (zero visual change for those). Sort by `latestSentAt` desc via `localeCompare` on ISO strings.
+- `src/app/negotiations/muted/page.tsx` + `muted-client.tsx` *(new)* — minimal admin page listing muted entries with Unmute button. Guards via `requireNegotiationsAccessOrNotFound()`. Unmute also checks `res.ok` before optimistic removal and surfaces failures via a visible error state.
+- `scripts/verify-neg-regex.mjs` *(new)* — zero-dep sanity check with 5 cases: the three real subjects Henry pasted (RIF-KOSA, Amber Aiton, Gregory Gale) + a `Fwd:` regression case + a noise-only case. All pass.
+- `scripts/check-neg-match.mjs` *(exists from discovery)* — probes 6 identifiers from the real subjects against the DB. Confirmed all 6 still hit via strict after the matcher change (fuzzy is additive, strict path unchanged).
+
+**Deploy status:** LIVE.
+```
+dpl_25kHE3GLpxVaGfVEYiUfQdxiYmCV  ← current — negotiations matcher v2
+dpl_4N5MLq1BDxDFzDrWbJT82w3VH841  ← prior session (demo account + Phase col hidden) — rollback target
+```
+Rollback: `npx vercel promote https://modern-tools-m0o47cf7g-henry-as-projects-88caed67.vercel.app --scope henry-as-projects-88caed67 --yes`.
+
+Migration `migration-negotiations-matcher-v2.sql` run by Henry — all 3 verification rows returned 1. tsc + full `npm run build` clean. 82 pages generated, `/negotiations/muted` + `/api/negotiations/mute*` + `/api/negotiations/mute/[id]` all compiled.
+
+**In progress / broken / unknowns:** none active. Henry hasn't yet clicked Sync post-deploy — the first Sync will re-process every existing thread exactly once (they default to `matcher_version=0`, bump to `2` after processing). Expect a one-time jump in "auto-linked" count. If the fuzzy fallback misses, we can raise the 6-char overlap threshold to 7 or 8 in `fuzzyClaimMatch` — single-constant tweak.
+
+**Next:** monitor the auto-link rate on the next few sync passes. If a claim appears as muted-by-accident, the admin page at `/negotiations/muted` is one click to undo. The deferred backlog (`project_hamsportal_deferred.md`) is unchanged.
+
+---
+
+## 2026-10-01 — Temporary demo admin account + stripped dashboard chrome
+
+**Worked on:** Henry asked for a one-off admin account (`demo@hamsportal.com` / `demo1234`) with a cleaner dashboard — no phase chips, no Messages link, no Completed filter button — but zero behavior change for every other account. Explicitly temporary, he'll delete it later.
+
+**Changed:**
+- `src/app/page.tsx` — added `const strippedDashboard = profile?.email?.toLowerCase() === 'demo@hamsportal.com'`. Wrapped three JSX blocks in `!strippedDashboard` gates: the Messages link next to the "open" count pill, the phase chip row (`visiblePhaseConfigs`), and the admin-only Completed filter button (was `isAdmin`, now `isAdmin && !strippedDashboard`). Everything else — the openClaims pill, New Claim button, ClaimsTable, license banner — renders unchanged. The gate is a strict `===` on one hard-coded email, so for every other user `strippedDashboard` is always false and the dashboard is byte-identical to before.
+- `scripts/create-demo-account.mjs` (untracked, one-off, re-runnable) — uses `SUPABASE_SERVICE_ROLE_KEY` from env to `auth.admin.createUser({ email_confirm:true })`, then updates the auto-seeded profile row to `role='admin'`, `name='Demo'`, `is_active=true`, `show_in_handling_appraiser_list=false` (so the demo doesn't show up in the Claim Info handling-appraiser dropdown for real users). Service role bypasses the `profiles_role_guard` so the role bump is allowed.
+
+**Account facts:**
+- Auth user id: `19e58cf7-64df-4e59-a10f-a11e65ac429a`
+- Email / password: `demo@hamsportal.com` / `HamsDemo!1` (initially set to `demo1234` but swapped same-session after Chrome flagged it as breached)
+- Full admin role → sees all team claims + all tools (ACV, DV, Award, Notes, Summary, Estimate Dispute, Invoice, Documents, Comp Finder, Loss Search, Reports, Rules/Laws).
+- Negotiations tab NOT enabled (flag `negotiations_access` left default-false; Henry-only today).
+- Hidden from the Handling Appraiser dropdown so real users don't see a "Demo" option.
+- Granted Modern Appraisers company access (`user_companies` row + `profiles.active_company_id = modern-appraisers.id`). The multi-company RLS requires both — Demo was created *after* the multi-company backfill ran, so the first login showed "No open claims" until these were set. Latent bug for any future-created user: `handle_new_user()` doesn't seed company access.
+
+**When Henry wants to delete the account:** remove the ~5 lines in `src/app/page.tsx` (the constant + 3 `!strippedDashboard` gates), then delete the auth user in Supabase dashboard (profile row cascades). Also safe to drop `scripts/create-demo-account.mjs`.
+
+Also hid the per-row Phase column (right side of each claim row) on the demo dashboard by passing `statusPhaseConfigs={strippedDashboard ? [] : statusPhaseConfigs}` to `ClaimsTable`. The table already hides the header, col-width, and per-row cell when the array is empty — zero changes needed in `claims-table.tsx` itself.
+
+**Deploy status:** LIVE.
+```
+dpl_4N5MLq1BDxDFzDrWbJT82w3VH841  ← current — + Phase column hidden on demo
+dpl_wqMei7HpckhACt82baAw5qPgBRgz  ← demo account + stripped top-of-dashboard chrome
+dpl_49NRtJU9PN5xgjTXVQCgiVG6GuL7  ← prior session (per-type MA Value fields) — rollback target
+```
+Rollback: `npx vercel promote https://modern-tools-ak8gy6oj9-henry-as-projects-88caed67.vercel.app --scope henry-as-projects-88caed67 --yes`.
+
+tsc + build clean. No migrations.
+
+**In progress / broken / unknowns:** none from this session. Prior-session backlog unchanged.
+
+**Next:** Henry's call. If he wants the demo on Negotiations too, flip `negotiations_access=true` on the profile row.
+
+---
+
+## 2026-09-30 — Summary print filename, DV template white-text fix, per-type MA Value fields
+
+**Worked on:** Three small-but-visible claim-workspace polish items Henry asked for in one go. (1) Summary tab's "Print" was suggesting a random browser filename (page title) — fix the default to `<MA#>-summary`. (2) Henry reported DV reports "didn't carry over the MA#" — root-caused to the DV template's claim-info-page fields having a /DA color of `1 1 1 rg` (white text on white page): the filler was writing the value correctly, it was just invisible. (3) The Claim Info → Valuations "MA Value" field only read ACV; Henry wants one MA Value field *per selected loss type* (ACV / DV / Storage), each auto-filled from its own tool tab, and never for Estimate Dispute.
+
+**Changed:**
+- `src/components/claim/ClaimWorkspace.tsx` — (a) Summary tab's Print button now sets `document.title = "<MA#>-summary"` right before `window.print()` and restores it after, so Save-as-PDF defaults to the right name. (b) Added `dvValueNum?` + `storageValueNum?` to the `notesData` shape (optional for legacy row compat). (c) Replaced the single Valuations MA Value field with a per-type conditional block: shows `MA Value (ACV)`, `MA Value (DV)`, and/or `MA Value (Storage)` based on `claim.claimTypes`. Each one auto-fills from its respective tool tab (`result.acv`, `finalDvFor(dv, claim.mileage)`, `computeStorageTotals(storage).total`) with a manual-override fallback stored on `notesData`. Empty types + 'other' → all three visible (matches `visibleToolTabs` behavior). Estimate Dispute never produces a Valuations row. Also imported `finalDvFor` + `computeStorageTotals`.
+- `src/lib/acv/dv-pdf-filler.ts` — in the field-fill loop, after `setText`, rewrite any `/DA` that paints text white (`1 1 1 rg`/`RG`) to black (`0 g`/`0 G`) before `defaultUpdateAppearances`. Only touches literal white — non-white colors (e.g. the `0.121 0.286 0.490 rg` blue on the valuation fields) pass through unchanged. Fixes invisible MA#, Claim #, Date, Client Name, VIN, vehicle, mileage, phone on page 1 of every DV variant.
+- `src/components/claim/dv-tab.tsx` — exported new helper `finalDvFor(dv, claimMileage): number` that encapsulates the final-DV formula (baseline × severity × mileMod, minus prior-loss reduction when `withPriorLoss`). Lets Claim Info compute the DV amount without duplicating the formula.
+
+**Side scripts (untracked, kept for future template audits):**
+- `scripts/inspect-dv-fields.mjs` — dumps every AcroForm field name per DV template variant.
+- `scripts/inspect-dv-widget-positions.mjs` — dumps page + rect for key fields (confirmed `file.0.0` appears on both pages 0 and 1).
+- `scripts/inspect-dv-field-flags.mjs` — dumps per-field `/Ff` + `/DA` — this is how the white-text bug was found.
+- `scripts/test-dv-fill.mjs` — renders a filled sample DV PDF (`_dv-test.pdf`) and prints the DA transformations per field; verifies the fix end-to-end.
+
+**Deploy status:** LIVE. Three sequential deploys this session (each verified via `vercel inspect` alias flip to new deploy id):
+```
+dpl_HgqnCLTu3s6HCgkBjud5yv4NF7xm  ← current — per-type MA Value fields in Valuations
+dpl_29zZSFQn7a5TAyPARi46E6hGoCQq  ← MA Value fallback included DV amount (single field, superseded by HgqnCLTu3s6…)
+dpl_SSaCyxzJbCmmWhnfkEvymDduMM1b  ← summary print filename + DV template white-text fix
+dpl_84rdcVe4DumFNjsnNJD4g6u6iraR  ← prior session (voice + draft tool_use JSON) — rollback target if anything above breaks
+```
+Rollback: `npx vercel promote <URL for that dpl> --scope henry-as-projects-88caed67 --yes`.
+
+tsc + build clean on each deploy. No migrations needed — `dvValueNum` / `storageValueNum` live on an existing jsonb column (`reports_state.notesData`).
+
+**Why the mid-session course-correct:** I misread Henry's second ask on the first pass. He said "DV doesn't auto-populate the Modern Appraiser number on the claim info page" — I read that as "MA# field on the printed DV PDF is blank" and shipped the white-text fix (which was a real bug, so it stays). What he actually meant was "the MA Value field in the Claim Info → Valuations section should show the DV amount when I do a DV, same as it shows ACV when I do an ACV." That became deploy #2, then he expanded it to "actually, one field per loss type, with Storage too" — deploy #3.
+
+**In progress / broken / unknowns:**
+- Still-deferred backlog from 2026-09-17 morning (see [[project_hamsportal_deferred]]) untouched this session.
+- Still-pending from 2026-09-18 session: storage inventory + capacity conversation Henry wanted; Phase 3 negotiations OCR pipeline; MarketCheck at draft-generation time; attachment lazy-download; `awaiting_oa_reply` precise counter.
+- DV template bug is fixed in code only — the templates themselves still carry the white `/DA` strings. If Acrobat ever re-exports / replaces the DV templates, verify the filler still catches the color before shipping.
+
+**Next:** Henry's call. The storage/capacity convo from last session is still queued.
+
+---
+
+## 2026-09-18 — Negotiations Phases 2-4 shipped + Login redesign
+
+**Worked on:** Extended the Negotiations tab from Phase 1 (list view only) to a fully-functional AI negotiation workspace: auto-classification + auto-matching, thread workspace with chat-bubble message view, voice-profile trainer for tone/tactics, Claude-driven draft generation with negotiation-state detection and auto-generated award PDFs on acceptance. Plus a Claim Info "Valuations" section for all users, and a login-page redesign.
+
+**Changed:**
+
+_Negotiations Phase 2 (classify + match):_
+- `src/lib/negotiations/classify.ts` — rules-first classifier (sender patterns → automated, claim# / VIN / adjuster-email → negotiation, else informational), stores classification + confidence + reason on the thread.
+- `src/lib/negotiations/match.ts` — deterministic matcher: extracts claim# / VIN from subject+body, queries `acv_history.ma_number`, `vin`, `claim->>claimNumber`; falls back to `oa_claim_history` (learned links) and `claim->>adjusterEmail`. Auto-matches only when top candidate score ≥ 80 AND ≥ 30 ahead of runner-up.
+- `src/lib/negotiations/process.ts` + `/api/negotiations/process` — orchestrator that classifies + matches unmatched threads in 40-per-call batches (client loops until drained).
+- `/api/negotiations/search-claims` — typeahead across MA#, VIN, vehicle, insured/claimant name, claim#. Open claims first.
+- `/api/negotiations/threads/[id]/match` — POST manual match.
+
+_Negotiations Phase 4 (thread workspace + Claude draft):_
+- `src/app/negotiations/[id]/page.tsx` + `thread-workspace-client.tsx` — thread workspace. Sticky compact claim strip (MA# / vehicle / client / adjuster / our ACV / OA value / award). Left column: conversation as chat bubbles (redesigned mid-session — see below). Right column: sticky draft panel with Analysis + Email tabs, Copy button, confidence badge, Regenerate-with-instructions collapsible.
+- `/api/negotiations/threads/[id]/route.ts` — thread detail (messages, attachments, claim, latest draft).
+- `/api/negotiations/threads/[id]/status/route.ts` — set status (used for Mark responded, Archive, Spam).
+- `/api/negotiations/threads/[id]/draft/route.ts` — POST generate a new draft.
+- `src/lib/negotiations/draft.ts` — Claude Sonnet 4.6 draft generator. Structured JSON output. Uses voice profile + claim data + full thread. Multiple hardening passes this session (see below).
+
+_Voice profile system:_
+- `src/lib/negotiations/voice.ts` + `/api/negotiations/voice` + `/negotiations/voice` page — reads Henry's most-recent 300 sent emails (bumped from 200), strips quoted-reply chains, feeds to Claude Sonnet 4.6, extracts structured profile (tone, opening/closing patterns, negotiation moves, escalation patterns, common phrases, style dos/don'ts, concession style). Stored on `negotiation_config.data.voice_profile`.
+- `src/lib/imap/backfill.ts` + `/api/negotiations/voice/backfill` — pulls up to 5 years of Sent-folder history from IMAP, deduped by Message-ID. Range pills on the voice page (6mo / 1y / 2y / 5y). Cap 1,000 messages per run.
+- Voice page shows current corpus stats (sent-email count, oldest→newest date range) so Henry can see what the trainer sees.
+
+_Draft-quality hardening (multiple iterations based on Henry's feedback on real drafts):_
+- **Negotiation-state detection** — Claude must first classify the thread's state (`oa_accepted_our_offer` / `oa_counter_offered` / `oa_argued_no_number` / `oa_stalling` / `awaiting_oa_report` / `opening_move`) with quoted-evidence reasoning, then draft accordingly. Fixed a case where acceptance ("wrap this up" after Henry's $29K offer) was misread as stalling.
+- **State banner in the workspace UI** — colored banner at the top of the draft panel showing what state the AI thinks it's in, so misclassifications are caught at a glance.
+- **Auto award PDF on acceptance** — when state = `oa_accepted_our_offer` and Claude returns an `agreed_amount`, the server fills the correct award template (MA / EV), uploads to `claim-documents`, appends to `acv_history.documents`, and mirrors the amount into `reports_state.notesData.agreementAmountNum` + `awardData.acvAmountNum`. Workspace shows a green "Download award" banner.
+- **`/api/negotiations/download-award`** — auth-gated signed URL generator for the auto-filed award PDF.
+- **Hard-banned draft language + scrubbers:**
+  - Never apologizes for delay ("sorry for the delay", "thanks for your patience", etc.) — prompt-banned + regex scrubber strips any that slip through.
+  - Deductible never mentioned (irrelevant to ACV/DV negotiations) — prompt-banned + `isBannedMissingInfo` filter drops deductible / award-template noise from `missing_info`. Deductible line removed from the claim summary Claude sees.
+  - Em-dashes / en-dashes stripped from drafts (em → comma, en → hyphen). Regular hyphens (phone numbers, compound words) untouched.
+  - Signature block after the closing salutation stripped ("Kind regards," and nothing after) — Outlook adds Henry's real sig on send.
+  - Prompt tells the AI never to restate vehicle YMM / VIN / claim# in the body (subject + thread already carry that context).
+  - Prompt requires the draft to reference "please find award attached" for acceptance state.
+
+_Claim Info Valuations section (live for all users, both MA + EV):_
+- `src/components/claim/ClaimWorkspace.tsx` — added `notesData.insuranceOfferNum` field. New "Valuations" section below Opposing Appraiser on Claim Info tab: MA Value (auto from `result.acv`, editable fallback), Ins. Co. Offer (new manual field), OA Value (two-way linked with Closing Notes `appraiserValueNum`), Award Amount (two-way linked with `agreementAmountNum`). All four use `CurrencyInput`.
+- `src/components/claim/assignment-sheet.tsx` — added `insuranceOfferValue` prop + row between Our DV and Opposing (IA) Value.
+
+_UI redesigns:_
+- **Negotiations list** — cleaner rows with left status accent bar, sender avatar, tight metadata layout, prominent primary CTA (purple "Draft reply" / "Open draft" or gray "Open"). Clickable counter cards double as filter shortcuts.
+- **Thread workspace** — chat bubbles for messages (originally left/right split, then rewritten to a single chronological stream with newest-first ordering, colored left border + "You sent" / "Received" pill instead of L/R alignment, always readable colors, latest message auto-expanded).
+- **List row overflow menu (⋮)** — Archive (status='ignored'), Mark as spam (status='spam'), Delete permanently (cascade drops thread + messages + attachments + case + drafts + storage objects). All confirmable.
+- **Tab reorder** — Needs response → Unmatched → Spam → Responded. Dropped "All" tab.
+- **"Draft ready" pill** on rows where a draft exists but hasn't been marked responded; CTA flips to "Open draft" in purple with a ring.
+- **Login page redesign** — big navy H logo (144px) with subtle blue glow behind it, wide-tracked "HAMS Portal" wordmark (HAMS in slate-900 caps, "Portal" in exact logo navy `#1a3a70`), ambient radial washes, refined form card with blue focus rings, "LOGIN" heading in the card.
+
+_Perf work on Negotiations tab (Henry flagged 15-30s tab-switch latency):_
+- `supabase/migration-negotiations-perf.sql` + `-rollback.sql` — denormalized `latest_from_addr`, `latest_from_name`, `latest_subject`, `latest_snippet`, `latest_sent_at`, `latest_has_attachments`, `has_draft` onto `email_threads`. Backfills from existing data. Composite index on `(status, latest_sent_at desc)`.
+- `supabase/migration-negotiations-counters-rpc.sql` + `-rollback.sql` — `public.negotiations_counters()` returns all 4 status counters in ONE `count(*) FILTER (WHERE ...)` round-trip instead of 4 parallel queries.
+- `src/lib/imap/sync.ts` — after inserting a message, updates the denormalized latest_* columns on the thread row (only when the new message is newer than the current latest).
+- `src/lib/negotiations/draft.ts` — flips `email_threads.has_draft = true` after inserting a draft.
+- `src/lib/imap/backfill.ts` — same denorm updates from backfill inserts.
+- `/api/negotiations/threads` route rewrite — single indexed query on `(status, latest_sent_at)`, RPC for counters, graceful fallback if the perf migration hasn't run, `planned` counts instead of `exact` for badge accuracy, computed awaiting_oa_reply from page rows.
+- Client `?counters=1` on mount + post-sync only; filter clicks skip counter refetch. Search input debounced 250ms. Counters preserved across filter changes.
+
+**Migrations Henry ran this session (in Supabase SQL Editor):**
+- `supabase/migration-negotiations.sql` (Phase 1 tables + flag + RLS + storage bucket)
+- `supabase/migration-negotiations-perf.sql` (denorm columns + backfill + composite index)
+- `supabase/migration-negotiations-counters-rpc.sql` (counters RPC)
+
+**Deploy status:** LIVE. Current: `dpl_84rdcVe4DumFNjsnNJD4g6u6iraR` on `hamsportal.com`. tsc + build clean throughout. Everything shipped this session preserved the zero-user-impact constraint for the Negotiations tab (Henry-only via `negotiations_access` flag); Claim Info Valuations is intentionally live for everyone.
+
+**Tool-use JSON refactor (late-session fix):** `src/lib/negotiations/voice.ts` + `src/lib/negotiations/draft.ts` — switched from free-text JSON output to Anthropic tool-use with `tool_choice: force` and full input_schema. Anthropic validates the shape server-side and the SDK hands back a JS object, so verbatim email quotes (apostrophes, straight quotes, punctuation) can no longer break parsing. Fixed a "Failed to parse voice profile JSON at position 529" crash. Same defense-in-depth on the draft endpoint eliminates the same class of failure.
+
+**Rollback path** (this session, newest first):
+```
+dpl_84rdcVe4DumFNjsnNJD4g6u6iraR  ← current (voice + draft use Anthropic tool_use for schema-enforced JSON)
+dpl_H7j1v1PUN9J6WjZYvFSrCfetXJYQ  ← login: LOGIN heading in card
+dpl_CE7bVqZuUVUWqDFqg5Ld9Wb7Btsi  ← login: HAMS caps + Portal in logo navy, dropped tagline + footer
+dpl_3VekZbWZUC67vqvniWFuiJTrcnCT  ← login redesign v1 (big logo + wordmark + tagline + footer)
+dpl_V5pzvWY3LFY1QdK96GwKgRFX7TLz  ← counters RPC + skip counters on filter click + search debounce
+dpl_AnruZRKxRhxY736nRWcXUd9bXTS3  ← threads route perf pass 1 (planned counts + fallback)
+dpl_H5BbFx31SzKjvcMsw2zSktFpA7Re  ← voice-corpus expander (pull sent history 6mo/1y/2y/5y)
+dpl_AK8USn2GCi8pD1bTMHLTZSf38q4i  ← denorm latest_* + has_draft + Draft-ready pill + Delete/Archive/Spam menu + tab reorder
+dpl_9ubVnqk4zYY7jCw5yJL7qKRXbcwG  ← draft rules: no delay apology, no deductible, no em-dash, no signature block
+dpl_GqsYAS9Tq3JJK8hanohdhmLbZq6L  ← auto award PDF on acceptance + files to claim documents + updates notesData
+dpl_EWMdWD2FbiXUry4yFZfwrZ69v7wb  ← thread stream: newest first, chronological, readable colors
+dpl_8nArejrcVPLDzvakqpxiCQKJBPYE  ← negotiation-state detection (acceptance vs stall vs counter)
+dpl_CgTq9vNpfVtLnvW7Noi7FHWnbyXP  ← Negotiations UI redesign v1: cleaner list rows + chat-bubble workspace + tabbed draft panel
+dpl_DnS33c5YJe52MiDDkV6eoza4Jaz2  ← Claim Info Valuations section + Ins. Co. Offer on assignment sheet
+dpl_FXUf6WyHWsmqWUt97Cd5mC9LKRGH  ← Phase 2 classify+match + Phase 4 lite workspace + voice profile + Claude draft
+```
+Rollback: `npx vercel promote <URL for that dpl> --scope henry-as-projects-88caed67 --yes`.
+
+**In progress / broken / unknowns:**
+- Phase 3 (deep OCR pipeline over CCC / OA PDFs into a structured `valuation_ledgers` table) not built. Drafts currently read from `acv_history`'s structured jsonb fields directly. Adequate for now, but a CCC valuation attached only as a PDF is not reasoned over.
+- MarketCheck integration in draft time (fresh comps at draft-generation) not built — drafts use the comps already on the claim. `marketcheck_pulls` cache table is created but unused.
+- Attachment lazy-download (Phase 3 detail) — email attachments show as chips with filename + size but aren't clickable yet.
+- Non-blocking: `awaiting_oa_reply` counter is approximated from the current page rows rather than a true global count. Fine while the total thread count is small.
+- Deferred backlog memory (`project_hamsportal_deferred.md`) still has the 5 open MA/EV polish items from 2026-09-17 morning.
+
+**Next:** Storage inventory + capacity conversation Henry wants next. Then whatever priorities land after that.
+
+---
+
+## 2026-09-17 (evening) — Negotiations tab Phase 1: schema + IMAP sync + list view (Henry-only, NOT DEPLOYED YET)
+
+**Worked on:** Kickoff of the Negotiations tab — Henry-only tool that ingests inbound negotiation email from `henry@modernappraisers.com` via read-only IMAP, threads it, and lists it for triage. Phase 1 scope = schema + sync + list view. Matching, document ingestion, and Claude drafts come in phases 2-4. Non-negotiable design constraint (Henry, this session): zero user impact for anyone except him, no layout changes for Modern Appraisers.
+
+**Changed:**
+
+_New:_
+- `supabase/migration-negotiations.sql` + `-rollback.sql` — additive-only migration. Adds `profiles.negotiations_access` flag, extends `profiles_role_guard` to protect it from non-admin self-grant, creates `has_negotiations_access()` RLS helper, creates 10 new tables (`email_threads`, `email_messages`, `email_attachments`, `imap_sync_state`, `negotiation_cases`, `oa_claim_history`, `valuation_ledgers`, `marketcheck_pulls`, `negotiation_drafts`, `negotiation_config`), and a private `negotiation-attachments` storage bucket. Every new object is RLS-gated by the flag; claim-scoped tables additionally respect multi-company predicates. **Not run yet — Henry to run manually in Supabase SQL Editor.**
+- `src/lib/imap/client.ts` — `imapflow` wrapper with config validation, TLS/993 connect, socket + greeting timeouts, and Sent-folder auto-detection via SPECIAL-USE + fallback names.
+- `src/lib/imap/parse.ts` — mailparser-based MIME parsing, subject normalization (Re:/Fwd stripping), HTML sanitization via isomorphic-dompurify with strict allowlist, address normalization.
+- `src/lib/imap/sync.ts` — incremental sync via `UIDVALIDITY` + last synced `UID`. First-sync bounded (90 days OR 300 messages). Threading via References/In-Reply-To with normalized-subject fallback. Sent-folder scan flips thread status to `responded`. Dedupes by `Message-ID`; attachment metadata stored, content NOT downloaded (lazy via a later route).
+- `src/lib/auth/require-negotiations.ts` — server guard mirroring `require-admin.ts`. `requireNegotiationsAccess()` for API routes (401/403 JSON), `requireNegotiationsAccessOrNotFound()` for pages (404s quietly). Both fail closed if the migration hasn't run.
+- `src/app/api/negotiations/sync/route.ts` — POST, Node runtime, `maxDuration = 300`. Returns typed sync result including `configMissing` list so the UI can render a "Not connected" banner instead of erroring.
+- `src/app/api/negotiations/threads/route.ts` — GET, list with counters (needs_response / responded_today / unmatched / awaiting_oa_reply), filters (needs_response / responded / unmatched / spam / all), and search over subject/sender/body.
+- `src/app/negotiations/page.tsx` — server-guarded shell (404 if flag off).
+- `src/app/negotiations/negotiations-client.tsx` — list view + counter cards + filter pills + search box + Sync-now button + on-mount auto-sync + 60s background refresh (visibility-gated) + IMAP-down banner UX. No cron infra needed.
+
+_Modified (additive only, non-Henry render is byte-identical):_
+- `src/components/app-header.tsx` — added `{ label: 'Negotiations', href: '/negotiations', negotiationsOnly: true }` to NAV_ITEMS and a matching `negotiationsOnly && profile?.negotiationsAccess !== true → return null` gate. Mirrors the existing Marketing gate exactly.
+- `src/lib/supabase/profiles.ts` — added `negotiationsAccess: boolean` to `Profile` interface and mapper. Defaults to `false` when the column is missing (pre-migration deploys are safe).
+- `package.json` — added `imapflow`, `mailparser`, `@types/mailparser`. All pure JS, no native bindings. `isomorphic-dompurify` was already installed; reused for HTML sanitization.
+
+_Explicitly NOT touched (per zero-impact constraint):_
+- `src/lib/acv/types.ts` — ClaimInfo unchanged.
+- `src/components/claim/ClaimWorkspace.tsx` — claim form byte-identical for MA and EV.
+- `src/app/admin/settings/users/[id]/_tabs/permissions-tab.tsx` — admin UI unchanged; flag will be flipped via SQL for Henry.
+- Any existing API route or shared library.
+
+**Deploy status:** **LIVE.** `dpl_F3VGeBRzrxtAs9La9xfiostTQip6` at `modern-tools-rho.vercel.app` / `hamsportal.com`. Deployed 2026-09-18 00:10 PDT. `npx tsc --noEmit` + `npm run build` + eslint clean. Migration ran; Henry's `negotiations_access` flag flipped; IMAP env vars set for production (host, port, user, password).
+
+**Cold-start crash on first deploy → fixed:** Original `dpl_9Su8mgvQfrv1QGPS441i8J5f9FSg` returned empty 500 on `/api/negotiations/*` because `src/lib/imap/parse.ts` imported `isomorphic-dompurify`, which pulls `jsdom` — heavy, native-optional-dep, unreliable at Vercel serverless cold start. Fix: dropped the server-side sanitize (`sanitizeHtml` → `passthroughHtml`) and stored raw HTML; the client sanitizes at render time using the existing pattern in `src/app/summary-page/SummaryFields.tsx`. Also added `imapflow` and `mailparser` to `next.config.ts` `serverExternalPackages` defensively.
+
+**Rollback path** (recent deploys, most recent first — pick the state you want):
+```
+dpl_V5pzvWY3LFY1QdK96GwKgRFX7TLz  ← current (counters RPC + skip counters on filter click + search debounce)
+dpl_AnruZRKxRhxY736nRWcXUd9bXTS3  ← threads route perf pass 1 (planned counts + fallback)
+dpl_H5BbFx31SzKjvcMsw2zSktFpA7Re  ← voice-corpus expander (pull sent history 6mo/1y/2y/5y)
+dpl_AK8USn2GCi8pD1bTMHLTZSf38q4i  ← denorm latest_* + has_draft + Draft-ready pill + Delete/Archive/Spam menu + tab reorder
+dpl_9ubVnqk4zYY7jCw5yJL7qKRXbcwG  ← draft rules: no delay apology, no deductible, no em-dash, no signature block
+dpl_GqsYAS9Tq3JJK8hanohdhmLbZq6L  ← auto award PDF on acceptance + files to claim documents + updates notesData
+dpl_EWMdWD2FbiXUry4yFZfwrZ69v7wb  ← thread stream: newest first, chronological, readable colors
+dpl_8nArejrcVPLDzvakqpxiCQKJBPYE  ← negotiation-state detection (acceptance vs stall vs counter)
+dpl_CgTq9vNpfVtLnvW7Noi7FHWnbyXP  ← Negotiations UI redesign: cleaner list rows + chat-bubble workspace + tabbed draft panel
+dpl_DnS33c5YJe52MiDDkV6eoza4Jaz2  ← Claim Info Valuations section + Ins. Co. Offer on assignment sheet
+dpl_FXUf6WyHWsmqWUt97Cd5mC9LKRGH  ← Phase 2 classify+match + Phase 4 lite thread workspace + voice profile + Claude draft
+dpl_5fEMscCtkk4bMEizPhLiWmhLrVE3  ← Phase 1 with chunked sync
+dpl_7gYcBsoWs7CQxV69wkRC3kxVq7fR  ← Phase 1 diagnostic (imapflow logger enabled)
+dpl_F3VGeBRzrxtAs9La9xfiostTQip6  ← Phase 1 jsdom-free
+dpl_GfcgMf4M8miudnQPZDELrvRSNZMg  ← EV ACV polish (last known-good pre-Negotiations state)
+```
+
+**Phases 2 + 4 shipped this session (still 2026-09-17 → early 09-18):**
+- `src/lib/negotiations/classify.ts` — rules-first classifier: sender patterns → automated, body markers → automated, claim# / VIN / adjuster-email match → negotiation, else informational. Persists classification + confidence + reason on the thread.
+- `src/lib/negotiations/match.ts` — deterministic matcher: extracts claim numbers (MA-format + EV 6-digit + labeled "claim #"/"file #") and VINs from subject/body; queries acv_history by `ma_number`, `vin`, `claim->>claimNumber`; then falls back to `oa_claim_history` (learned links) and `claim->>adjusterEmail`. Returns ranked candidates + auto-picks the top one only when decisive (score ≥ 80 AND ≥30 ahead of runner-up).
+- `src/lib/negotiations/process.ts` — orchestrates classify+match+link for unmatched threads, cap-bounded at 40 per call. Auto-matched threads get `status='needs_response'` + a `negotiation_cases` row + entry in `oa_claim_history` for future ranking.
+- `src/app/api/negotiations/process/route.ts` — POST endpoint.
+- `src/app/api/negotiations/search-claims/route.ts` — GET typeahead over MA#, VIN, vehicle, insured/claimant name, insurance claim #. Open claims ranked first.
+- `src/app/api/negotiations/threads/[id]/match/route.ts` — POST manual match (used by the picker modal + inline linker).
+- `src/app/api/negotiations/threads/[id]/status/route.ts` — POST set status (used for "Mark responded").
+- `src/app/api/negotiations/threads/[id]/route.ts` — GET thread detail (all messages, attachments, linked claim, latest draft).
+- `src/app/api/negotiations/threads/[id]/draft/route.ts` — POST generate a new draft.
+- `src/app/negotiations/[id]/page.tsx` + `thread-workspace-client.tsx` — full thread view (each message expandable to full HTML/text + attachments listing), claim context card (MA#, vehicle, VIN, client, adjuster, our ACV, deductible, date of loss), inline claim-link box if unmatched, draft pane with tactic/vehicle_value/OA-breakdown/comps-defense sections, editable-copy textarea for draft_email, Regenerate + Regenerate-with-instructions, "Mark responded" button.
+- `src/lib/negotiations/voice.ts` + `src/app/api/negotiations/voice/route.ts` + `src/app/negotiations/voice/page.tsx` + `voice-client.tsx` — voice profile trainer. Reads up to 200 of Henry's sent messages (from-address matched to BLUEHOST_IMAP_USER, quoted-reply stripped, chronological), feeds to Claude Sonnet 4.6, extracts a structured profile (tone, opening/closing patterns, negotiation moves, concessions style, escalation patterns, common phrases, style dos/don'ts). Stored on `negotiation_config.data.voice_profile` per profile.
+- `src/lib/negotiations/draft.ts` — Claude Sonnet 4.6 draft generator. Pulls thread + linked claim (ClaimInfo + comps + adjustments + result) + voice profile. Structured JSON output with `vehicle_value`, `oa_report_breakdown`, `our_comps_defense`, `tactic`, `draft_email`, `confidence`, `missing_info`. Non-fabrication instruction baked into the system prompt. Persists a new `negotiation_drafts` row per version.
+- `src/app/negotiations/negotiations-client.tsx` — sync button now runs full pipeline (sync → process → auto-link) in a loop until done, reports "N new emails · M auto-linked · K filtered as spam". Unmatched thread rows show a "Link claim" quick action opening a searchable modal.
+
+**Claim Info Valuations section (live for all users on both companies):**
+- `src/components/claim/ClaimWorkspace.tsx` — added `notesData.insuranceOfferNum` field (optional for legacy row compat, defaults to 0). New "Valuations" section below Opposing Appraiser on the Claim Info tab: MA Value (auto from `result.acv`, editable fallback to `notesData.maValueNum`), Ins. Co. Offer (new manual field), OA Value (two-way linked with Closing Notes `notesData.appraiserValueNum`), Award Amount (two-way linked with Closing Notes `notesData.agreementAmountNum`). All four use `CurrencyInput` matching the existing money-entry pattern.
+- `src/components/claim/assignment-sheet.tsx` — added `insuranceOfferValue` prop + `Ins. Co. Offer` MoneyRow between Our DV and Opposing (IA) Value. Printed assignment sheet now shows the new figure alongside the existing valuations.
+Rollback: `npx vercel promote <URL for that dpl> --scope henry-as-projects-88caed67 --yes`.
+
+Pre-deploy setup that ran this session (kept here in case rollback needs replay):
+1. Confirm cPanel app password for `henry@modernappraisers.com` (Bluehost → Advanced → Email Accounts → Connect Devices). Mailbox already confirmed as native Bluehost IMAP via MX lookup (`mail.modernappraisers.com` @ 162.241.225.231).
+2. Run `supabase/migration-negotiations.sql` in Supabase SQL Editor. Migration is additive and idempotent.
+3. Flip Henry's flag: `update public.profiles set negotiations_access = true where email = 'xsfabot@gmail.com';` (or Henry's real login email).
+4. Set env vars in Vercel: `BLUEHOST_IMAP_HOST=mail.modernappraisers.com`, `BLUEHOST_IMAP_PORT=993`, `BLUEHOST_IMAP_USER=henry@modernappraisers.com`, `BLUEHOST_IMAP_PASSWORD=<app-password>`.
+5. Deploy via `npx vercel --prod --scope henry-as-projects-88caed67 --yes`. Rollback target: `dpl_GfcgMf4M8miudnQPZDELrvRSNZMg` (current good).
+6. Verify: nav item appears for Henry only, non-Henry users see identical nav; every existing page renders identically.
+
+**In progress / broken / unknowns:**
+- **Phase 1 is code-complete but unverified in a live environment.** No IMAP creds yet → sync path is untested against real Bluehost. First-sync bounds (90d / 300 msgs) are best-guess; may need tuning after real data.
+- Phases 2-5 not started: classification, claim matching, document pipeline, valuation ledger, MarketCheck integration, Claude analysis + draft, tests, README.
+- Kill switch: `update public.profiles set negotiations_access = false where email = 'henry';` — instant hide, no code deploy needed.
+
+**Next:** Henry to provide IMAP app password + run migration + flip flag + set env vars. Once live, verify Phase 1 end-to-end then start Phase 2 (classification + matcher). Full plan lives at `C:\Users\Owner\.claude\plans\lovely-wiggling-sketch.md`.
+
+---
+
 ## 2026-09-17 (afternoon/evening) — DV flatten fix, filename standardization, EV# labels + auto file numbers, dropdowns scoped by company, Eagleview ACV report built programmatically
 
 **Worked on:** Long session covering polish across both Modern (Modern Appraisers) and Eagleview surfaces. Big new artifact: a fully programmatic Eagleview ACV report with EV branding, evolved through several rounds of feedback into a clean 2-page layout.
