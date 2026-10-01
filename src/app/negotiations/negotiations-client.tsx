@@ -26,6 +26,55 @@ const FILTERS: { id: ThreadFilter; label: string }[] = [
   { id: 'responded', label: 'Responded' },
 ]
 
+interface ThreadGroup {
+  claimId: string | null
+  claimNumber: string | null  // ma_number
+  claimVehicle: string | null
+  threads: ThreadListItem[]
+  needsReplyCount: number
+  latestSentAt: string
+}
+
+function groupByClaim(threads: ThreadListItem[]): ThreadGroup[] {
+  const map = new Map<string, ThreadGroup>()
+  const unmatched: ThreadGroup[] = []
+
+  for (const t of threads) {
+    if (!t.claimId) {
+      // Unmatched threads are their own one-thread "group" — never merged.
+      unmatched.push({
+        claimId: null,
+        claimNumber: null,
+        claimVehicle: null,
+        threads: [t],
+        needsReplyCount: t.status === 'needs_response' ? 1 : 0,
+        latestSentAt: t.lastSentAt,
+      })
+      continue
+    }
+    const existing = map.get(t.claimId)
+    if (existing) {
+      existing.threads.push(t)
+      if (t.status === 'needs_response') existing.needsReplyCount++
+      if (t.lastSentAt > existing.latestSentAt) existing.latestSentAt = t.lastSentAt
+    } else {
+      map.set(t.claimId, {
+        claimId: t.claimId,
+        claimNumber: t.claimNumber,
+        claimVehicle: t.claimVehicle,
+        threads: [t],
+        needsReplyCount: t.status === 'needs_response' ? 1 : 0,
+        latestSentAt: t.lastSentAt,
+      })
+    }
+  }
+
+  // Interleave matched + unmatched groups by latest activity.
+  const all = [...map.values(), ...unmatched]
+  all.sort((a, b) => b.latestSentAt.localeCompare(a.latestSentAt))
+  return all
+}
+
 export function NegotiationsClient() {
   const [filter, setFilter] = useState<ThreadFilter>('needs_response')
   const [search, setSearch] = useState('')
@@ -243,13 +292,22 @@ export function NegotiationsClient() {
         )}
         {data && data.threads.length > 0 && (
           <ul className="divide-y divide-gray-100">
-            {data.threads.map(t => (
-              <ThreadRow
-                key={t.id}
-                thread={t}
-                onLinkClaim={() => setPickerThreadId(t.id)}
-                onChanged={() => fetchThreads(filter, search)}
-              />
+            {groupByClaim(data.threads).map(g => (
+              g.claimId && g.threads.length > 1 ? (
+                <ClaimGroupRow
+                  key={`claim-${g.claimId}`}
+                  group={g}
+                  onLinkClaim={(threadId) => setPickerThreadId(threadId)}
+                  onChanged={() => fetchThreads(filter, search)}
+                />
+              ) : (
+                <ThreadRow
+                  key={g.threads[0].id}
+                  thread={g.threads[0]}
+                  onLinkClaim={() => setPickerThreadId(g.threads[0].id)}
+                  onChanged={() => fetchThreads(filter, search)}
+                />
+              )
             ))}
           </ul>
         )}
@@ -554,6 +612,64 @@ function ClaimChip({ number, vehicle }: { number: string | null; vehicle: string
       <span className="font-medium">{number ?? '—'}</span>
       {vehicle && <span className="text-gray-500 truncate max-w-[220px]">· {vehicle}</span>}
     </span>
+  )
+}
+
+function ClaimGroupRow({ group, onLinkClaim, onChanged }: {
+  group: ThreadGroup
+  onLinkClaim: (threadId: string) => void
+  onChanged: () => void
+}) {
+  const [expanded, setExpanded] = useState(group.needsReplyCount > 0)
+  const headerDate = new Date(group.latestSentAt)
+  const now = new Date()
+  const isToday = now.toDateString() === headerDate.toDateString()
+  const dateLabel = isToday
+    ? headerDate.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+    : headerDate.toLocaleDateString([], { month: 'short', day: 'numeric' })
+
+  return (
+    <li>
+      <button
+        type="button"
+        onClick={() => setExpanded(x => !x)}
+        className="w-full text-left px-4 py-3 bg-slate-50 hover:bg-slate-100 transition flex items-center gap-3"
+      >
+        <Car className="w-4 h-4 text-slate-500 shrink-0" />
+        <div className="flex-1 min-w-0">
+          <div className="flex items-baseline gap-2">
+            <span className="font-semibold text-sm text-gray-900 truncate">
+              {group.claimVehicle || '(vehicle)'}
+            </span>
+            {group.claimNumber && (
+              <span className="text-xs text-gray-500">MA# {group.claimNumber}</span>
+            )}
+          </div>
+          <div className="text-xs text-gray-500 mt-0.5">
+            {group.threads.length} chains
+            {group.needsReplyCount > 0 && (
+              <span className="ml-2 text-red-600 font-medium">
+                · {group.needsReplyCount} need{group.needsReplyCount === 1 ? 's' : ''} reply
+              </span>
+            )}
+          </div>
+        </div>
+        <span className="text-xs text-gray-400">{dateLabel}</span>
+        <span className="text-gray-400">{expanded ? '▾' : '▸'}</span>
+      </button>
+      {expanded && (
+        <ul className="divide-y divide-gray-100 bg-white border-l-2 border-slate-200 ml-6">
+          {group.threads.map(t => (
+            <ThreadRow
+              key={t.id}
+              thread={t}
+              onLinkClaim={() => onLinkClaim(t.id)}
+              onChanged={onChanged}
+            />
+          ))}
+        </ul>
+      )}
+    </li>
   )
 }
 
