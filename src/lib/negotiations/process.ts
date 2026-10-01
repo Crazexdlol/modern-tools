@@ -30,10 +30,11 @@ async function updateThreadWithVersionFallback(
   }
 }
 
-// Iterates threads with status='unmatched' AND classification is null (i.e.
-// not yet processed), classifies them, and auto-matches high-confidence
-// negotiation threads to a claim. Cap-bounded per call so the caller can
-// re-invoke to drain the backlog.
+// Iterates threads that still need matching — any thread without a linked
+// negotiation_case whose status isn't terminal, below the current matcher
+// version. The old filter (status='unmatched') missed threads that were
+// flipped to 'responded' by the sync (Henry replied in the same batch as the
+// inbound), orphaning them without a claim link.
 export async function processUnmatchedThreads(supabase: SupabaseClient): Promise<ProcessResult> {
   const result: ProcessResult = {
     processed: 0,
@@ -43,6 +44,9 @@ export async function processUnmatchedThreads(supabase: SupabaseClient): Promise
     errors: [],
   }
 
+  // Terminal statuses — no need to re-process these.
+  const TERMINAL = ['spam', 'ignored', 'closed_claim']
+
   // Prefer the matcher_version gate. Fall back to the pre-migration shape
   // (classification IS NULL) if the column doesn't exist yet.
   let threads: { id: string; last_inbound_at: string | null }[] | null = null
@@ -51,7 +55,8 @@ export async function processUnmatchedThreads(supabase: SupabaseClient): Promise
     const res = await supabase
       .from('email_threads')
       .select('id, last_inbound_at')
-      .eq('status', 'unmatched')
+      .is('negotiation_case_id', null)
+      .not('status', 'in', `(${TERMINAL.map(s => `"${s}"`).join(',')})`)
       .lt('matcher_version', CURRENT_MATCHER_VERSION)
       .order('last_inbound_at', { ascending: false, nullsFirst: false })
       .limit(PROCESS_MAX_PER_CALL + 1)
@@ -60,7 +65,8 @@ export async function processUnmatchedThreads(supabase: SupabaseClient): Promise
       const legacy = await supabase
         .from('email_threads')
         .select('id, last_inbound_at')
-        .eq('status', 'unmatched')
+        .is('negotiation_case_id', null)
+        .not('status', 'in', `(${TERMINAL.map(s => `"${s}"`).join(',')})`)
         .is('classification', null)
         .order('last_inbound_at', { ascending: false, nullsFirst: false })
         .limit(PROCESS_MAX_PER_CALL + 1)
@@ -165,14 +171,32 @@ async function processOneThread(
         matchedByUser: null,
       })
       if (linked) {
-        // If the matched claim is closed, park the thread in 'closed_claim' so
-        // it stays visible but out of triage. Otherwise it's a live negotiation.
+        // Set the status to reflect reality:
+        //   - closed claim → closed_claim (terminal, highest priority)
+        //   - open claim + Henry already replied (last outbound > last inbound) → responded
+        //   - open claim + still owed a reply → needs_response
+        // The 'responded' branch is critical: a thread may have reached this
+        // processor only AFTER Henry replied in the same sync batch; preserving
+        // responded prevents us from pulling it back into triage incorrectly.
         const { data: claimRow } = await supabase
           .from('acv_history')
           .select('status')
           .eq('id', match.matchedClaimId)
           .maybeSingle()
-        threadPatch.status = claimRow?.status === 'closed' ? 'closed_claim' : 'needs_response'
+        if (claimRow?.status === 'closed') {
+          threadPatch.status = 'closed_claim'
+        } else {
+          const { data: threadRow } = await supabase
+            .from('email_threads')
+            .select('last_inbound_at, last_outbound_at')
+            .eq('id', threadId)
+            .maybeSingle()
+          const inbound = (threadRow?.last_inbound_at as string | null) ?? null
+          const outbound = (threadRow?.last_outbound_at as string | null) ?? null
+          threadPatch.status = outbound && (!inbound || outbound > inbound)
+            ? 'responded'
+            : 'needs_response'
+        }
         result.autoMatched++
       }
     }
