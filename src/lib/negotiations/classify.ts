@@ -36,6 +36,7 @@ const AUTOMATED_SENDER_PATTERNS = [
   /(^|[.+_-])alerts?(@|[.+_-])/i,
   /(^|[.+_-])updates?(@|[.+_-])/i,
   /(^|[.+_-])newsletter(@|[.+_-])/i,
+  /(^|[.+_-])assignments?(@|[.+_-])/i,
 ]
 
 // Body patterns that indicate marketing / automated mail.

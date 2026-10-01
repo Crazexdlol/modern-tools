@@ -69,6 +69,12 @@ function groupByClaim(threads: ThreadListItem[]): ThreadGroup[] {
     }
   }
 
+  // Sort threads within each group so threads[0] is the most recent — that's
+  // the one the collapsed list row displays.
+  for (const g of map.values()) {
+    g.threads.sort((a, b) => b.lastSentAt.localeCompare(a.lastSentAt))
+  }
+
   // Interleave matched + unmatched groups by latest activity.
   const all = [...map.values(), ...unmatched]
   all.sort((a, b) => b.latestSentAt.localeCompare(a.latestSentAt))
@@ -171,7 +177,7 @@ export function NegotiationsClient() {
 
   useEffect(() => {
     fetchThreads(filter, '', { withCounters: true })
-    runSync()
+    // No auto-sync on mount — Henry triggers IMAP sync via the Sync button only.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -292,23 +298,22 @@ export function NegotiationsClient() {
         )}
         {data && data.threads.length > 0 && (
           <ul className="divide-y divide-gray-100">
-            {groupByClaim(data.threads).map(g => (
-              g.claimId && g.threads.length > 1 ? (
-                <ClaimGroupRow
-                  key={`claim-${g.claimId}`}
-                  group={g}
-                  onLinkClaim={(threadId) => setPickerThreadId(threadId)}
-                  onChanged={() => fetchThreads(filter, search)}
-                />
-              ) : (
+            {groupByClaim(data.threads).map(g => {
+              // One row per claim. For claims with multiple chains, show the
+              // most-recent thread and badge the extra count — the detail page
+              // surfaces the other chains for review.
+              const primary = g.threads[0]
+              const extraChains = g.threads.length - 1
+              return (
                 <ThreadRow
-                  key={g.threads[0].id}
-                  thread={g.threads[0]}
-                  onLinkClaim={() => setPickerThreadId(g.threads[0].id)}
+                  key={primary.id}
+                  thread={primary}
+                  extraChains={extraChains}
+                  onLinkClaim={() => setPickerThreadId(primary.id)}
                   onChanged={() => fetchThreads(filter, search)}
                 />
               )
-            ))}
+            })}
           </ul>
         )}
       </div>
@@ -368,7 +373,7 @@ function Counter({ label, value, tone, onClick, active }: { label: string; value
   )
 }
 
-function ThreadRow({ thread, onLinkClaim, onChanged }: { thread: ThreadListItem; onLinkClaim: () => void; onChanged: () => void }) {
+function ThreadRow({ thread, onLinkClaim, onChanged, extraChains = 0 }: { thread: ThreadListItem; onLinkClaim: () => void; onChanged: () => void; extraChains?: number }) {
   const senderDisplay = thread.lastFromName || thread.lastFromAddr.split('@')[0]
   const senderDomain = thread.lastFromAddr.split('@')[1] ?? ''
   const dt = new Date(thread.lastSentAt)
@@ -458,6 +463,11 @@ function ThreadRow({ thread, onLinkClaim, onChanged }: { thread: ThreadListItem;
                 >
                   <LinkIcon className="w-3 h-3" /> Link claim
                 </button>
+              )}
+              {extraChains > 0 && (
+                <span className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full border border-slate-300 bg-slate-50 text-slate-700" title="Additional email chains on this claim — view inside the thread">
+                  +{extraChains} more chain{extraChains === 1 ? '' : 's'}
+                </span>
               )}
 
               <div className="ml-auto flex items-center gap-1.5">
@@ -612,64 +622,6 @@ function ClaimChip({ number, vehicle }: { number: string | null; vehicle: string
       <span className="font-medium">{number ?? '—'}</span>
       {vehicle && <span className="text-gray-500 truncate max-w-[220px]">· {vehicle}</span>}
     </span>
-  )
-}
-
-function ClaimGroupRow({ group, onLinkClaim, onChanged }: {
-  group: ThreadGroup
-  onLinkClaim: (threadId: string) => void
-  onChanged: () => void
-}) {
-  const [expanded, setExpanded] = useState(group.needsReplyCount > 0)
-  const headerDate = new Date(group.latestSentAt)
-  const now = new Date()
-  const isToday = now.toDateString() === headerDate.toDateString()
-  const dateLabel = isToday
-    ? headerDate.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
-    : headerDate.toLocaleDateString([], { month: 'short', day: 'numeric' })
-
-  return (
-    <li>
-      <button
-        type="button"
-        onClick={() => setExpanded(x => !x)}
-        className="w-full text-left px-4 py-3 bg-slate-50 hover:bg-slate-100 transition flex items-center gap-3"
-      >
-        <Car className="w-4 h-4 text-slate-500 shrink-0" />
-        <div className="flex-1 min-w-0">
-          <div className="flex items-baseline gap-2">
-            <span className="font-semibold text-sm text-gray-900 truncate">
-              {group.claimVehicle || '(vehicle)'}
-            </span>
-            {group.claimNumber && (
-              <span className="text-xs text-gray-500">MA# {group.claimNumber}</span>
-            )}
-          </div>
-          <div className="text-xs text-gray-500 mt-0.5">
-            {group.threads.length} chains
-            {group.needsReplyCount > 0 && (
-              <span className="ml-2 text-red-600 font-medium">
-                · {group.needsReplyCount} need{group.needsReplyCount === 1 ? 's' : ''} reply
-              </span>
-            )}
-          </div>
-        </div>
-        <span className="text-xs text-gray-400">{dateLabel}</span>
-        <span className="text-gray-400">{expanded ? '▾' : '▸'}</span>
-      </button>
-      {expanded && (
-        <ul className="divide-y divide-gray-100 bg-white border-l-2 border-slate-200 ml-6">
-          {group.threads.map(t => (
-            <ThreadRow
-              key={t.id}
-              thread={t}
-              onLinkClaim={() => onLinkClaim(t.id)}
-              onChanged={onChanged}
-            />
-          ))}
-        </ul>
-      )}
-    </li>
   )
 }
 
