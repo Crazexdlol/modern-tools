@@ -75,10 +75,12 @@ export async function findMatchForMessage(
       }
     }
 
-    // Fuzzy fallback — only when strict didn't find a candidate. Scans open
-    // claims in the caller's active company (RLS does the scoping) up to 500
-    // rows. On a ~400-claim DB this is a single page.
-    if (ids.claimNumbers.length > 0) {
+    // Fuzzy fallback — ONLY runs when the strict step found zero rows. If
+    // strict already hit a claim, the top-score + 30pt-gap decisive check
+    // handles ambiguity correctly without the fuzzy pass. Skipping this when
+    // strict matched is the single biggest win in processor throughput —
+    // every orphan was triggering a 500-row acv_history scan per thread.
+    if (ids.claimNumbers.length > 0 && strictHits.size === 0) {
       const { data: openClaims } = await supabase
         .from('acv_history')
         .select('id, ma_number, vehicle, company_id, claim, status')
@@ -89,7 +91,6 @@ export async function findMatchForMessage(
         console.warn('[negotiations/match] fuzzy fallback hit 500-row cap, skipping scan')
       } else {
         for (const row of openClaims || []) {
-          if (strictHits.has(row.id as string)) continue
           const claimObj = (row as ClaimRow).claim as Record<string, unknown> | undefined
           const stored = typeof claimObj?.claimNumber === 'string' ? claimObj.claimNumber as string : ''
           if (!stored) continue
