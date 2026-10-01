@@ -18,6 +18,97 @@ Read `CLAUDE.md` first if you haven't. Then read the top entry here before touch
 
 ---
 
+## 2026-10-01 (afternoon/evening) — Negotiations iteration: no-auto-sync, 1-row-per-claim, domain-owner, closed_claim status, bulk-select, trigger, mount race, orphan processor, fuzzy perf
+
+**Worked on:** After the morning deploy of the matcher v2 (previous entry), Henry hit the live tab and surfaced seven real issues in rapid succession. Each got diagnosed, fixed, and deployed as its own round. Also unlocked the Negotiations tab for the demo account + added Eagleview access.
+
+**Round 1 — three immediate UX bugs** (deploy `dpl_84nuXQzSeCRage7rh8ziqumQy4oZ`):
+- `src/app/negotiations/negotiations-client.tsx` — removed the on-mount `runSync()` call (Henry wants Sync button to be the only trigger). Collapsed the list to always render one row per claim with a `+N more chains` badge (dropped the expanding `ClaimGroupRow`). Added `extraChains` prop to `ThreadRow`.
+- `src/lib/negotiations/classify.ts` — added `/(^|[.+_-])assignments?(@|[.+_-])/i` to `AUTOMATED_SENDER_PATTERNS` so claim-portal status updates get classified as spam at ingest.
+- One-off cleanup `scripts/neg-cleanup-claimleader.mjs` seeded `claimleader.com` as a muted domain and moved 10 lingering `needs_response/unmatched` threads from automated senders → spam. The mute button was already there but hadn't caught re-synced threads.
+
+**Round 2 — domain-based owner identity** (deploy `dpl_GTjJtVyW2pgGniHtite63PkGb1BN`):
+- Diagnosed via `scripts/neg-thread-forensics.mjs`: 8 of 15 oldest stuck `needs_response` threads were purely internal communication (`wendy@`, `alex@`, `nick@`, `maeli@`, `info@modernappraisers.com`, `zurnachyan.modern@gmail.com`). The old `isOutbound` check required a literal match on `BLUEHOST_IMAP_USER = henry@modernappraisers.com`, so team-member forwards registered as external inbound and the latest-inbound-wins status logic flipped the thread back to needs_response.
+- `src/lib/imap/sync.ts` — new exported `isOwnerAddr(addr, ownerEmail)` that matches owner literal, owner's domain, OR any alias in `IMAP_OWNER_ALIASES` env var. Replaces the literal-equality check in `updateThreadFromMessage`.
+- `src/lib/imap/backfill.ts` — imports and uses the same helper.
+- Retroactive `scripts/neg-reflip-internal-threads.mjs` moved **39 threads** out of needs_response/unmatched → responded. "Modern Group Inc" (the earlier mystery sender) turned out to be the display-name on `wendy@modernappraisers.com`'s forwards — resolved automatically by the domain rule.
+- Blocked by the harness from writing the `IMAP_OWNER_ALIASES` env var in Vercel. Henry can add `zurnachyan.modern@gmail.com` later via `npx vercel env add IMAP_OWNER_ALIASES production …`.
+
+**Round 3 — closed_claim status + multi-select bulk actions** (deploy `dpl_2G7maMwp3BASzSb2MN9qHJ5rBkvP`):
+- Migration `supabase/migration-negotiations-closed-claim-status.sql` + rollback. Relaxed `email_threads.status` CHECK constraint to allow a 6th value `closed_claim`. Rewrote `negotiations_counters()` RPC to return 5 columns including `closed_claim`. First attempt failed with 42P13 because Postgres refuses to change return columns on `CREATE OR REPLACE FUNCTION`; patched with `DROP FUNCTION IF EXISTS` before `CREATE`. Verification rows: 1 1.
+- `src/lib/negotiations/process.ts` — `linkThreadToClaim` now reads the matched claim's `acv_history.status` and sets thread status to `closed_claim` if the claim is closed.
+- `src/lib/imap/sync.ts` — `PRESERVED` set widened to include `closed_claim` so new inbound/outbound doesn't flip it back to triage.
+- `src/app/api/negotiations/threads/[id]/status/route.ts` — ALLOWED list now includes `closed_claim`.
+- `src/app/api/negotiations/threads/route.ts` — `ThreadFilter` + counter typing include `closed_claim`.
+- `src/app/negotiations/negotiations-client.tsx` — added `Closed claim` filter tab (position 3), counter card (grid now `grid-cols-5`), status pill, status accent, empty state. Added `selectedIds: Set<string>` + bulk-action bar (sticky dark bar when any selected): Archive · Spam · Closed claim · Delete · Select all visible · Clear. Checkbox prop on `ThreadRow`. Selection resets on filter change.
+- Retroactive `scripts/neg-reflip-closed-claim-threads.mjs` — scanned 526 closed claims, found 63 linked threads, moved **21** out of triage statuses into `closed_claim`.
+
+**Round 4 — Postgres trigger + mount race + parallelized route** (deploy `dpl_C2iwQYASEPrk9qkRmFjs2D3b2Urk`):
+- Migration `supabase/migration-negotiations-claim-close-trigger.sql` + rollback. New `sync_threads_on_claim_status_change()` trigger function + AFTER UPDATE OF status trigger on `acv_history`. On `open → closed`: flips linked threads in needs_response/responded/unmatched → closed_claim. On `closed → open`: flips closed_claim threads back to responded (if last_outbound_at > last_inbound_at) or needs_response. Verification: 1.
+- **Mount race bug** found via Henry's "35 badge but 9 rows" complaint. Two `useEffect` hooks were calling `fetchThreads` back-to-back; the second (without `withCounters`) aborted the first (with) via a shared `AbortController`. Counters never loaded on page open. Collapsed into one effect gated by `didInitialCountersRef`. Also killed the 60s `window.setInterval` polling (removed `REFRESH_INTERVAL_MS` constant entirely).
+- Row-level actions (archive / spam / mute / delete via kebab) now call `fetchThreads(filter, search, { withCounters: true })` so the badges stay accurate as Henry triages.
+- `src/app/api/negotiations/threads/route.ts` — the threads SELECT and the counters RPC now run inside `Promise.all` instead of serially. They have no data dependency on each other.
+
+**Round 5 — orphan processor + status preservation** (deploy `dpl_6eU3FMKQY8va7JTk7DVRyid8iaJQ`):
+- Diagnosed via `scripts/neg-thread-forensics.mjs` for the RIF-KOSA / CA0021715171 claim. Found thread `fd3acad1-40c5-4082-b61e-bc96c5dd8e6d`: callen sent a brand-new chain at 17:36 with typo subject (`IF-KOSA` instead of `RIF-KOSA`) + `in_reply_to: null`; Henry replied at 17:49 externally. Sync processed both messages in the same batch and flipped status `unmatched → responded` before the processor ran. The processor's filter was `.eq('status','unmatched')`, so it skipped the thread forever. Net effect: 81 orphan threads with claim identifiers in their subjects, invisible in both needs_response and unmatched.
+- `src/lib/negotiations/process.ts` — broadened `processUnmatchedThreads` filter from `status='unmatched'` to `negotiation_case_id IS NULL AND status NOT IN (spam, ignored, closed_claim)`. Catches orphans regardless of status.
+- `src/lib/negotiations/process.ts` — rewrote the status-setting block inside `linkThreadToClaim` call site. For OPEN claims, now reads `email_threads.last_inbound_at` vs `last_outbound_at` and preserves `responded` if Henry's reply is more recent than the latest inbound. Previously forced `needs_response` on every link, which would have yanked ~70 already-answered threads back into triage.
+- First Sync post-deploy drained all 81 orphans. 16 got cases created; the remaining 65 landed at matcher_version=2 with no case (identifier extraction found nothing matcheable — subjects like `RE:`, `test`, `Henry Out of Office`).
+
+**Round 6 — fuzzy-scan perf** (deploy `dpl_H9k9X27T7dR7UUUK3hkH63zR3fhk`, current):
+- Henry: "sync is taking a very long time now and it didnt fix 3971247."
+- Verified fd3acad1 DID get linked (case `cf2a0a61-1890-4066-9721-bd3e82581259`, status responded) — Henry was looking at the needs_response tab; the thread is correctly in the Responded tab because he already replied.
+- Perf bug: `src/lib/negotiations/match.ts` was running the fuzzy-claim-# fallback 500-row `acv_history` scan **FOR EVERY THREAD** even when the strict step already matched. Changed guard from `if (ids.claimNumbers.length > 0)` to `if (ids.claimNumbers.length > 0 && strictHits.size === 0)`. During the orphan drain this was ~81 × 500 = 40k unnecessary rows read. Fuzzy only runs when strict found zero hits, which is its actual purpose (stored claim# shorter than the subject's).
+
+**Demo account unlocked:**
+- `UPDATE profiles SET negotiations_access = true WHERE email = 'demo@hamsportal.com'` — same shared RLS, same Sync button, same mutes, same inbox. No code change.
+- `INSERT INTO user_companies(user_id='19e58cf7-…', company_id='0308c9e2-…' /* Eagleview */)` — company switcher button now appears for the demo. Switching to Eagleview keeps `strippedDashboard` strippings in place because that gate keys off `profile.email === 'demo@hamsportal.com'` (not company).
+
+**Files changed:**
+- `src/app/negotiations/negotiations-client.tsx` — biggest churn: removed auto-sync, 60s polling, mount-race; added filter tab/counter for closed_claim; +N chains badge; multi-select state + bulk-action bar + checkbox on ThreadRow; unified mount effect with `didInitialCountersRef`.
+- `src/app/api/negotiations/threads/route.ts` — ThreadFilter + counters now include `closed_claim`; threads SELECT and counters RPC parallelized.
+- `src/app/api/negotiations/threads/[id]/status/route.ts` — ALLOWED now includes `closed_claim`.
+- `src/lib/negotiations/classify.ts` — `assignments?@` pattern added to automated-sender regex.
+- `src/lib/negotiations/match.ts` — fuzzy fallback gated on `strictHits.size === 0`.
+- `src/lib/negotiations/process.ts` — broader orphan filter, status preservation on link, closed_claim awareness.
+- `src/lib/imap/sync.ts` — new `isOwnerAddr(addr, ownerEmail)` exported helper; `PRESERVED` set includes `closed_claim`.
+- `src/lib/imap/backfill.ts` — uses `isOwnerAddr`.
+- `supabase/migration-negotiations-closed-claim-status.sql` + rollback
+- `supabase/migration-negotiations-claim-close-trigger.sql` + rollback
+- Scripts (dev-only, not deployed): `scripts/neg-state-audit.mjs`, `scripts/neg-thread-forensics.mjs`, `scripts/neg-cleanup-claimleader.mjs`, `scripts/neg-reflip-internal-threads.mjs`, `scripts/neg-reflip-closed-claim-threads.mjs`, `scripts/neg-perf-probe.mjs`.
+
+**Deploy status:** LIVE at `dpl_H9k9X27T7dR7UUUK3hkH63zR3fhk` (alias `modern-tools-rho.vercel.app` verified). All three SQL migrations applied by Henry in Supabase SQL Editor, each returning the expected `1`s.
+```
+dpl_H9k9X27T7dR7UUUK3hkH63zR3fhk  ← CURRENT — fuzzy-scan perf gate
+dpl_6eU3FMKQY8va7JTk7DVRyid8iaJQ  ← orphan processor + preserve-responded
+dpl_C2iwQYASEPrk9qkRmFjs2D3b2Urk  ← trigger + mount race + parallel route
+dpl_2G7maMwp3BASzSb2MN9qHJ5rBkvP  ← closed_claim status + bulk-select
+dpl_GTjJtVyW2pgGniHtite63PkGb1BN  ← domain-owner identity
+dpl_84nuXQzSeCRage7rh8ziqumQy4oZ  ← no-auto-sync + 1-row-per-claim + claimleader cleanup
+dpl_25kHE3GLpxVaGfVEYiUfQdxiYmCV  ← initial matcher v2 (morning)
+dpl_4N5MLq1BDxDFzDrWbJT82w3VH841  ← pre-session rollback target
+```
+Rollback (one build back): `npx vercel promote https://modern-tools-ovoonmn6j-henry-as-projects-88caed67.vercel.app --scope henry-as-projects-88caed67 --yes`.
+
+**Final DB state (post-drain):**
+- needs_response: ~9 (down from reported 123 → audited 35 → 22 → 14 → 9)
+- unmatched: ~23
+- responded: ~133 (up from 94)
+- spam: ~112
+- closed_claim: ~21
+
+**In progress / broken / unknowns:**
+- ~92 threads at `matcher_version=2` with `negotiation_case_id IS NULL` — the processor ran but couldn't find a decisive match (empty-subject replies, info-only chatter). They sit in whatever status without a claim chip. Not a bug; Henry can manually link any important ones via the `Link claim` button.
+- Cross-filter chain grouping: when a claim has one `needs_response` thread AND one `responded` thread, the needs_response view shows only the pending one and doesn't badge the responded sibling. Deferred — would need the threads route to pull all threads for a claim regardless of status filter.
+- `IMAP_OWNER_ALIASES` env var not set in Vercel (harness refused). Future `zurnachyan.modern@gmail.com` forwards won't be auto-flipped to responded without it. Retroactive script already caught the existing ones.
+
+**Next:**
+- Monitor whether the orphan processor + fuzzy-skip + trigger combination holds up over the next few days of real traffic.
+- If Henry asks for cross-filter chain grouping, the shape is: `/api/negotiations/threads` returns `otherChainCount` per claim derived from a bounded extra query over `negotiation_cases` grouped by `claim_id`.
+- Delete `scripts/create-demo-account.mjs` + roll back the demo account's grants whenever Henry's done demoing.
+
+tsc + build clean through every round. No lint runs this session.
+
 ## 2026-10-01 — Negotiations auto-link v2 + multi-chain grouping + sender muting
 
 **Worked on:** The Negotiations tab was asking Henry to manually link threads even when the subject line had the MA# or claim# in plain sight. Also: one claim could have multiple email chains that showed up as separate rows with no grouping, and automated no-reply senders (e.g. `moderngroupinc@claimleader.com`) kept slipping into "needs response" because they didn't match the hard-coded automated-sender regexes. Spec: `docs/superpowers/specs/2026-10-01-negotiations-auto-link-and-triage-design.md`. Plan: `docs/superpowers/plans/2026-10-01-negotiations-auto-link-and-triage.md`. Executed via subagent-driven-development with spec + code quality review after every task.
