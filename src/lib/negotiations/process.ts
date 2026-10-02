@@ -4,7 +4,7 @@ import { findMatchForMessage } from './match'
 
 // Bump when any matcher-affecting code changes. Threads at a lower version
 // get re-processed on the next /api/negotiations/process invocation.
-export const CURRENT_MATCHER_VERSION = 2
+export const CURRENT_MATCHER_VERSION = 3
 
 const PROCESS_MAX_PER_CALL = 40  // keeps invocation under ~90s at ~15 queries/thread
 

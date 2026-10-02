@@ -6,6 +6,7 @@ export interface ClaimCandidate {
   maNumber: string | null
   vehicle: string | null
   companyId: string | null
+  isClosed: boolean
   score: number
   reasons: string[]
 }
@@ -47,6 +48,7 @@ export async function findMatchForMessage(
         maNumber: row.ma_number,
         vehicle: row.vehicle,
         companyId: row.company_id,
+        isClosed: row.status === 'closed',
         score,
         reasons: [reason],
       })
@@ -57,7 +59,7 @@ export async function findMatchForMessage(
   if (ids.claimNumbers.length > 0) {
     const { data } = await supabase
       .from('acv_history')
-      .select('id, ma_number, vehicle, company_id, claim')
+      .select('id, ma_number, vehicle, company_id, claim, status')
       .in('ma_number', ids.claimNumbers)
     for (const row of data || []) addCandidate(row as ClaimRow, `MA# hit ${row.ma_number}`, 100)
 
@@ -66,7 +68,7 @@ export async function findMatchForMessage(
     for (const num of ids.claimNumbers) {
       const { data: byInsClaim } = await supabase
         .from('acv_history')
-        .select('id, ma_number, vehicle, company_id, claim')
+        .select('id, ma_number, vehicle, company_id, claim, status')
         .filter('claim->>claimNumber', 'eq', num)
         .limit(5)
       for (const row of byInsClaim || []) {
@@ -107,7 +109,7 @@ export async function findMatchForMessage(
   if (ids.vins.length > 0) {
     const { data } = await supabase
       .from('acv_history')
-      .select('id, ma_number, vehicle, company_id, vin, claim')
+      .select('id, ma_number, vehicle, company_id, vin, claim, status')
       .in('vin', ids.vins)
     for (const row of data || []) addCandidate(row as ClaimRow, `VIN hit ${(row as ClaimRow).vin ?? ''}`, 90)
   }
@@ -138,20 +140,38 @@ export async function findMatchForMessage(
   if (from) {
     const { data: openWithAdjuster } = await supabase
       .from('acv_history')
-      .select('id, ma_number, vehicle, company_id, claim')
+      .select('id, ma_number, vehicle, company_id, claim, status')
       .eq('status', 'open')
       .filter('claim->>adjusterEmail', 'eq', from)
       .limit(10)
     for (const row of openWithAdjuster || []) addCandidate(row as ClaimRow, `sender is claim adjuster`, 50)
   }
 
-  const ranked = Array.from(candidateMap.values()).sort((a, b) => b.score - a.score)
+  // Sort by score desc. Ties are broken by preferring OPEN claims over closed
+  // ones — a brand-new negotiation email almost never belongs to a closed
+  // claim, and when there's a duplicate acv_history row with the same MA# /
+  // claim# the open one is the active work.
+  const ranked = Array.from(candidateMap.values()).sort((a, b) => {
+    if (b.score !== a.score) return b.score - a.score
+    if (a.isClosed !== b.isClosed) return a.isClosed ? 1 : -1
+    return 0
+  })
   const top = ranked[0] ?? null
 
-  // Auto-match only when the top candidate is decisively ahead of the rest
-  // (score >= 80 AND at least 30 points ahead of the runner-up).
+  // Auto-match conditions (any one of):
+  //  (a) top score >= 80 AND beats runner-up by >= 30 points, OR
+  //  (b) top score >= 80 AND top is OPEN while every tied-or-close runner-up
+  //      is CLOSED. The classic open-vs-closed-duplicate case: both score 180,
+  //      we take the open one.
   const runnerUp = ranked[1]
-  const decisive = top && top.score >= 80 && (!runnerUp || top.score - runnerUp.score >= 30)
+  let decisive = false
+  if (top && top.score >= 80) {
+    if (!runnerUp || top.score - runnerUp.score >= 30) {
+      decisive = true
+    } else if (!top.isClosed && runnerUp.isClosed) {
+      decisive = true
+    }
+  }
 
   let matchedBy: MatchResult['matchedBy'] = null
   if (decisive && top) {
