@@ -11,27 +11,26 @@ interface Props {
   onTabChange: (code: DashboardCode) => void
 }
 
-// Tailwind color map — same palette family as the dashboard_configs seed.
-// Keys are the color names in dashboard_configs.color.
-const COLOR_ACTIVE: Record<string, string> = {
-  slate:  'border-slate-900 text-slate-900 bg-white',
-  blue:   'border-blue-700 text-blue-700 bg-white',
-  amber:  'border-amber-700 text-amber-700 bg-white',
-  purple: 'border-purple-700 text-purple-700 bg-white',
-  green:  'border-emerald-700 text-emerald-700 bg-white',
+// Each stage gets a tiny colored dot so you can glance-identify them without
+// the whole pill being tinted. Keeps the active-pill style clean (one color).
+const DOT_COLOR: Record<string, string> = {
+  slate:  'bg-slate-400',
+  blue:   'bg-blue-500',
+  amber:  'bg-amber-500',
+  purple: 'bg-purple-500',
+  green:  'bg-emerald-500',
 }
-const COLOR_INACTIVE_ASSIGNED = 'border-transparent text-gray-600 hover:text-gray-900 hover:bg-gray-50'
-const COLOR_INACTIVE_UNASSIGNED = 'border-transparent text-gray-400 hover:text-gray-600 hover:bg-gray-50'
 
 /**
- * Dashboard workflow tabs. Rendered above the ClaimsTable, aligned with the
- * MA# column. Each tab shows the stage label + a count badge.
+ * Dashboard workflow tabs — pill bar above the ClaimsTable.
  *
- * Rules:
- *   - Appraisers see only tabs in `assignedCodes`. Others are hidden entirely.
- *   - Admins see all 5 tabs. Unassigned ones are dimmed (muted text, lighter
- *     count badge). Clicking a dimmed tab still works + a "View only" chip
- *     appears next to the active tab label so Henry knows he's peeking.
+ * Visual spec:
+ *   - Active tab: dark gray-900 filled pill, white text, white count badge.
+ *   - Assigned, inactive: transparent, gray text, light-gray count badge.
+ *   - Unassigned (admin only): same shape but with muted text + badge, plus
+ *     a small "View only" tag next to the tab bar.
+ *   - Count badges are ALWAYS rendered (even at 0) so pill widths stay even.
+ *   - A colored dot in front of each label makes the stage glanceable.
  */
 export function DashboardTabs({
   dashboards,
@@ -44,45 +43,53 @@ export function DashboardTabs({
   const visible = isAdmin ? dashboards : dashboards.filter(d => assignedCodes.has(d.code))
   if (visible.length === 0) {
     return (
-      <div className="mb-3 text-sm text-gray-500 border border-gray-200 rounded-lg px-3 py-2 bg-white">
+      <div className="mb-3 text-sm text-gray-500 border border-gray-200 rounded-xl px-4 py-3 bg-white">
         No dashboards assigned. Ask an admin to grant access.
       </div>
     )
   }
-
   const activeIsUnassigned = isAdmin && !assignedCodes.has(activeTab)
 
   return (
-    <div className="mb-3 flex items-center gap-2 overflow-x-auto">
-      <div className="inline-flex items-center gap-1 bg-white border border-gray-200 rounded-lg p-1 shadow-sm">
+    <div className="mb-4 flex items-center gap-3 flex-wrap">
+      <div className="inline-flex items-center gap-1 bg-white border border-gray-200 rounded-xl p-1 shadow-sm">
         {visible.map(d => {
           const isActive = d.code === activeTab
           const isAssigned = assignedCodes.has(d.code)
-          const base = 'inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-semibold transition border-b-2'
-          const cls = isActive
-            ? (COLOR_ACTIVE[d.color] ?? COLOR_ACTIVE.slate)
-            : (isAssigned ? COLOR_INACTIVE_ASSIGNED : COLOR_INACTIVE_UNASSIGNED)
           const count = countsByCode[d.code] ?? 0
+          const dot = DOT_COLOR[d.color] ?? DOT_COLOR.slate
+
+          const pillCls = isActive
+            ? 'bg-gray-900 text-white'
+            : (isAssigned
+              ? 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
+              : 'text-gray-400 hover:text-gray-600 hover:bg-gray-50')
+          const badgeCls = isActive
+            ? 'bg-white/15 text-white'
+            : (isAssigned
+              ? 'bg-gray-100 text-gray-700'
+              : 'bg-gray-50 text-gray-400')
+          const dotCls = isActive ? 'bg-white/70' : dot
+
           return (
             <button
               key={d.code}
               type="button"
               onClick={() => onTabChange(d.code)}
-              className={`${base} ${cls}`}
+              className={`inline-flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-sm font-semibold transition ${pillCls}`}
               title={d.description ?? d.label}
             >
+              <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${dotCls}`} aria-hidden />
               <span>{d.label}</span>
-              {count > 0 && (
-                <span className={`inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full text-xs font-bold ${
-                  isActive ? 'bg-gray-900 text-white' : (isAssigned ? 'bg-gray-100 text-gray-700' : 'bg-gray-50 text-gray-400')
-                }`}>{count}</span>
-              )}
+              <span className={`inline-flex items-center justify-center min-w-[22px] h-5 px-1.5 rounded-full text-[11px] font-bold tabular-nums ${badgeCls}`}>
+                {count}
+              </span>
             </button>
           )
         })}
       </div>
       {activeIsUnassigned && (
-        <span className="text-[11px] uppercase tracking-wider font-semibold text-gray-400 border border-gray-200 rounded-md px-2 py-1 bg-gray-50">
+        <span className="inline-flex items-center text-[11px] uppercase tracking-wider font-semibold text-gray-500 border border-gray-200 rounded-md px-2 py-1 bg-gray-50">
           View only
         </span>
       )}
