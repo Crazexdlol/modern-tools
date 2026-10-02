@@ -226,6 +226,19 @@ export async function saveACVHistory(
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return
 
+  // Defense-in-depth: refuse to persist a row with nothing identifying it.
+  // The auto-save path already short-circuits on this, but if any other
+  // caller tries to save a scratch VIN-lookup row with no MA# / insured /
+  // claim#, we drop it here so it never pollutes the DB. This complements
+  // the acv_history_identifiable CHECK constraint (migration-prevent-ghost-claims).
+  const idMa = (entry.maNumber || '').trim()
+  const idInsured = (entry.claim?.insuredName || '').trim()
+  const idClaim = (entry.claim?.claimNumber || '').trim()
+  if (!editId && !idMa && !idInsured && !idClaim) {
+    console.warn('[saveACVHistory] skipping save — no identifying fields (ma_number / insuredName / claimNumber)')
+    return
+  }
+
   const id = editId || entry.id || `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
 
   // NOTE: no delete-before-upsert. Deleting and re-inserting dropped columns
