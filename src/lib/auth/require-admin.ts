@@ -132,6 +132,7 @@ export interface WorkflowClaim {
   assignedTo: string | null
   submittedAt: string | null
   statusPhase: string | null
+  workflowStage: 'main' | 'qc' | 'billing' | 'delivery' | 'payment' | null
   userId: string
   companyId: string | null
 }
@@ -149,16 +150,27 @@ export async function fetchClaim(id: string, companyId?: string | null): Promise
   const full = await service
     .from('acv_history')
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    .select('id, status, assigned_to, submitted_at, status_phase, user_id, company_id' as any)
+    .select('id, status, assigned_to, submitted_at, status_phase, workflow_stage, user_id, company_id' as any)
     .eq('id', id)
     .maybeSingle()
   if (full.error && full.error.code === '42703') {
-    const legacy = await service
+    // Fall back twice — once dropping company_id, then dropping workflow_stage
+    // so a pre-migration DB still works.
+    const mid = await service
       .from('acv_history')
-      .select('id, status, assigned_to, submitted_at, status_phase, user_id')
+      .select('id, status, assigned_to, submitted_at, status_phase, workflow_stage, user_id')
       .eq('id', id)
       .maybeSingle()
-    row = legacy.data
+    if (mid.error && mid.error.code === '42703') {
+      const legacy = await service
+        .from('acv_history')
+        .select('id, status, assigned_to, submitted_at, status_phase, user_id')
+        .eq('id', id)
+        .maybeSingle()
+      row = legacy.data
+    } else {
+      row = mid.data
+    }
   } else {
     row = full.data
   }
@@ -166,12 +178,16 @@ export async function fetchClaim(id: string, companyId?: string | null): Promise
   // Enforce company scoping when the caller provided a companyId AND the row
   // has one. Missing row.company_id (pre-migration) falls through as OK.
   if (companyId && row.company_id && row.company_id !== companyId) return null
+  const stage = ['main','qc','billing','delivery','payment'].includes(row.workflow_stage)
+    ? row.workflow_stage as 'main'|'qc'|'billing'|'delivery'|'payment'
+    : null
   return {
     id: row.id,
     status: (row.status === 'closed' ? 'closed' : 'open'),
     assignedTo: row.assigned_to,
     submittedAt: row.submitted_at,
     statusPhase: row.status_phase,
+    workflowStage: stage,
     userId: row.user_id,
     companyId: row.company_id ?? null,
   }

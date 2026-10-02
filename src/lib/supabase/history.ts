@@ -55,6 +55,12 @@ export interface ACVHistoryEntry {
   // Status phase (set via /api/claims/[id]/phase; cleared by setting null).
   statusPhase?: string | null
   statusPhaseSetAt?: string | null
+  // Workflow stage — one of the 5 top-level dashboard tabs. Separate from
+  // status_phase (which carries orthogonal flags like Rush/Umpire/Hold/DV
+  // Response). Transitions via /api/claims/[id]/advance-workflow.
+  // 'main' is the default for freshly created claims.
+  workflowStage?: 'main' | 'qc' | 'billing' | 'delivery' | 'payment'
+  workflowStageSetAt?: string | null
   // Reason the claim was closed (set via /api/claims/[id]/approve).
   //   'completed' — normal course, ran to closure
   //   'cancelled' — pulled (client withdrew, wrong assignment, duplicate, etc)
@@ -110,6 +116,8 @@ function rowToEntry(row: any): ACVHistoryEntry {
     storage: row.storage ?? undefined,
     statusPhase: row.status_phase ?? null,
     statusPhaseSetAt: row.status_phase_set_at ?? null,
+    workflowStage: (['main','qc','billing','delivery','payment'] as const).includes(row.workflow_stage) ? row.workflow_stage : 'main',
+    workflowStageSetAt: row.workflow_stage_set_at ?? null,
     closeReason: row.close_reason === 'completed' || row.close_reason === 'cancelled' ? row.close_reason : null,
     closedAt: row.closed_at ?? null,
     clientId: row.client_id ?? null,
@@ -134,7 +142,9 @@ export async function fetchACVHistory(): Promise<ACVHistoryEntry[] | null> {
   // column set so the dashboard stays alive. `starred` and `closeReason`
   // default gracefully (false / null) when absent, so the UI is fine either
   // way.
-  const colsFull = 'id, date, created_at, mode, vehicle, vin, ma_number, acv, status, claim, assigned_to, assigned_at, submitted_at, submitted_by, status_phase, status_phase_set_at, starred, close_reason, closed_at'
+  const colsFull = 'id, date, created_at, mode, vehicle, vin, ma_number, acv, status, claim, assigned_to, assigned_at, submitted_at, submitted_by, status_phase, status_phase_set_at, workflow_stage, workflow_stage_set_at, starred, close_reason, closed_at'
+  // Core list excludes workflow_stage so a pre-migration DB can still render
+  // the dashboard — rowToEntry defaults workflow_stage to 'main' if absent.
   const colsCore = 'id, date, created_at, mode, vehicle, vin, ma_number, acv, status, claim, assigned_to, assigned_at, submitted_at, submitted_by, status_phase, status_phase_set_at'
   // Dashboard default: oldest at top (longest-open first). Users can click
   // the Days Open header to flip direction.

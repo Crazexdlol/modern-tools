@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { Plus, CheckCircle2, MessageSquare } from 'lucide-react'
+import { Plus, MessageSquare } from 'lucide-react'
 import { MigrateData } from "@/components/migrate-data"
 import { AppHeader } from "@/components/app-header"
 import { ClaimsTable } from "@/components/claims-table"
@@ -14,10 +14,13 @@ import { LicenseExpirationBanner } from '@/components/license-expiration-banner'
 import { fetchLicensedStates, type LicensedState } from '@/lib/supabase/licensed-states'
 import { fetchAllLicenses, fetchUserLicenses, type AppraiserLicense } from '@/lib/supabase/appraiser-licenses'
 import { fetchStatusPhaseConfigs, phaseColorClasses, type StatusPhaseConfig } from '@/lib/supabase/status-phase-configs'
+import { DashboardTabs } from '@/components/dashboard-tabs'
+import { useUserDashboards, type DashboardCode } from '@/hooks/use-user-dashboards'
 
 export default function DashboardPage() {
   const router = useRouter()
   const { profile } = useCurrentProfile()
+  const { dashboards, assignedCodes, loading: dashboardsLoading } = useUserDashboards()
   const [entries, setEntries] = useState<ACVHistoryEntry[]>([])
   const [claimsLoading, setClaimsLoading] = useState(true)
   const [profiles, setProfiles] = useState<Profile[]>([])
@@ -27,6 +30,8 @@ export default function DashboardPage() {
   const [licensesByUser, setLicensesByUser] = useState<Map<string, AppraiserLicense[]>>(new Map())
   const [statusPhaseConfigs, setStatusPhaseConfigs] = useState<StatusPhaseConfig[]>([])
   const [phaseFilter, setPhaseFilter] = useState<string | null>(null)
+  const [activeTab, setActiveTab] = useState<DashboardCode>('main')
+  const [didInitActiveTab, setDidInitActiveTab] = useState(false)
 
   // Independent fetches — each logs its own timing. Nothing blocks the others.
   const load = () => {
@@ -73,20 +78,35 @@ export default function DashboardPage() {
   }, [profile?.id, profile?.role])
 
   const isAdmin = profile?.role === 'admin'
-  // Every non-closed claim shows on the dashboard now — submitted ones are
-  // phased 'completed' via the submit route and filterable via the phase-chip
-  // row / the "Completed" toggle button. There is no separate completed queue.
+  // Every non-closed claim shows on the dashboard now — the workflow_stage
+  // field determines which top-level tab it appears under (Main / QC /
+  // Billing / Delivery / Payment). The status_phase chip row inside each
+  // tab is a secondary orthogonal filter (Rush / Umpire / Hold / DV Response).
   const openClaims = entries.filter(e => e.status !== 'closed')
-  const completedCount = openClaims.filter(e => e.statusPhase === 'completed').length
-  // Chip row: admins see every configured phase; non-admins only see chips for
-  // phases that actually appear in their assigned queue. So an appraiser with
-  // no completed / pending_payment claims doesn't see those filters at all,
-  // but a stray one (rare) still surfaces so they can filter to it.
+  // Per-tab counts — shown in the dashboard tab badges.
+  const countsByCode: Record<DashboardCode, number> = { main: 0, qc: 0, billing: 0, delivery: 0, payment: 0 }
+  for (const e of openClaims) {
+    const code = (e.workflowStage ?? 'main') as DashboardCode
+    if (code in countsByCode) countsByCode[code]++
+  }
+  // Claims rendered in the ClaimsTable are scoped to the active tab.
+  const claimsForActiveTab = openClaims.filter(e => (e.workflowStage ?? 'main') === activeTab)
+  // Chip row: admins see every configured non-archived phase; non-admins only
+  // see chips that actually appear in their queue (within the active tab).
   const visiblePhaseConfigs = isAdmin
     ? statusPhaseConfigs
-    : statusPhaseConfigs.filter(cfg => openClaims.some(e => e.statusPhase === cfg.code))
+    : statusPhaseConfigs.filter(cfg => claimsForActiveTab.some(e => e.statusPhase === cfg.code))
   // Admins always; non-admins need their per-user grant (profile.canCreateClaims).
   const canCreate = isAdmin || profile?.canCreateClaims === true
+
+  // Initialize the active tab to the first assigned dashboard (by sort order)
+  // once the hook settles. Falls back to 'main' if nothing's assigned.
+  useEffect(() => {
+    if (dashboardsLoading || didInitActiveTab) return
+    const firstAssigned = dashboards.find(d => assignedCodes.has(d.code))
+    if (firstAssigned) setActiveTab(firstAssigned.code)
+    setDidInitActiveTab(true)
+  }, [dashboardsLoading, didInitActiveTab, dashboards, assignedCodes])
 
   const startNewClaim = () => {
     localStorage.removeItem('modern-tools-comp-finder-draft')
@@ -148,28 +168,6 @@ export default function DashboardPage() {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            {isAdmin && (
-              <button
-                type="button"
-                onClick={() => setPhaseFilter(phaseFilter === 'completed' ? null : 'completed')}
-                className={`flex items-center gap-2 border text-sm font-bold px-4 py-2.5 rounded-lg transition-colors shadow-sm ${
-                  phaseFilter === 'completed'
-                    ? 'bg-blue-600 border-blue-600 text-white hover:bg-blue-500'
-                    : 'bg-white border-gray-200 hover:border-gray-300 text-gray-700'
-                }`}
-                title={phaseFilter === 'completed' ? 'Clear Completed filter' : 'Show only Completed claims'}
-              >
-                <CheckCircle2 className="w-4 h-4" />
-                Completed
-                {completedCount > 0 && (
-                  <span className={`inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full text-xs font-bold ${
-                    phaseFilter === 'completed' ? 'bg-white text-blue-600' : 'bg-blue-600 text-white'
-                  }`}>
-                    {completedCount}
-                  </span>
-                )}
-              </button>
-            )}
             {canCreate && (
               <button
                 onClick={startNewClaim}
@@ -188,8 +186,20 @@ export default function DashboardPage() {
           </div>
         )}
 
-        {/* All non-closed claims (including submitted/completed). The Completed
-            button above filters to phase='completed' when toggled on. */}
+        {/* Dashboard tabs — sits above the ClaimsTable, over the MA# column.
+            Each tab represents a workflow stage. Appraisers see assigned ones
+            only; admins see all 5 with unassigned ones dimmed. */}
+        {!dashboardsLoading && (
+          <DashboardTabs
+            dashboards={dashboards}
+            assignedCodes={assignedCodes}
+            activeTab={activeTab}
+            isAdmin={isAdmin}
+            countsByCode={countsByCode}
+            onTabChange={(code) => { setActiveTab(code); setPhaseFilter(null) }}
+          />
+        )}
+
         {claimsLoading ? (
           <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-8 flex items-center justify-center gap-3 text-gray-500">
             <span className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
@@ -197,8 +207,8 @@ export default function DashboardPage() {
           </div>
         ) : (
           <ClaimsTable
-            entries={openClaims}
-            emptyText={isAdmin ? 'No open claims.' : 'No claims assigned to you.'}
+            entries={claimsForActiveTab}
+            emptyText={isAdmin ? 'No claims in this stage.' : 'No claims assigned to you in this stage.'}
             adminView={isAdmin}
             profiles={profiles}
             onAssignmentChanged={load}

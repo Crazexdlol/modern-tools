@@ -25,18 +25,30 @@ export async function POST(
 
   const service = createServiceClient()
   const now = new Date().toISOString()
-  // Also phase the claim as 'completed' so it stays visible on the dashboard
-  // (no more separate /completed-assignments queue) and admins can filter to
-  // it via the same phase-chip UI as the other phases.
-  const { error } = await service
+  // Post workflow-dashboards: advance to the QC tab (workflow_stage='qc').
+  // Pre-migration fallback: fall back to the old status_phase='completed'
+  // write so a deploy that lands before the migration keeps working.
+  let { error } = await service
     .from('acv_history')
     .update({
       submitted_at: now,
       submitted_by: caller!.userId,
-      status_phase: 'completed',
-      status_phase_set_at: now,
+      workflow_stage: 'qc',
+      workflow_stage_set_at: now,
     })
     .eq('id', id)
+  if (error && error.code === '42703') {
+    const { error: e2 } = await service
+      .from('acv_history')
+      .update({
+        submitted_at: now,
+        submitted_by: caller!.userId,
+        status_phase: 'completed',
+        status_phase_set_at: now,
+      })
+      .eq('id', id)
+    error = e2
+  }
   if (error) return NextResponse.json({ error: error.message }, { status: 400 })
   return NextResponse.json({ ok: true })
 }

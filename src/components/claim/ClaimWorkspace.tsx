@@ -57,9 +57,9 @@ import { ReportsHubTab } from '@/components/claim/reports-hub-tab'
 import { fetchGuidelineNamesBrowser } from '@/lib/supabase/insurance-guidelines'
 import { useDuplicateCheck, type DuplicateResult } from '@/lib/supabase/claim-duplicates'
 import { AssignmentSheet, triggerAssignmentSheetPrint } from '@/components/claim/assignment-sheet'
-import { DVTab, type DVState } from '@/components/claim/dv-tab'
+import { DVTab, finalDvFor, type DVState } from '@/components/claim/dv-tab'
 import { ReportsTab, type InvoiceReportState } from '@/components/claim/reports-tab'
-import { StorageTab, defaultStorageState } from '@/components/claim/storage-tab'
+import { StorageTab, defaultStorageState, computeStorageTotals } from '@/components/claim/storage-tab'
 import type { StorageState } from '@/lib/acv/types'
 import { uploadClaimDocument, type ClaimDocument } from '@/lib/supabase/documents'
 import { savePdfWithPicker } from '@/lib/save-pdf'
@@ -193,18 +193,42 @@ function DuplicateWarning({
   matches,
   count,
   field,
+  tone = 'slate',
 }: {
   matches: Array<{ id: string; maNumber: string; claimNumber: string; insuredName: string; vehicle: string; date: string }>
   count: number
   field: string
+  // VIN duplicates are the strongest signal (unique per vehicle) so they
+  // render red. MA# / claim# duplicates stay neutral slate — those are often
+  // clerical coincidences.
+  tone?: 'slate' | 'red'
 }) {
   if (count === 0) return null
+  const t = tone === 'red'
+    ? {
+        wrap: 'text-red-700',
+        header: 'text-red-700',
+        sep: 'text-red-400',
+        chip: 'inline-flex items-center gap-1 px-2 py-0.5 rounded-full border border-red-300 bg-red-50 hover:border-red-400 hover:bg-red-100 text-red-800 hover:text-red-900 font-medium transition-colors',
+        chipMuted: 'text-red-500',
+        more: 'text-red-600',
+        empty: 'text-red-500 italic',
+      }
+    : {
+        wrap: 'text-slate-600',
+        header: 'text-slate-500',
+        sep: 'text-slate-400',
+        chip: 'inline-flex items-center gap-1 px-2 py-0.5 rounded-full border border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50 text-slate-700 hover:text-slate-900 font-medium transition-colors',
+        chipMuted: 'text-slate-400',
+        more: 'text-slate-500',
+        empty: 'text-slate-400 italic',
+      }
   return (
-    <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-600">
-      <span className="inline-flex items-center gap-1 text-slate-500 shrink-0">
+    <div className={cn('mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs', t.wrap)}>
+      <span className={cn('inline-flex items-center gap-1 shrink-0', t.header)}>
         <Info className="w-3.5 h-3.5" />
         Also on {count} other claim{count === 1 ? '' : 's'}
-        <span className="text-slate-400">·</span>
+        <span className={t.sep}>·</span>
       </span>
       {matches.length > 0 ? (
         <>
@@ -215,17 +239,17 @@ function DuplicateWarning({
               target="_blank"
               rel="noreferrer"
               title={[m.insuredName, m.vehicle].filter(Boolean).join(' · ') || undefined}
-              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50 text-slate-700 hover:text-slate-900 font-medium transition-colors"
+              className={t.chip}
             >
               <span>MA {m.maNumber || m.id.slice(0, 6)}</span>
-              {m.claimNumber && <span className="text-slate-400">· CL {m.claimNumber}</span>}
-              <ExternalLink className="w-3 h-3 text-slate-400" />
+              {m.claimNumber && <span className={t.chipMuted}>· CL {m.claimNumber}</span>}
+              <ExternalLink className={cn('w-3 h-3', t.chipMuted)} />
             </a>
           ))}
-          {matches.length > 5 && <span className="text-slate-500">+{matches.length - 5} more</span>}
+          {matches.length > 5 && <span className={t.more}>+{matches.length - 5} more</span>}
         </>
       ) : (
-        <span className="text-slate-400 italic">Ask an admin for details</span>
+        <span className={t.empty}>Ask an admin for details</span>
       )}
       <span className="sr-only">
         {field} matches on other claim{count === 1 ? '' : 's'} — informational, not a block.
@@ -240,47 +264,71 @@ function DuplicateWarning({
 // amber warning.
 function DuplicateBanner({ duplicates }: { duplicates: DuplicateResult }) {
   const { vinMatches, claimNumberMatches, maNumberMatches } = duplicates
-  const groups: Array<{ label: string; list: DuplicateResult['vinMatches'] }> = []
-  if (vinMatches.length > 0)         groups.push({ label: 'VIN',    list: vinMatches })
-  if (claimNumberMatches.length > 0) groups.push({ label: 'CL #',   list: claimNumberMatches })
-  if (maNumberMatches.length > 0)    groups.push({ label: 'MA #',   list: maNumberMatches })
+  type Group = { label: string; list: DuplicateResult['vinMatches']; tone: 'slate' | 'red' }
+  const groups: Group[] = []
+  if (vinMatches.length > 0)         groups.push({ label: 'VIN',    list: vinMatches,         tone: 'red' })
+  if (claimNumberMatches.length > 0) groups.push({ label: 'CL #',   list: claimNumberMatches, tone: 'slate' })
+  if (maNumberMatches.length > 0)    groups.push({ label: 'MA #',   list: maNumberMatches,    tone: 'slate' })
   if (groups.length === 0) return null
 
+  const hasVin = vinMatches.length > 0
+  // Promote the whole banner to red when a VIN duplicate is present — VIN is
+  // the strongest signal (unique per vehicle). CL# / MA# only → neutral slate.
+  const outer = hasVin
+    ? 'mb-4 rounded-lg border border-red-300 bg-white shadow-sm overflow-hidden'
+    : 'mb-4 rounded-lg border border-slate-200 bg-white shadow-sm overflow-hidden'
+  const header = hasVin
+    ? 'flex items-center gap-2 px-4 py-2 border-b border-red-200 bg-red-50'
+    : 'flex items-center gap-2 px-4 py-2 border-b border-slate-100 bg-slate-50'
+  const headerIcon = hasVin ? 'w-4 h-4 text-red-600' : 'w-4 h-4 text-slate-500'
+  const headerTitle = hasVin ? 'text-sm font-semibold text-red-800' : 'text-sm font-semibold text-slate-800'
+  const headerSub = hasVin ? 'text-xs text-red-600' : 'text-xs text-slate-500'
+  const divide = hasVin ? 'divide-y divide-red-100' : 'divide-y divide-slate-100'
+
   return (
-    <div className="mb-4 rounded-lg border border-slate-200 bg-white shadow-sm overflow-hidden">
-      <div className="flex items-center gap-2 px-4 py-2 border-b border-slate-100 bg-slate-50">
-        <Info className="w-4 h-4 text-slate-500" />
-        <span className="text-sm font-semibold text-slate-800">Matching claim{groups.reduce((n, g) => n + g.list.length, 0) === 1 ? '' : 's'} on file</span>
-        <span className="text-xs text-slate-500">— informational, this claim is not blocked</span>
+    <div className={outer}>
+      <div className={header}>
+        <Info className={headerIcon} />
+        <span className={headerTitle}>Matching claim{groups.reduce((n, g) => n + g.list.length, 0) === 1 ? '' : 's'} on file</span>
+        <span className={headerSub}>— informational, this claim is not blocked</span>
       </div>
-      <div className="divide-y divide-slate-100">
-        {groups.map(g => (
-          <div key={g.label} className="px-4 py-2.5">
-            <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 text-xs">
-              <span className="inline-flex items-center gap-1 shrink-0">
-                <span className="text-slate-500">Same {g.label}:</span>
-              </span>
-              {g.list.slice(0, 6).map(m => (
-                <a
-                  key={m.id}
-                  href={`/claims/${m.id}`}
-                  target="_blank"
-                  rel="noreferrer"
-                  title={[m.insuredName, m.vehicle].filter(Boolean).join(' · ') || undefined}
-                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50 text-slate-700 hover:text-slate-900 font-medium transition-colors"
-                >
-                  <span>MA {m.maNumber || m.id.slice(0, 6)}</span>
-                  {m.claimNumber && <span className="text-slate-400">· CL {m.claimNumber}</span>}
-                  {m.insuredName && <span className="text-slate-400 truncate max-w-[140px]">· {m.insuredName}</span>}
-                  <ExternalLink className="w-3 h-3 text-slate-400" />
-                </a>
-              ))}
-              {g.list.length > 6 && (
-                <span className="text-slate-500">+{g.list.length - 6} more</span>
-              )}
+      <div className={divide}>
+        {groups.map(g => {
+          const isRed = g.tone === 'red'
+          const labelCls = isRed ? 'text-red-700' : 'text-slate-500'
+          const chipCls = isRed
+            ? 'inline-flex items-center gap-1 px-2 py-0.5 rounded-full border border-red-300 bg-red-50 hover:border-red-400 hover:bg-red-100 text-red-800 hover:text-red-900 font-medium transition-colors'
+            : 'inline-flex items-center gap-1 px-2 py-0.5 rounded-full border border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50 text-slate-700 hover:text-slate-900 font-medium transition-colors'
+          const chipMuted = isRed ? 'text-red-500' : 'text-slate-400'
+          const more = isRed ? 'text-red-600' : 'text-slate-500'
+          return (
+            <div key={g.label} className="px-4 py-2.5">
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 text-xs">
+                <span className="inline-flex items-center gap-1 shrink-0">
+                  <span className={labelCls}>Same {g.label}:</span>
+                </span>
+                {g.list.slice(0, 6).map(m => (
+                  <a
+                    key={m.id}
+                    href={`/claims/${m.id}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    title={[m.insuredName, m.vehicle].filter(Boolean).join(' · ') || undefined}
+                    className={chipCls}
+                  >
+                    <span>MA {m.maNumber || m.id.slice(0, 6)}</span>
+                    {m.claimNumber && <span className={chipMuted}>· CL {m.claimNumber}</span>}
+                    {m.insuredName && <span className={cn('truncate max-w-[140px]', chipMuted)}>· {m.insuredName}</span>}
+                    <ExternalLink className={cn('w-3 h-3', chipMuted)} />
+                  </a>
+                ))}
+                {g.list.length > 6 && (
+                  <span className={more}>+{g.list.length - 6} more</span>
+                )}
+              </div>
             </div>
-          </div>
-        ))}
+          )
+        })}
       </div>
     </div>
   )
@@ -372,7 +420,42 @@ function ClaimInfoForm({
   const [pdfUploading, setPdfUploading] = useState(false)
   const [pdfError, setPdfError] = useState<string | null>(null)
   const [pdfSuccess, setPdfSuccess] = useState(false)
+  const [decoding, setDecoding] = useState(false)
+  const [decodeError, setDecodeError] = useState<string | null>(null)
   const pdfInputRef = useRef<HTMLInputElement>(null)
+
+  // VIN decode — mirror of SearchParametersPanel.decodeVin so DV-only / Storage
+  // claims (which never visit the ACV Comp Search tab) can still fill vehicle
+  // specs from Claim Info.
+  const decodeVin = async () => {
+    if (claim.vin.length !== 17) {
+      setDecodeError('VIN must be exactly 17 characters')
+      return
+    }
+    setDecoding(true)
+    setDecodeError(null)
+    try {
+      const res = await fetch(`/api/acv/decode-vin?vin=${claim.vin}`)
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Decode failed')
+      onChange({
+        ...claim,
+        vin: data.vin ?? claim.vin,
+        year: data.year ?? claim.year,
+        make: data.make ?? claim.make,
+        model: data.model ?? claim.model,
+        trim: data.trim ?? claim.trim,
+        engine: data.engine ?? claim.engine,
+        drivetrain: data.drivetrain ?? claim.drivetrain,
+        transmission: data.transmission ?? claim.transmission,
+        fuelType: data.fuelType ?? claim.fuelType,
+      })
+    } catch (err) {
+      setDecodeError(err instanceof Error ? err.message : 'VIN decode failed')
+    } finally {
+      setDecoding(false)
+    }
+  }
 
   // Company-aware file-number label + auto-generation. Eagleview auto-fills
   // the file # from a server sequence (222001, 222002, ...); MA users type
@@ -611,6 +694,88 @@ function ClaimInfoForm({
           <div>
             <label className={labelCls}>Date of Loss</label>
             <input type="date" className={inputCls} value={claim.dateOfLoss} onChange={(e) => set('dateOfLoss', e.target.value)} />
+          </div>
+        </div>
+      </div>
+
+      {/* Vehicle — VIN / Y / M / M / Trim / Mileage. Also lives on the ACV
+          Comp Search tab (same ClaimInfo fields, kept in sync automatically),
+          but mirrored here so DV / Storage / Estimate-only claims can still
+          enter and edit vehicle specs without opening the ACV flow. */}
+      <div>
+        <h3 className="text-sm font-bold text-gray-900 mb-4">Vehicle</h3>
+        <div className="mb-4">
+          <label className={labelCls}>VIN</label>
+          <div className="flex gap-2">
+            <input
+              className={cn(inputCls, 'flex-1 font-mono uppercase')}
+              placeholder="17-character VIN"
+              maxLength={17}
+              value={claim.vin}
+              onChange={(e) => set('vin', e.target.value.toUpperCase())}
+            />
+            <Button
+              type="button"
+              onClick={decodeVin}
+              disabled={decoding || claim.vin.length !== 17}
+              className="shrink-0 bg-blue-600 hover:bg-blue-500 text-white"
+              size="sm"
+            >
+              {decoding ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Decode'}
+            </Button>
+          </div>
+          {decodeError && (
+            <p className="text-xs text-red-500 mt-1">{decodeError}</p>
+          )}
+          <DuplicateWarning matches={duplicates.vinMatches} count={duplicates.vinCount} field="VIN" tone="red" />
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div>
+            <label className={labelCls}>Year</label>
+            <input
+              type="number"
+              className={inputCls}
+              placeholder="2020"
+              value={claim.year || ''}
+              onChange={(e) => set('year', parseInt(e.target.value) || 0)}
+            />
+          </div>
+          <div>
+            <label className={labelCls}>Make</label>
+            <input
+              className={inputCls}
+              placeholder="Toyota"
+              value={claim.make}
+              onChange={(e) => set('make', e.target.value)}
+            />
+          </div>
+          <div>
+            <label className={labelCls}>Model</label>
+            <input
+              className={inputCls}
+              placeholder="Camry"
+              value={claim.model}
+              onChange={(e) => set('model', e.target.value)}
+            />
+          </div>
+          <div>
+            <label className={labelCls}>Trim</label>
+            <input
+              className={inputCls}
+              placeholder="XLE"
+              value={claim.trim}
+              onChange={(e) => set('trim', e.target.value)}
+            />
+          </div>
+          <div>
+            <label className={labelCls}>Mileage</label>
+            <input
+              type="number"
+              className={inputCls}
+              placeholder="45000"
+              value={claim.mileage || ''}
+              onChange={(e) => set('mileage', parseInt(e.target.value) || 0)}
+            />
           </div>
         </div>
       </div>
@@ -859,7 +1024,7 @@ function SearchParametersPanel({
             {decodeError}
           </p>
         )}
-        <DuplicateWarning matches={duplicates.vinMatches} count={duplicates.vinCount} field="VIN" />
+        <DuplicateWarning matches={duplicates.vinMatches} count={duplicates.vinCount} field="VIN" tone="red" />
       </div>
 
       {/* Vehicle fields grid */}
@@ -1685,6 +1850,15 @@ interface ReportsState {
     // Optional so pre-existing claims (which never had this field) don't
     // fail deserialization; treat undefined as 0 at read time.
     repairShopAmountNum?: number
+    // Insurance company's initial offer — shown in Claim Info Valuations
+    // section + printed assignment sheet. Optional for legacy row compat.
+    insuranceOfferNum?: number
+    // Per-element MA Value overrides. Each one is only used when the matching
+    // tool tab has no computed result yet (ACV before comps are picked, DV
+    // before KBB values are entered, Storage before lines are added). Optional
+    // for legacy row compat.
+    dvValueNum?: number
+    storageValueNum?: number
   }
   awardData: {
     insuranceCompany: string
@@ -1731,6 +1905,7 @@ function defaultReportsState(claim: ClaimInfo): ReportsState {
       umpireName: '',
       umpireAmountNum: 0,
       repairShopAmountNum: 0,
+      insuranceOfferNum: 0,
     },
     awardData: {
       insuranceCompany: claim.insuranceCompany || '',
@@ -2187,7 +2362,14 @@ function ReportsStep({
                 const blob = await captureSummaryPdf()
                 if (blob) onDocumentSaved?.(blob, `${claim.maNumber || 'claim'}-summary.pdf`, 'summary')
               } catch { /* printing still works even if capture fails */ }
-              window.print()
+              // Browser Save-as-PDF uses document.title for the suggested filename.
+              const prevTitle = document.title
+              document.title = `${claim.maNumber || 'summary'}-summary`
+              try {
+                window.print()
+              } finally {
+                document.title = prevTitle
+              }
             }}
             variant="outline"
             disabled={!summaryDraft}
@@ -2882,6 +3064,9 @@ function ClaimWorkspaceInner({ claimId }: { claimId: string }) {
   // without a full page reload.
   const [assignedTo, setAssignedTo] = useState<string | null>(null)
   const [submittedAt, setSubmittedAt] = useState<string | null>(null)
+  // Workflow stage — one of main/qc/billing/delivery/payment. Drives the
+  // "Advance to [next stage]" button on the workspace header.
+  const [workflowStage, setWorkflowStage] = useState<'main'|'qc'|'billing'|'delivery'|'payment'>('main')
   // Hydrated for parity with the server row; not rendered yet. Future work will
   // surface "submitted by X" in the banner.
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -2988,6 +3173,7 @@ function ClaimWorkspaceInner({ claimId }: { claimId: string }) {
       setAssignedTo(entry.assignedTo ?? null)
       setSubmittedAt(entry.submittedAt ?? null)
       setSubmittedBy(entry.submittedBy ?? null)
+      setWorkflowStage(entry.workflowStage ?? 'main')
       setStatusPhase(entry.statusPhase ?? null)
       setStatusPhaseSetAt(entry.statusPhaseSetAt ?? null)
       setAuctionListings((entry.auctionListings as LossListing[] | undefined) ?? [])
@@ -3505,6 +3691,44 @@ function ClaimWorkspaceInner({ claimId }: { claimId: string }) {
     variant: 'primary',
   })
 
+  // Workflow stage advancement — admin triggers "advance" from QC onward.
+  // The route handles permission checks + computes the next stage server-side.
+  const STAGE_LABELS: Record<string, string> = { main: 'Main', qc: 'QC', billing: 'Billing', delivery: 'Delivery', payment: 'Payment' }
+  const NEXT_LABEL: Record<string, string> = {
+    main: 'Submit for QC',
+    qc: 'Pass QC → Billing',
+    billing: 'Mark Billed → Delivery',
+    delivery: 'Mark Delivered → Payment',
+    payment: 'Mark Paid & Close',
+  }
+  const handleAdvance = async () => {
+    if (!editingId) return
+    const label = NEXT_LABEL[workflowStage] ?? 'Advance'
+    if (!window.confirm(`${label}?`)) return
+    setWorkflowBusy(true)
+    const res = await fetch(`/api/claims/${editingId}/advance-workflow`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'advance' }),
+    })
+    setWorkflowBusy(false)
+    if (!res.ok) {
+      const b = await res.json().catch(() => ({} as { error?: string }))
+      alert((b as { error?: string }).error ?? 'Advance failed')
+      return
+    }
+    // On Payment → Close, kick to dashboard; otherwise refresh in place.
+    if (workflowStage === 'payment') { router.push('/'); return }
+    const fresh = await fetchACVEntry(editingId)
+    if (fresh) {
+      setStatus(fresh.status ?? 'open')
+      setAssignedTo(fresh.assignedTo ?? null)
+      setSubmittedAt(fresh.submittedAt ?? null)
+      setSubmittedBy(fresh.submittedBy ?? null)
+      setWorkflowStage(fresh.workflowStage ?? 'main')
+    }
+  }
+
   // Admin needs the list of users for the Reassign popover; skip the fetch for
   // non-admins to avoid the extra roundtrip on every workspace load.
   useEffect(() => {
@@ -3737,28 +3961,32 @@ function ClaimWorkspaceInner({ claimId }: { claimId: string }) {
               {isAdmin && !isClosed && (
                 <div className="relative" ref={finalizeRef}>
                   <Button
-                    onClick={() => setFinalizeOpen(o => !o)}
+                    onClick={handleAdvance}
                     disabled={workflowBusy}
                     size="sm"
                     className="bg-emerald-600 hover:bg-emerald-500 text-white"
                   >
-                    Finalize
-                    <ChevronDown className="w-3.5 h-3.5 ml-1" />
+                    {NEXT_LABEL[workflowStage] ?? 'Advance'}
+                  </Button>
+                  <Button
+                    onClick={() => setFinalizeOpen(o => !o)}
+                    disabled={workflowBusy}
+                    size="sm"
+                    variant="outline"
+                    className="ml-1 px-2"
+                    title="More actions"
+                  >
+                    <ChevronDown className="w-3.5 h-3.5" />
                   </Button>
                   {finalizeOpen && (
-                    <div className="absolute right-0 mt-1 w-48 rounded-lg border border-gray-200 bg-white shadow-lg z-20 overflow-hidden">
-                      <button
-                        type="button"
-                        onClick={() => { setFinalizeOpen(false); handleComplete() }}
-                        className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-800 hover:bg-emerald-50 hover:text-emerald-700"
-                      >
-                        <Check className="w-4 h-4 text-emerald-600" />
-                        Complete Claim
-                      </button>
+                    <div className="absolute right-0 mt-1 w-56 rounded-lg border border-gray-200 bg-white shadow-lg z-20 overflow-hidden">
+                      <div className="px-3 py-2 text-[10px] uppercase tracking-wider font-semibold text-gray-400 border-b border-gray-100 bg-gray-50">
+                        Stage: {STAGE_LABELS[workflowStage] ?? workflowStage}
+                      </div>
                       <button
                         type="button"
                         onClick={() => { setFinalizeOpen(false); handleCancel() }}
-                        className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-800 hover:bg-red-50 hover:text-red-700 border-t border-gray-100"
+                        className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-800 hover:bg-red-50 hover:text-red-700"
                       >
                         <X className="w-4 h-4 text-red-600" />
                         Cancel Claim
@@ -4085,6 +4313,120 @@ function ClaimWorkspaceInner({ claimId }: { claimId: string }) {
                           }))
                         }}
                         placeholder="Firm / appraisal company"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Valuations — mirrors what's on the printed assignment sheet.
+                    One MA Value field per selected loss type (ACV / DV /
+                    Storage), each auto-filled from its own tool tab. Estimate
+                    Dispute is intentionally excluded. Empty claimTypes (legacy
+                    rows) + 'other' both fall back to showing all three.
+                    Award auto-fills from Closing Notes agreementAmountNum, OA
+                    value two-way binds to the same notesData field Closing
+                    Notes uses, Ins. Co. Offer is a stand-alone manual field. */}
+                <div className="border-t border-gray-100 pt-8">
+                  <h3 className="text-sm font-bold text-gray-900 mb-4">Valuations</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {(() => {
+                      const types = claim.claimTypes ?? []
+                      const showAll = types.length === 0 || types.includes('other')
+                      const showAcv = showAll || types.includes('acv')
+                      const showDv = showAll || types.includes('dv')
+                      const showStorage = showAll || types.includes('storage')
+                      const dvAmount = dv ? finalDvFor(dv, claim.mileage) : 0
+                      const storageAmount = storage ? computeStorageTotals(storage).total : 0
+                      return (
+                        <>
+                          {showAcv && (
+                            <div>
+                              <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">
+                                MA Value (ACV)
+                                {result.acv > 0 && <span className="ml-1 text-[10px] font-normal text-gray-400 normal-case">(auto from ACV Report)</span>}
+                              </label>
+                              <CurrencyInput
+                                className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent tabular-nums"
+                                value={result.acv > 0 ? result.acv : (reportsState.notesData.maValueNum ?? 0)}
+                                onChange={(val) => setReportsState(prev => ({
+                                  ...prev,
+                                  notesData: { ...prev.notesData, maValueNum: val },
+                                }))}
+                              />
+                            </div>
+                          )}
+                          {showDv && (
+                            <div>
+                              <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">
+                                MA Value (DV)
+                                {dvAmount > 0 && <span className="ml-1 text-[10px] font-normal text-gray-400 normal-case">(auto from DV Report)</span>}
+                              </label>
+                              <CurrencyInput
+                                className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent tabular-nums"
+                                value={dvAmount > 0 ? dvAmount : (reportsState.notesData.dvValueNum ?? 0)}
+                                onChange={(val) => setReportsState(prev => ({
+                                  ...prev,
+                                  notesData: { ...prev.notesData, dvValueNum: val },
+                                }))}
+                              />
+                            </div>
+                          )}
+                          {showStorage && (
+                            <div>
+                              <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">
+                                MA Value (Storage)
+                                {storageAmount > 0 && <span className="ml-1 text-[10px] font-normal text-gray-400 normal-case">(auto from Storage Charges)</span>}
+                              </label>
+                              <CurrencyInput
+                                className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent tabular-nums"
+                                value={storageAmount > 0 ? storageAmount : (reportsState.notesData.storageValueNum ?? 0)}
+                                onChange={(val) => setReportsState(prev => ({
+                                  ...prev,
+                                  notesData: { ...prev.notesData, storageValueNum: val },
+                                }))}
+                              />
+                            </div>
+                          )}
+                        </>
+                      )
+                    })()}
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Ins. Co. Offer</label>
+                      <CurrencyInput
+                        className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent tabular-nums"
+                        value={reportsState.notesData.insuranceOfferNum ?? 0}
+                        onChange={(val) => setReportsState(prev => ({
+                          ...prev,
+                          notesData: { ...prev.notesData, insuranceOfferNum: val },
+                        }))}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">
+                        OA Value
+                        <span className="ml-1 text-[10px] font-normal text-gray-400 normal-case">(also on Closing Notes)</span>
+                      </label>
+                      <CurrencyInput
+                        className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent tabular-nums"
+                        value={reportsState.notesData.appraiserValueNum}
+                        onChange={(val) => setReportsState(prev => ({
+                          ...prev,
+                          notesData: { ...prev.notesData, appraiserValueNum: val },
+                        }))}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">
+                        Award Amount
+                        <span className="ml-1 text-[10px] font-normal text-gray-400 normal-case">(also on Closing Notes)</span>
+                      </label>
+                      <CurrencyInput
+                        className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent tabular-nums"
+                        value={reportsState.notesData.agreementAmountNum}
+                        onChange={(val) => setReportsState(prev => ({
+                          ...prev,
+                          notesData: { ...prev.notesData, agreementAmountNum: val },
+                        }))}
                       />
                     </div>
                   </div>
@@ -4560,7 +4902,7 @@ function ClaimWorkspaceInner({ claimId }: { claimId: string }) {
               selectedComps={builtComps}
               adjustments={adjustments}
               result={result}
-              onBack={() => setStep(3)}
+              onBack={() => setStep(1)}
               onStartOver={startOver}
               onSave={handleSaveClaim}
               editId={editingId}
@@ -4705,6 +5047,7 @@ function ClaimWorkspaceInner({ claimId }: { claimId: string }) {
             opposingAppraiserName: reportsState.notesData.appraiserName,
             opposingAppraiserCompany: reportsState.notesData.appraiserCompany,
             opposingAppraiserValue: reportsState.notesData.appraiserValueNum,
+            insuranceOfferValue: reportsState.notesData.insuranceOfferNum ?? 0,
             agreementAmount: reportsState.notesData.agreementAmountNum,
             umpireAmount: reportsState.notesData.umpireAmountNum,
             ourAcv: result.acv,
