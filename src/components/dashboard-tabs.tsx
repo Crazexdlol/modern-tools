@@ -52,7 +52,7 @@ export function DashboardTabs({
 
   return (
     <div className="mb-4 flex items-center gap-3 flex-wrap">
-      <div className="inline-flex items-center gap-1 bg-white border border-gray-200 rounded-xl p-1 shadow-sm">
+      <div className="inline-flex items-center gap-1 bg-gray-100 rounded-xl p-1">
         {visible.map(d => {
           const isActive = d.code === activeTab
           const isAssigned = assignedCodes.has(d.code)
@@ -60,16 +60,15 @@ export function DashboardTabs({
           const dot = DOT_COLOR[d.color] ?? DOT_COLOR.slate
 
           const pillCls = isActive
-            ? 'bg-gray-900 text-white'
+            ? 'bg-white text-gray-900 shadow-sm ring-1 ring-gray-200/60'
             : (isAssigned
-              ? 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
-              : 'text-gray-400 hover:text-gray-600 hover:bg-gray-50')
+              ? 'text-gray-600 hover:text-gray-900 hover:bg-white/60'
+              : 'text-gray-400 hover:text-gray-600 hover:bg-white/40')
           const badgeCls = isActive
-            ? 'bg-white/15 text-white'
+            ? 'bg-gray-100 text-gray-700'
             : (isAssigned
-              ? 'bg-gray-100 text-gray-700'
-              : 'bg-gray-50 text-gray-400')
-          const dotCls = isActive ? 'bg-white/70' : dot
+              ? 'bg-white/70 text-gray-600'
+              : 'bg-white/50 text-gray-400')
 
           return (
             <button
@@ -79,7 +78,7 @@ export function DashboardTabs({
               className={`inline-flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-sm font-semibold transition ${pillCls}`}
               title={d.description ?? d.label}
             >
-              <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${dotCls}`} aria-hidden />
+              <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${dot}`} aria-hidden />
               <span>{d.label}</span>
               <span className={`inline-flex items-center justify-center min-w-[22px] h-5 px-1.5 rounded-full text-[11px] font-bold tabular-nums ${badgeCls}`}>
                 {count}
