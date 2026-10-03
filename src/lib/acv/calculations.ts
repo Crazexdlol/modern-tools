@@ -129,6 +129,7 @@ export const DOL_ADJUSTMENT_THRESHOLD_DAYS = 90
 // DOL_ADJUSTMENT_THRESHOLD_DAYS. Uses the receipt date (NOT today's date)
 // so a claim we've held a long time isn't retroactively flagged — the
 // adjustment only matters if the vehicle aged BEFORE we got the file.
+// Used for the claim-row badge where we don't want false positives.
 export function needsDolAdjustment(
   dateOfLoss: string | undefined | null,
   dateReceived: string | undefined | null,
@@ -139,6 +140,20 @@ export function needsDolAdjustment(
   if (Number.isNaN(dol) || Number.isNaN(recv)) return false
   const gapDays = (recv - dol) / (1000 * 60 * 60 * 24)
   return gapDays > DOL_ADJUSTMENT_THRESHOLD_DAYS
+}
+
+// Lenient variant used inside the Adjustments tab banner. If the claim has
+// no dateReceived captured (older claims, or where the parser missed it),
+// fall back to today's date so the appraiser still sees the alert when the
+// DOL is clearly old. Appraiser can judge from context whether an adjustment
+// actually applies.
+export function needsDolAdjustmentLenient(
+  dateOfLoss: string | undefined | null,
+  dateReceived: string | undefined | null,
+): boolean {
+  if (!dateOfLoss) return false
+  const effectiveReceived = dateReceived || new Date().toISOString()
+  return needsDolAdjustment(dateOfLoss, effectiveReceived)
 }
 
 export function defaultAdjustments(): ACVAdjustments {

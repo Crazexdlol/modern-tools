@@ -42,6 +42,7 @@ import {
   defaultAdjustments,
   formatCurrency,
   needsDolAdjustment,
+  needsDolAdjustmentLenient,
 } from '@/lib/acv/calculations'
 import { saveACVHistory, fetchACVEntry, deleteACVHistory, type ClaimStatus } from '@/lib/supabase/history'
 import { useCurrentProfile, fetchAllProfilesBrowser, type Profile } from '@/lib/supabase/profiles'
@@ -1350,7 +1351,10 @@ function AdjustmentsForm({
 
   const [pctMode, setPctMode] = useState<Record<string, boolean>>({})
   const [pctInputs, setPctInputs] = useState<Record<string, { base: number; pct: number }>>({})
-  const dolFlag = needsDolAdjustment(claim.dateOfLoss, claim.dateReceived)
+  // Use the lenient variant here — claims without a captured dateReceived
+  // still get the alert so the appraiser isn't silently missing it. The
+  // row-level badge in claims-table uses the strict variant to avoid noise.
+  const dolFlag = needsDolAdjustmentLenient(claim.dateOfLoss, claim.dateReceived)
 
   return (
     <div className="space-y-6">
@@ -1367,23 +1371,6 @@ function AdjustmentsForm({
           </div>
         </div>
       )}
-
-      {/* Mileage rate input */}
-      <Card className="bg-white border-gray-200 shadow-sm">
-        <CardHeader className="pb-3">
-          <CardTitle className="text-gray-900 text-sm">Mileage Adjustment Rate</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="flex items-center gap-3">
-            <MileageRateInput
-              className={`${inputCls} text-right w-40`}
-              value={mileageRate}
-              onChange={(val) => onMileageRateChange(val)}
-            />
-            <span className="text-xs text-gray-500">cents per mile</span>
-          </div>
-        </CardContent>
-      </Card>
 
       {/* Per-comp adjustments */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
@@ -1447,6 +1434,17 @@ function AdjustmentsForm({
           <CardTitle className="text-gray-900 text-sm">Report Adjustments</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
+          {/* Mileage Adjustment Rate — sits above Vehicle History. Narrow
+              input since values are typically "0.XX" (cents per mile). */}
+          <div className="flex items-center gap-3">
+            <span className="w-28 shrink-0 text-xs font-medium text-gray-500">Mileage Rate</span>
+            <MileageRateInput
+              className={`${inputCls} text-right w-20`}
+              value={mileageRate}
+              onChange={(val) => onMileageRateChange(val)}
+            />
+            <span className="text-xs text-gray-500">cents / mile</span>
+          </div>
           <div className="space-y-3">
             {[
               { label: 'Vehicle History', noteKey: 'vehicleHistoryNote' as const, valKey: 'vehicleHistory' as const, placeholder: 'e.g. Clean title' },
@@ -1595,219 +1593,7 @@ function AdjustmentsForm({
   )
 }
 
-// ── Review & Generate ────────────────────────────────────────────────────────
-function ReviewStep({
-  claim,
-  selectedComps,
-  adjustments,
-  result,
-  onBack,
-  onStartOver,
-  onSave,
-  editId,
-  mileageRate,
-  reportsState,
-  onDocumentSaved,
-}: {
-  claim: ClaimInfo
-  selectedComps: SelectedComp[]
-  adjustments: ACVAdjustments
-  result: ACVResult
-  onBack: () => void
-  onStartOver: () => void
-  onSave: () => void
-  editId?: string | null
-  mileageRate: number
-  reportsState: ReportsState
-  onDocumentSaved?: (blob: Blob, name: string) => void
-}) {
-  const [downloading, setDownloading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const { activeCompany: reviewActiveCompany } = useActiveCompany()
-  const reviewCompanySlug = reviewActiveCompany?.slug ?? null
-
-  const downloadPdf = async () => {
-    setDownloading(true)
-    setError(null)
-    try {
-      const res = await fetch('/api/acv/generate-pdf', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ claim, comps: selectedComps, adjustments }),
-      })
-      if (!res.ok) {
-        const data = await res.json()
-        throw new Error(data.error || 'PDF generation failed')
-      }
-      const blob = await res.blob()
-      const name = `${claim.maNumber || 'report'}-acvreport.pdf`
-      // Auto-file to Documents FIRST (canonical claim record), then let the
-      // user choose where to save a local copy via the OS save-as dialog.
-      onSave()
-      onDocumentSaved?.(blob, name)
-      await savePdfWithPicker(blob, name)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Print failed')
-    } finally {
-      setDownloading(false)
-    }
-  }
-
-  return (
-    <div className="space-y-6">
-      {/* Vehicle summary */}
-      <Card className="bg-white border-gray-200 shadow-sm">
-        <CardHeader className="pb-3">
-          <CardTitle className="text-gray-900 text-sm">Vehicle</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
-            {[
-              { label: 'VIN', value: claim.vin },
-              { label: 'Vehicle', value: `${claim.year} ${claim.make} ${claim.model}` },
-              { label: 'Trim', value: claim.trim || '--' },
-              { label: 'Mileage', value: claim.mileage.toLocaleString() },
-              { label: 'Owner', value: claim.insuredName || '--' },
-              { label: 'Insurance', value: claim.insuranceCompany || '--' },
-              { label: fileNumberLabel(reviewCompanySlug), value: claim.maNumber || '--' },
-              { label: 'Claim #', value: claim.claimNumber || '--' },
-            ].map(({ label, value }) => (
-              <div key={label}>
-                <p className="text-xs text-gray-400 mb-0.5">{label}</p>
-                <p className="text-gray-800 font-medium truncate">{value}</p>
-              </div>
-            ))}
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Comps table */}
-      <Card className="bg-white border-gray-200 shadow-sm overflow-hidden">
-        <CardHeader className="pb-3">
-          <CardTitle className="text-gray-900 text-sm">Selected Comps</CardTitle>
-        </CardHeader>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-gray-200 bg-gray-50 text-xs text-gray-500 uppercase tracking-wider">
-                <th className="text-left px-4 py-2">#</th>
-                <th className="text-left px-4 py-2">Vehicle</th>
-                <th className="text-right px-4 py-2">Asking</th>
-                <th className="text-right px-4 py-2">Miles</th>
-                <th className="text-right px-4 py-2">Mile Adj</th>
-                <th className="text-right px-4 py-2">Year Adj</th>
-                <th className="text-right px-4 py-2">Value</th>
-              </tr>
-            </thead>
-            <tbody>
-              {selectedComps.map((comp, i) => (
-                <tr key={comp.id} className="border-b border-gray-100">
-                  <td className="px-4 py-2.5 text-gray-500">{i + 1}</td>
-                  <td className="px-4 py-2.5 text-gray-800">
-                    {comp.year} {comp.make} {comp.model}
-                    {comp.trim ? ` ${comp.trim}` : ''}
-                    <p className="text-xs text-gray-400">{comp.dealerName}</p>
-                  </td>
-                  <td className="px-4 py-2.5 text-right tabular-nums text-gray-700">
-                    {formatCurrency(comp.price)}
-                  </td>
-                  <td className="px-4 py-2.5 text-right tabular-nums text-gray-700">
-                    {(comp.miles ?? 0).toLocaleString()}
-                  </td>
-                  <td className={cn('px-4 py-2.5 text-right tabular-nums', comp.mileageAdjDollar < 0 ? 'text-red-500' : 'text-emerald-600')}>
-                    {formatCurrency(comp.mileageAdjDollar)}
-                  </td>
-                  <td className={cn('px-4 py-2.5 text-right tabular-nums', comp.yearAdjDollar < 0 ? 'text-red-500' : 'text-emerald-600')}>
-                    {formatCurrency(comp.yearAdjDollar)}
-                  </td>
-                  <td className="px-4 py-2.5 text-right tabular-nums font-semibold text-gray-900">
-                    {formatCurrency(comp.compValue)}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </Card>
-
-      {/* ACV calculation */}
-      <Card className="bg-white border-gray-200 shadow-sm">
-        <CardHeader className="pb-3">
-          <CardTitle className="text-gray-900 text-sm">ACV Calculation</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-2 text-sm max-w-sm">
-            <div className="flex justify-between text-gray-700">
-              <span>Average of {selectedComps.length} Comp{selectedComps.length !== 1 ? 's' : ''}</span>
-              <span className="tabular-nums">{formatCurrency(result.averageValue)}</span>
-            </div>
-            {adjustments.vehicleHistory !== 0 && (
-              <div className="flex justify-between text-gray-500 text-xs">
-                <span>Vehicle History ({adjustments.vehicleHistoryNote})</span>
-                <span className="tabular-nums">{formatCurrency(adjustments.vehicleHistory)}</span>
-              </div>
-            )}
-            {adjustments.priorDamages !== 0 && (
-              <div className="flex justify-between text-gray-500 text-xs">
-                <span>Prior Damages ({adjustments.priorDamagesNote})</span>
-                <span className="tabular-nums">{formatCurrency(adjustments.priorDamages)}</span>
-              </div>
-            )}
-            {adjustments.additions !== 0 && (
-              <div className="flex justify-between text-gray-500 text-xs">
-                <span>Additions ({adjustments.additionsNote})</span>
-                <span className="tabular-nums">{formatCurrency(adjustments.additions)}</span>
-              </div>
-            )}
-            <div className="flex justify-between text-gray-500 text-xs">
-              <span>Deductions ({adjustments.deductionsNote})</span>
-              <span className="tabular-nums text-red-500">{formatCurrency(adjustments.deductions)}</span>
-            </div>
-            <div className="flex justify-between text-gray-700 border-t border-gray-200 pt-2">
-              <span>Total Adjustments</span>
-              <span className={cn('tabular-nums', result.totalAdjustments < 0 ? 'text-red-500' : 'text-emerald-600')}>
-                {formatCurrency(result.totalAdjustments)}
-              </span>
-            </div>
-            {adjustments.taxRate > 0 && (
-              <div className="flex justify-between text-gray-700">
-                <span>Tax ({adjustments.taxRate}%)</span>
-                <span className="tabular-nums">{formatCurrency(result.taxAmount)}</span>
-              </div>
-            )}
-            <div className="flex justify-between font-bold text-gray-900 border-t border-gray-300 pt-2 text-base">
-              <span>ACV</span>
-              <span className="tabular-nums text-emerald-600">{formatCurrency(result.acv)}</span>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      {error && (
-        <div className="flex items-start gap-2 p-3 rounded-lg bg-red-50 border border-red-200 text-red-600 text-sm">
-          <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
-          {error}
-        </div>
-      )}
-
-      <div className="flex items-center gap-3">
-        <Button onClick={onStartOver} variant="outline" className="border-gray-200 text-gray-700 hover:bg-gray-100">
-          <RotateCcw className="w-4 h-4 mr-1" />
-          Start Over
-        </Button>
-        <Button onClick={onSave} variant="outline" className="border-blue-200 text-blue-600 hover:bg-blue-50">
-          Save Claim
-        </Button>
-        <div className="flex items-center gap-3 ml-auto">
-          <Button onClick={downloadPdf} disabled={downloading} className="bg-blue-600 hover:bg-blue-500 text-white">
-            {downloading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Printer className="w-4 h-4 mr-2" />}
-            Print
-          </Button>
-        </div>
-      </div>
-    </div>
-  )
-}
+// Review & Generate step removed 2026-10-03 — Print now lives on the Adjustments step.
 
 // ── Reports step ────────────────────────────────────────────────────────────
 
@@ -3268,6 +3054,8 @@ function ClaimWorkspaceInner({ claimId }: { claimId: string }) {
   // A brand-new claim shows ONLY Claim Info; the tool tabs unlock once the
   // claim exists (auto-save promotion or the Create Claim button).
   const [step, setStep] = useState(() => (isNew ? 1 : stepForTab(initialTab.current) ?? 1))
+  const [acvPrinting, setAcvPrinting] = useState(false)
+  const [acvPrintError, setAcvPrintError] = useState<string | null>(null)
   const [claim, setClaim] = useState<ClaimInfo>(() => draft.current?.claim ?? defaultClaim())
   const [listings, setListings] = useState<MarketComp[]>(() => draft.current?.listings ?? [])
   // Stable lookup of every comp we've ever seen, so selected comps survive search replacements
@@ -3444,7 +3232,7 @@ function ClaimWorkspaceInner({ claimId }: { claimId: string }) {
       }))
       while (adjs.length < 3) adjs.push({ mileageAdj: 0, yearAdj: 0 })
       setCompAdjs(adjs)
-      setStep(stepForTab(initialTab.current) ?? (comps.length > 0 ? 4 : 1))
+      setStep(stepForTab(initialTab.current) ?? (comps.length > 0 ? 3 : 1))
       initialTab.current = null
       // Reset the auto-save gate — the batched state updates below will fire
       // the auto-save effect, and we want it to skip that first run so a
@@ -4610,10 +4398,12 @@ function ClaimWorkspaceInner({ claimId }: { claimId: string }) {
         </div>
         )}
 
-        {/* ACV Report internal stepper (Select Comps → Adjustments → Review) */}
-        {step >= 2 && step <= 4 && (
+        {/* ACV Report internal stepper (Select Comps → Adjustments). The
+            old Review & Generate step was dropped — Print lives on the
+            Adjustments step now. */}
+        {step >= 2 && step <= 3 && (
           <div className="flex items-center gap-2 mb-8 overflow-x-auto pb-2">
-            {['Select Comps', 'Adjustments', 'Review & Generate'].map((label, i) => {
+            {['Select Comps', 'Adjustments'].map((label, i) => {
               const n = i + 2
               const active = step === n
               const done = step > n
@@ -5251,7 +5041,9 @@ function ClaimWorkspaceInner({ claimId }: { claimId: string }) {
           </div>
         )}
 
-        {/* Step 3: Adjustments */}
+        {/* Step 3: Adjustments (final step — Print button generates the ACV
+            report inline; the old Review & Generate step was dropped since
+            it duplicated what's already visible in the Adjustments panel). */}
         {step === 3 && (
           <div>
             <h2 className="text-lg font-semibold text-gray-900 mb-4">Adjustments</h2>
@@ -5266,39 +5058,49 @@ function ClaimWorkspaceInner({ claimId }: { claimId: string }) {
               mileageRate={mileageRate}
               onMileageRateChange={handleMileageRateChange}
             />
+            {acvPrintError && (
+              <div className="mt-4 flex items-start gap-2 p-3 rounded-lg bg-red-50 border border-red-200 text-red-600 text-sm">
+                <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
+                {acvPrintError}
+              </div>
+            )}
             <div className="flex items-center gap-3 mt-6">
               <Button onClick={() => setStep(2)} variant="outline" className="border-gray-200 text-gray-700 hover:bg-gray-100">
                 <ChevronLeft className="w-4 h-4 mr-1" />
                 Back
               </Button>
-              <Button onClick={handleSaveClaim} variant="outline" className="border-blue-200 text-blue-600 hover:bg-blue-50 ml-auto">
-                Save Claim
-              </Button>
-              <Button onClick={() => setStep(4)} className="bg-blue-600 hover:bg-blue-500 text-white">
-                Next: Review & Generate
-                <ArrowRight className="w-4 h-4 ml-2" />
+              <Button
+                onClick={async () => {
+                  setAcvPrinting(true)
+                  setAcvPrintError(null)
+                  try {
+                    const res = await fetch('/api/acv/generate-pdf', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ claim, comps: builtComps, adjustments }),
+                    })
+                    if (!res.ok) {
+                      const data = await res.json().catch(() => ({}))
+                      throw new Error(data.error || 'PDF generation failed')
+                    }
+                    const blob = await res.blob()
+                    const name = `${claim.maNumber || 'report'}-acvreport.pdf`
+                    await handleSaveClaim()
+                    await addDocument(blob, name, 'acv-report')
+                    await savePdfWithPicker(blob, name)
+                  } catch (err) {
+                    setAcvPrintError(err instanceof Error ? err.message : 'Print failed')
+                  } finally {
+                    setAcvPrinting(false)
+                  }
+                }}
+                disabled={acvPrinting || builtComps.length < 1}
+                className="bg-blue-600 hover:bg-blue-500 text-white ml-auto"
+              >
+                {acvPrinting ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Printer className="w-4 h-4 mr-2" />}
+                Print
               </Button>
             </div>
-          </div>
-        )}
-
-        {/* Step 4: Review & Generate */}
-        {step === 4 && (
-          <div>
-            <h2 className="text-lg font-semibold text-gray-900 mb-4">Review & Generate</h2>
-            <ReviewStep
-              claim={claim}
-              selectedComps={builtComps}
-              adjustments={adjustments}
-              result={result}
-              onBack={() => setStep(1)}
-              onStartOver={startOver}
-              onSave={handleSaveClaim}
-              editId={editingId}
-              mileageRate={mileageRate}
-              reportsState={reportsState}
-              onDocumentSaved={(blob, name) => addDocument(blob, name, 'acv-report')}
-            />
           </div>
         )}
 
