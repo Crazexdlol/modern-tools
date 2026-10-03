@@ -93,10 +93,12 @@ export default function DashboardPage() {
     const stage = (e.workflowStage ?? 'main') as 'main' | 'qc' | 'billing' | 'delivery' | 'payment'
     countsByCode.all += 1
     if (stage === 'main') {
-      // New Assignments holds every main-stage claim (assigned or not).
-      // W/Appraiser is the subset that's actively assigned to someone.
-      countsByCode.new_assignments += 1
+      // New Assignments = newly-created, UNASSIGNED, main-stage claims only.
+      // Once an appraiser is assigned, the claim leaves this tab and lands in
+      // W/Appraiser (the 'main' code). Claims that have moved past main stage
+      // (QC / Billing / Delivery / Payment) aren't here regardless of assignment.
       if (e.assignedTo) countsByCode.main += 1
+      else countsByCode.new_assignments += 1
     } else {
       countsByCode[stage] += 1
     }
@@ -105,7 +107,7 @@ export default function DashboardPage() {
   const claimsForActiveTab = openClaims.filter(e => {
     const stage = (e.workflowStage ?? 'main') as string
     if (activeTab === 'all') return true
-    if (activeTab === 'new_assignments') return stage === 'main'
+    if (activeTab === 'new_assignments') return stage === 'main' && !e.assignedTo
     if (activeTab === 'main') return stage === 'main' && !!e.assignedTo
     return stage === activeTab
   })
