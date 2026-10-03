@@ -61,6 +61,10 @@ const CLAIM_TYPE_LABELS: Record<ClaimType, string> = {
   estimate: 'Estimate',
   storage:  'Storage',
   other:    'Other',
+  desk:     'Desk',
+  lou:      'LOU',
+  full:     'FULL',
+  salvage:  'Salvage',
 }
 
 function formatClaimTypes(types: ClaimType[] | undefined): string {
@@ -132,6 +136,7 @@ export function ClaimsTable({
   phaseFilter = null,
   onPhaseChanged,
   onStarChanged,
+  workflowStage,
 }: {
   entries: ACVHistoryEntry[]
   onDeleted?: (id: string) => void
@@ -147,6 +152,10 @@ export function ClaimsTable({
   phaseFilter?: string | null
   onPhaseChanged?: (id: string, phase: string | null, setAt: string | null) => void
   onStarChanged?: (id: string, starred: boolean) => void
+  // Active workflow stage of the dashboard tab this table is scoped to.
+  // On 'qc' we swap "Assigned To" → "Submitted By" and the bulk Reassign
+  // panel is replaced with a Send Back action.
+  workflowStage?: 'main' | 'qc' | 'billing' | 'delivery' | 'payment'
 }) {
   const [searchQuery, setSearchQuery] = useState('')
   const [page, setPage] = useState(1)
@@ -159,6 +168,13 @@ export function ClaimsTable({
   const [bulkDeleteConfirmOpen, setBulkDeleteConfirmOpen] = useState(false)
   const [bulkCloseConfirmOpen, setBulkCloseConfirmOpen] = useState(false)
   const [bulkReopenConfirmOpen, setBulkReopenConfirmOpen] = useState(false)
+  const [bulkSendBackConfirmOpen, setBulkSendBackConfirmOpen] = useState(false)
+  // Target of a bulk Send Back on QC. Empty string = "default" (per-claim
+  // handling appraiser auto-resolve on the server). Any profile id = override
+  // for every selected claim.
+  const [bulkSendBackAssignee, setBulkSendBackAssignee] = useState<string>('')
+  const [actionsMenuOpen, setActionsMenuOpen] = useState(false)
+  const [statusRequestConfirmOpen, setStatusRequestConfirmOpen] = useState(false)
 
   // Column sort — Henry wants click-to-sort on Days Open (default), MA #,
   // Insured, Client, Vehicle, VIN, State, Ins. Co., Assigned To. Default is
@@ -232,14 +248,21 @@ export function ClaimsTable({
         case 'state':    return (extractLossState(e.claim?.ownerAddress) ?? '').toLowerCase()
         case 'daysOpen': return daysOpenFor(e)
         case 'insco':    return (e.claim?.insuranceCompany ?? '').toLowerCase()
-        case 'assignee': return nameFor(e.assignedTo).toLowerCase()
+        case 'assignee': return (workflowStage === 'qc'
+          ? (e.claim?.handlingAppraiser ?? '')
+          : nameFor(e.assignedTo)).toLowerCase()
       }
     }
     return [...base].sort((a, b) => {
       const ka = key(a), kb = key(b)
       if (ka < kb) return -1 * dir
       if (ka > kb) return  1 * dir
-      return 0
+      // Tie-break: newest first (fetchACVHistory returns oldest-first, so a
+      // tie on daysOpen or any other key would otherwise bury today's claims
+      // under identically-aged rows that were loaded earlier in the array).
+      const ta = a.createdAt ? new Date(a.createdAt).getTime() : 0
+      const tb = b.createdAt ? new Date(b.createdAt).getTime() : 0
+      return tb - ta
     })
   }, [entries, searchQuery, nameFor, phaseFilter, sortBy])
 
@@ -352,40 +375,92 @@ export function ClaimsTable({
     window.location.reload()
   }
 
-  // Bulk submit — POSTs to /api/claims/[id]/submit for each selected id in
-  // parallel. The API 400s on already-submitted or closed claims, so we
-  // count those as "skipped" and report a summary instead of failing hard.
+  // Bulk advance — one consistent button across every workflow tab. On Main
+  // it submits (main → qc, old /submit route); every other stage calls the
+  // generic /advance-workflow endpoint which figures out the next step
+  // (qc → billing, billing → delivery, delivery → payment, payment → closed).
   const runBulkSubmit = async () => {
     setSubmitConfirmOpen(false)
     setBulkBusy(true)
     setBulkError(null)
     const ids = Array.from(selectedIds)
+    const useSubmit = (workflowStage ?? 'main') === 'main'
     const results = await Promise.all(
-      ids.map(id =>
-        fetch(`/api/claims/${id}/submit`, { method: 'POST' })
+      ids.map(id => {
+        const req = useSubmit
+          ? fetch(`/api/claims/${id}/submit`, { method: 'POST' })
+          : fetch(`/api/claims/${id}/advance-workflow`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ action: 'advance' }),
+            })
+        return req
           .then(async r => {
             if (r.ok) return 'ok' as const
             const body = await r.json().catch(() => ({ error: '' }))
             const msg = (body?.error ?? '').toString().toLowerCase()
-            if (msg.includes('already submitted') || msg.includes('not open')) return 'skipped' as const
+            if (msg.includes('already submitted') || msg.includes('not open') || msg.includes('not authorized')) return 'skipped' as const
             return 'failed' as const
           })
-          .catch(() => 'failed' as const),
-      ),
+          .catch(() => 'failed' as const)
+      }),
     )
     setBulkBusy(false)
     const ok = results.filter(r => r === 'ok').length
     const skipped = results.filter(r => r === 'skipped').length
     const failed = results.filter(r => r === 'failed').length
     if (failed > 0 || skipped > 0) {
-      const parts = [`Submitted ${ok}`]
-      if (skipped > 0) parts.push(`${skipped} skipped (already submitted or closed)`)
+      const parts = [`Advanced ${ok}`]
+      if (skipped > 0) parts.push(`${skipped} skipped`)
       if (failed > 0) parts.push(`${failed} failed`)
       setBulkError(parts.join(' · ') + '. Refresh to see current state.')
       onAssignmentChanged?.()
       return
     }
     window.location.reload()
+  }
+
+  // Bulk "Request status" — sends a templated message to each selected claim's
+  // assignee. "{FirstName}, can I please get a status?". Claims without an
+  // assignee are skipped (no one to send to).
+  const runBulkStatusRequest = async () => {
+    setStatusRequestConfirmOpen(false)
+    setActionsMenuOpen(false)
+    setBulkBusy(true)
+    setBulkError(null)
+    const ids = Array.from(selectedIds)
+    const results = await Promise.all(
+      ids.map(async claimId => {
+        const entry = entries.find(e => e.id === claimId)
+        const assigneeId = entry?.assignedTo
+        if (!assigneeId) return 'skipped' as const
+        const fullName = nameFor(assigneeId) || ''
+        const firstName = fullName.trim().split(/\s+/)[0] || 'there'
+        const messageBody = `${firstName}, can I please get a status?`
+        try {
+          const r = await fetch(`/api/claims/${claimId}/messages`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ recipientIds: [assigneeId], body: messageBody }),
+          })
+          return r.ok ? 'ok' as const : 'failed' as const
+        } catch {
+          return 'failed' as const
+        }
+      }),
+    )
+    setBulkBusy(false)
+    const ok = results.filter(r => r === 'ok').length
+    const skipped = results.filter(r => r === 'skipped').length
+    const failed = results.filter(r => r === 'failed').length
+    if (failed > 0 || skipped > 0) {
+      const parts = [`Sent ${ok}`]
+      if (skipped > 0) parts.push(`${skipped} unassigned (skipped)`)
+      if (failed > 0) parts.push(`${failed} failed`)
+      setBulkError(parts.join(' · ') + '.')
+      return
+    }
+    clearSelection()
   }
 
   const runBulkClose = async () => {
@@ -415,6 +490,37 @@ export function ClaimsTable({
       if (skipped > 0) parts.push(`${skipped} skipped (already closed)`)
       if (failed > 0) parts.push(`${failed} failed`)
       setBulkError(parts.join(' · ') + '. Refresh to see current state.')
+      onAssignmentChanged?.()
+      return
+    }
+    window.location.reload()
+  }
+
+  const runBulkSendBack = async () => {
+    setBulkSendBackConfirmOpen(false)
+    setBulkBusy(true)
+    setBulkError(null)
+    const ids = Array.from(selectedIds)
+    const override = bulkSendBackAssignee || null
+    const results = await Promise.all(
+      ids.map(id => {
+        const body: Record<string, unknown> = { action: 'send_back', toStage: 'main' }
+        if (override) body.toAssignee = override
+        return fetch(`/api/claims/${id}/advance-workflow`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        })
+          .then(r => r.ok)
+          .catch(() => false)
+      }),
+    )
+    setBulkBusy(false)
+    const failed = results.filter(ok => !ok).length
+    if (failed > 0) {
+      setBulkError(
+        `Sent ${results.length - failed} of ${results.length} claims back. ${failed} failed — refresh to see current state.`,
+      )
       onAssignmentChanged?.()
       return
     }
@@ -484,6 +590,16 @@ export function ClaimsTable({
     (statusPhaseConfigs.length > 0 ? 1 : 0) // Phase status column
 
   const selectedCount = selectedIds.size
+  // Reopen only applies to closed claims; hide the button entirely when the
+  // selection contains none. (Status pill tracks closed-ness; dashboards other
+  // than All Claims only hold open rows, so Reopen is hidden there by default.)
+  const selectionHasClosed = useMemo(() => {
+    if (selectedCount === 0) return false
+    for (const e of entries) {
+      if (selectedIds.has(e.id) && e.status === 'closed') return true
+    }
+    return false
+  }, [selectedIds, entries, selectedCount])
 
   // Team-wide star toggle. Optimistic UI: flip immediately, roll back on failure.
   const toggleStar = async (id: string, current: boolean) => {
@@ -515,36 +631,100 @@ export function ClaimsTable({
             {selectedCount} claim{selectedCount === 1 ? '' : 's'} selected
           </div>
           <div className="flex flex-wrap items-center gap-2 ml-auto">
-            <Button
-              onClick={() => setSubmitConfirmOpen(true)}
-              disabled={bulkBusy}
-              className="bg-emerald-600 hover:bg-emerald-500 text-white text-sm"
-            >
-              {bulkBusy ? 'Working…' : 'Submit All'}
-            </Button>
+            {/* Advance only makes sense inside a workflow-dashboard tab (Main/QC/
+                Billing/Delivery/Payment). On /claims (All Claims — mixed stages
+                + closed rows) the semantic doesn't fit, so hide it there. */}
+            {workflowStage && (
+              <>
+                <Button
+                  onClick={() => setSubmitConfirmOpen(true)}
+                  disabled={bulkBusy}
+                  className="bg-emerald-600 hover:bg-emerald-500 text-white text-sm"
+                >
+                  {bulkBusy ? 'Working…' : 'Advance'}
+                </Button>
+                <span className="mx-2 h-6 w-px bg-blue-200" aria-hidden />
+              </>
+            )}
+            {workflowStage === 'qc' ? (
+              <>
+                <span className="text-sm text-blue-900">Send back to:</span>
+                <select
+                  value={bulkSendBackAssignee}
+                  onChange={(e) => setBulkSendBackAssignee(e.target.value)}
+                  disabled={bulkBusy}
+                  className="bg-white border border-gray-200 rounded px-2 py-1.5 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                >
+                  <option value="">— Handling Appraiser (auto) —</option>
+                  {profiles
+                    .filter(p => tableMemberIds === null || tableMemberIds.has(p.id))
+                    .map(p => (
+                      <option key={p.id} value={p.id}>{p.name || p.email}</option>
+                    ))}
+                </select>
+                <Button
+                  onClick={() => setBulkSendBackConfirmOpen(true)}
+                  disabled={bulkBusy}
+                  className="bg-amber-600 hover:bg-amber-500 text-white text-sm"
+                >
+                  {bulkBusy ? 'Sending back…' : 'Send Back'}
+                </Button>
+              </>
+            ) : (
+              <>
+                <span className="text-sm text-blue-900">Reassign to:</span>
+                <select
+                  value={bulkAssignee}
+                  onChange={(e) => setBulkAssignee(e.target.value)}
+                  disabled={bulkBusy}
+                  className="bg-white border border-gray-200 rounded px-2 py-1.5 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">— Pick a person —</option>
+                  <option value="__unassign__">— Unassigned —</option>
+                  {profiles
+                    .filter(p => tableMemberIds === null || tableMemberIds.has(p.id))
+                    .map(p => (
+                      <option key={p.id} value={p.id}>{p.name || p.email}</option>
+                    ))}
+                </select>
+                <Button
+                  onClick={() => setBulkReassignConfirmOpen(true)}
+                  disabled={bulkBusy || !bulkAssignee}
+                  className="bg-blue-600 hover:bg-blue-500 text-white text-sm"
+                >
+                  {bulkBusy ? 'Reassigning…' : 'Confirm'}
+                </Button>
+              </>
+            )}
             <span className="mx-2 h-6 w-px bg-blue-200" aria-hidden />
-            <span className="text-sm text-blue-900">Reassign to:</span>
-            <select
-              value={bulkAssignee}
-              onChange={(e) => setBulkAssignee(e.target.value)}
-              disabled={bulkBusy}
-              className="bg-white border border-gray-200 rounded px-2 py-1.5 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
-            >
-              <option value="">— Pick a person —</option>
-              <option value="__unassign__">— Unassigned —</option>
-              {profiles
-                .filter(p => tableMemberIds === null || tableMemberIds.has(p.id))
-                .map(p => (
-                  <option key={p.id} value={p.id}>{p.name || p.email}</option>
-                ))}
-            </select>
-            <Button
-              onClick={() => setBulkReassignConfirmOpen(true)}
-              disabled={bulkBusy || !bulkAssignee}
-              className="bg-blue-600 hover:bg-blue-500 text-white text-sm"
-            >
-              {bulkBusy ? 'Reassigning…' : 'Confirm'}
-            </Button>
+            <div className="relative">
+              <Button
+                onClick={() => setActionsMenuOpen(o => !o)}
+                disabled={bulkBusy}
+                className="bg-indigo-600 hover:bg-indigo-500 text-white text-sm"
+              >
+                Actions ▾
+              </Button>
+              {actionsMenuOpen && (
+                <>
+                  <button
+                    type="button"
+                    aria-label="Close actions menu"
+                    className="fixed inset-0 z-10 cursor-default"
+                    onClick={() => setActionsMenuOpen(false)}
+                  />
+                  <div className="absolute right-0 top-full mt-1 w-56 rounded-md border border-gray-200 bg-white shadow-lg z-20">
+                    <button
+                      type="button"
+                      onClick={() => { setActionsMenuOpen(false); setStatusRequestConfirmOpen(true) }}
+                      className="block w-full text-left px-3 py-2 text-sm text-gray-900 hover:bg-gray-100 rounded-md"
+                    >
+                      Request status
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
             <span className="mx-2 h-6 w-px bg-blue-200" aria-hidden />
             <Button
               onClick={() => setBulkCloseConfirmOpen(true)}
@@ -553,13 +733,15 @@ export function ClaimsTable({
             >
               Close
             </Button>
-            <Button
-              onClick={() => setBulkReopenConfirmOpen(true)}
-              disabled={bulkBusy}
-              className="bg-blue-600 hover:bg-blue-500 text-white text-sm"
-            >
-              Reopen
-            </Button>
+            {selectionHasClosed && (
+              <Button
+                onClick={() => setBulkReopenConfirmOpen(true)}
+                disabled={bulkBusy}
+                className="bg-blue-600 hover:bg-blue-500 text-white text-sm"
+              >
+                Reopen
+              </Button>
+            )}
             <Button
               onClick={() => setBulkDeleteConfirmOpen(true)}
               disabled={bulkBusy}
@@ -655,7 +837,13 @@ export function ClaimsTable({
               <SortableTh label="Days"      col="daysOpen" sortBy={sortBy} onClick={toggleSort} />
               <SortableTh label="Ins. Co."  col="insco"    sortBy={sortBy} onClick={toggleSort} />
               {adminView && (
-                <SortableTh label="Assigned To" col="assignee" sortBy={sortBy} onClick={toggleSort} nowrap />
+                <SortableTh
+                  label={workflowStage === 'qc' ? 'Appraiser' : 'Assigned To'}
+                  col="assignee"
+                  sortBy={sortBy}
+                  onClick={toggleSort}
+                  nowrap
+                />
               )}
               {showSubmittedColumn && (
                 <th className="text-left px-4 py-3 text-xs font-semibold text-gray-900 uppercase tracking-wider">Submitted</th>
@@ -767,13 +955,25 @@ export function ClaimsTable({
                       {fmtDaysOpenFor(entry)}
                     </td>
                     <td className="px-4 py-2.5 text-gray-900 align-middle truncate" title={entry.claim?.insuranceCompany || undefined}>{entry.claim?.insuranceCompany || <span className="text-gray-400">—</span>}</td>
-                    {adminView && (
-                      <td className="px-4 py-2.5 text-gray-900 align-middle truncate" title={entry.assignedTo ? nameFor(entry.assignedTo) : undefined}>
-                        {entry.assignedTo
-                          ? nameFor(entry.assignedTo)
-                          : <span className="text-gray-400 italic">Unassigned</span>}
-                      </td>
-                    )}
+                    {adminView && (() => {
+                      // QC tab shows the handling appraiser (from claim.handlingAppraiser,
+                      // a free-text name). Every other tab shows the live assignee.
+                      if (workflowStage === 'qc') {
+                        const name = (entry.claim?.handlingAppraiser ?? '').trim()
+                        return (
+                          <td className="px-4 py-2.5 text-gray-900 align-middle truncate" title={name || undefined}>
+                            {name || <span className="text-gray-400 italic">—</span>}
+                          </td>
+                        )
+                      }
+                      return (
+                        <td className="px-4 py-2.5 text-gray-900 align-middle truncate" title={entry.assignedTo ? nameFor(entry.assignedTo) : undefined}>
+                          {entry.assignedTo
+                            ? nameFor(entry.assignedTo)
+                            : <span className="text-gray-400 italic">Unassigned</span>}
+                        </td>
+                      )
+                    })()}
                     {showSubmittedColumn && (
                       <td className="px-4 py-2.5">
                         {entry.submittedAt ? (
@@ -807,7 +1007,15 @@ export function ClaimsTable({
                               {age && <span className="font-semibold text-[11px] !text-black">{age}</span>}
                             </span>
                           )
-                        })() : null}
+                        })() : (
+                          // Match the admin "No Phase" pill (same size/shape) but
+                          // non-interactive — appraisers can see at a glance that
+                          // the claim just has no phase yet, same as the admin
+                          // view.
+                          <span className="flex items-center justify-center gap-1.5 text-xs font-semibold w-full px-3 py-1.5 rounded-full border whitespace-nowrap bg-white border-gray-200 text-gray-500">
+                            No Phase
+                          </span>
+                        )}
                       </td>
                     )}
                   </tr>
@@ -862,18 +1070,56 @@ export function ClaimsTable({
 
       <ConfirmDialog
         open={submitConfirmOpen}
-        title={`Submit ${selectedCount} claim${selectedCount === 1 ? '' : 's'}?`}
+        title={`Advance ${selectedCount} claim${selectedCount === 1 ? '' : 's'}?`}
         message={
           <>
-            This marks the selected claim{selectedCount === 1 ? '' : 's'} as submitted for admin review.
-            Claims that are already submitted or closed will be skipped.
+            Moves the selected claim{selectedCount === 1 ? '' : 's'} to the next stage.
+            Claims that can&apos;t advance from their current stage will be skipped.
           </>
         }
-        confirmLabel="Submit All"
+        confirmLabel="Advance"
         variant="primary"
         busy={bulkBusy}
         onConfirm={runBulkSubmit}
         onCancel={() => setSubmitConfirmOpen(false)}
+      />
+
+      <ConfirmDialog
+        open={statusRequestConfirmOpen}
+        title={`Send status request to ${selectedCount} claim${selectedCount === 1 ? '' : 's'}?`}
+        message={
+          <>
+            A message goes to each claim&apos;s assignee: <i>&quot;[FirstName], can I please get a status?&quot;</i>.
+            Claims with no assignee are skipped.
+          </>
+        }
+        confirmLabel="Send"
+        variant="primary"
+        busy={bulkBusy}
+        onConfirm={runBulkStatusRequest}
+        onCancel={() => setStatusRequestConfirmOpen(false)}
+      />
+
+      <ConfirmDialog
+        open={bulkSendBackConfirmOpen}
+        title={`Send ${selectedCount} claim${selectedCount === 1 ? '' : 's'} back?`}
+        message={
+          <>
+            Returns the selected claim{selectedCount === 1 ? '' : 's'} to <b>Main</b> and reassigns {selectedCount === 1 ? 'it' : 'them'} to{' '}
+            <b>
+              {bulkSendBackAssignee
+                ? (profiles.find(p => p.id === bulkSendBackAssignee)?.name
+                   || profiles.find(p => p.id === bulkSendBackAssignee)?.email
+                   || 'the chosen appraiser')
+                : 'the handling appraiser on each file'}
+            </b>.
+          </>
+        }
+        confirmLabel="Send Back"
+        variant="primary"
+        busy={bulkBusy}
+        onConfirm={runBulkSendBack}
+        onCancel={() => setBulkSendBackConfirmOpen(false)}
       />
 
       <ConfirmDialog
