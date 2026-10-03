@@ -39,6 +39,16 @@ export interface ManualEntry {
   note?: string          // short AI observation, e.g. "no CCC equivalent found; labor time appears high"
 }
 
+// VIN cross-check: compare the claim's canonical VIN against any VINs found
+// in the estimate / supporting document text. A mismatch means the estimate
+// was written for a different vehicle.
+export interface VinFinding {
+  claimVin: string    // the canonical VIN from the claim
+  foundVin: string    // the VIN found in a document
+  source: string      // filename where it was found
+  matches: boolean    // true if the VIN matches the claim VIN
+}
+
 // One completed review. A claim can have many.
 export interface EstimateReview {
   id: string                // uuid, generated server-side
@@ -60,6 +70,7 @@ export interface EstimateReview {
   guidelineTitles?: string[]                 // display list of the guideline docs used at review time
   taxFindings?: TaxFinding[]                 // state sales tax check (Phase 4)
   taxBreakdown?: TaxComponentBreakdown[]     // per-component amount + tax extracted from the estimate
+  vinFindings?: VinFinding[]                 // VIN cross-check across estimate + supporting doc texts
   documentId?: string       // set after auto-filing to Documents tab
   error?: string            // set if this file's review failed (empty flags[])
 }

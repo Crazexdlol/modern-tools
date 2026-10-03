@@ -1,7 +1,7 @@
 "use client";
 
-import { Fragment, useEffect, useRef, useState } from "react";
-import { AlertCircle, FileText, Loader2, Trash2, X } from "lucide-react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
+import { AlertCircle, FileText, Loader2, Printer, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { cn } from "@/lib/utils";
@@ -16,9 +16,11 @@ import type {
   ManualEntry,
   PartsFinding,
   TaxFinding,
+  VinFinding,
 } from "@/lib/estimate-review/types";
+import { savePdfWithPicker } from "@/lib/save-pdf";
 import { extractLossState } from "@/lib/claim-state";
-import { captureReviewPdf } from "@/lib/estimate-review/pdf";
+import { captureReviewPdf, reviewPdfFileName } from "@/lib/estimate-review/pdf";
 import type { ClaimDocument } from "@/lib/supabase/documents";
 import type { ClaimEstimate } from "./estimate-tab";
 
@@ -112,12 +114,21 @@ function ManualEntriesTable({ entries }: { entries: ManualEntry[] }) {
   );
 }
 
-function FlagTable({ flags }: { flags: Flag[] }) {
+function FlagTable({
+  flags,
+  checked,
+  onToggle,
+}: {
+  flags: Flag[];
+  checked: Set<string>;
+  onToggle: (key: string) => void;
+}) {
   return (
     <div className="overflow-x-auto -mx-4 sm:mx-0 mt-3">
       <table className="w-full text-sm">
         <thead>
           <tr className="bg-gray-50 border-y border-gray-200">
+            <th className="px-3 py-2 w-8"></th>
             <th className="text-left px-4 py-2 text-xs text-gray-500 font-semibold uppercase tracking-wider">
               Line
             </th>
@@ -136,58 +147,72 @@ function FlagTable({ flags }: { flags: Flag[] }) {
           </tr>
         </thead>
         <tbody>
-          {flags.map((flag, i) => (
-            <Fragment key={i}>
-              <tr className="align-top border-t border-gray-200">
-                <td className="px-4 pt-3 pb-1">
-                  <div className="font-semibold text-gray-900">{flag.lineDescription}</div>
-                  {flag.panelOrArea && (
-                    <div className="text-xs text-gray-400 mt-0.5">{flag.panelOrArea}</div>
-                  )}
-                  <span
-                    className={cn(
-                      "inline-block mt-1.5 text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded",
-                      CATEGORY_STYLE[flag.category],
+          {flags.map((flag, i) => {
+            const key = `flag_${i}`;
+            const isChecked = checked.has(key);
+            return (
+              <Fragment key={i}>
+                <tr className={cn("align-top border-t border-gray-200", !isChecked && "opacity-40")}>
+                  <td className="px-3 pt-3 pb-1 align-top">
+                    <input
+                      type="checkbox"
+                      checked={isChecked}
+                      onChange={() => onToggle(key)}
+                      className="mt-0.5 accent-blue-600"
+                      aria-label="Include in report"
+                    />
+                  </td>
+                  <td className="px-4 pt-3 pb-1">
+                    <div className="font-semibold text-gray-900">{flag.lineDescription}</div>
+                    {flag.panelOrArea && (
+                      <div className="text-xs text-gray-400 mt-0.5">{flag.panelOrArea}</div>
                     )}
-                  >
-                    {CATEGORY_LABEL[flag.category]}
-                  </span>
-                </td>
-                <td className="px-4 pt-3 pb-1 text-gray-700 text-xs">
-                  {fmtBilled(flag.iaBilled)}
-                  {flag.iaBilled.total !== 0 && (
-                    <div className="text-gray-500 mt-0.5">= {fmtMoney(flag.iaBilled.total)}</div>
-                  )}
-                </td>
-                <td className="px-4 pt-3 pb-1 text-xs text-gray-700 max-w-xs">
-                  <div className="text-gray-500 font-semibold mb-0.5">{flag.ruleReference}</div>
-                  <div className="italic text-gray-600 line-clamp-3" title={flag.ruleQuote}>
-                    &ldquo;{flag.ruleQuote}&rdquo;
-                  </div>
-                </td>
-                <td className="px-4 pt-3 pb-1 text-gray-700 text-xs">
-                  {fmtSuggested(flag.suggested)}
-                  {flag.suggested.action !== "remove" && flag.suggested.total !== 0 && (
-                    <div className="text-gray-500 mt-0.5">= {fmtMoney(flag.suggested.total)}</div>
-                  )}
-                </td>
-                <td className="px-4 pt-3 pb-1 text-right font-bold text-amber-700 tabular-nums">
-                  {flag.impact < 0 ? "-" : "+"}
-                  {fmtMoney(Math.abs(flag.impact))}
-                </td>
-              </tr>
-              <tr className="border-b border-gray-100">
-                <td colSpan={5} className="px-4 pt-1 pb-3">
-                  <div className="text-xs text-gray-500 uppercase tracking-wider font-semibold mb-1">
-                    Why this was flagged
-                  </div>
-                  <div className="text-sm text-gray-700 leading-relaxed">
-                    {flag.reason}
-                  </div>
-                </td>
-              </tr>
-            </Fragment>
-          ))}
+                    <span
+                      className={cn(
+                        "inline-block mt-1.5 text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded",
+                        CATEGORY_STYLE[flag.category],
+                      )}
+                    >
+                      {CATEGORY_LABEL[flag.category]}
+                    </span>
+                  </td>
+                  <td className="px-4 pt-3 pb-1 text-gray-700 text-xs">
+                    {fmtBilled(flag.iaBilled)}
+                    {flag.iaBilled.total !== 0 && (
+                      <div className="text-gray-500 mt-0.5">= {fmtMoney(flag.iaBilled.total)}</div>
+                    )}
+                  </td>
+                  <td className="px-4 pt-3 pb-1 text-xs text-gray-700 max-w-xs">
+                    <div className="text-gray-500 font-semibold mb-0.5">{flag.ruleReference}</div>
+                    <div className="italic text-gray-600 line-clamp-3" title={flag.ruleQuote}>
+                      &ldquo;{flag.ruleQuote}&rdquo;
+                    </div>
+                  </td>
+                  <td className="px-4 pt-3 pb-1 text-gray-700 text-xs">
+                    {fmtSuggested(flag.suggested)}
+                    {flag.suggested.action !== "remove" && flag.suggested.total !== 0 && (
+                      <div className="text-gray-500 mt-0.5">= {fmtMoney(flag.suggested.total)}</div>
+                    )}
+                  </td>
+                  <td className="px-4 pt-3 pb-1 text-right font-bold text-amber-700 tabular-nums">
+                    {flag.impact < 0 ? "-" : "+"}
+                    {fmtMoney(Math.abs(flag.impact))}
+                  </td>
+                </tr>
+                <tr className={cn("border-b border-gray-100", !isChecked && "opacity-40")}>
+                  <td className="px-3 pt-1 pb-3"></td>
+                  <td colSpan={5} className="px-4 pt-1 pb-3">
+                    <div className="text-xs text-gray-500 uppercase tracking-wider font-semibold mb-1">
+                      Why this was flagged
+                    </div>
+                    <div className="text-sm text-gray-700 leading-relaxed">
+                      {flag.reason}
+                    </div>
+                  </td>
+                </tr>
+              </Fragment>
+            );
+          })}
         </tbody>
       </table>
     </div>
@@ -218,7 +243,15 @@ function buildEmptyEstimate(prev: ClaimEstimate | null): ClaimEstimate {
   };
 }
 
-function PartsFindingsTable({ findings }: { findings: PartsFinding[] }) {
+function PartsFindingsTable({
+  findings,
+  checked,
+  onToggle,
+}: {
+  findings: PartsFinding[];
+  checked: Set<string>;
+  onToggle: (key: string) => void;
+}) {
   const impactRows = findings.filter((f) => f.type === 'price_mismatch' || f.type === 'qty_mismatch');
   const invoiceOrphans = findings.filter((f) => f.type === 'invoice_orphan');
   const estimateOrphans = findings.filter((f) => f.type === 'estimate_orphan');
@@ -247,6 +280,7 @@ function PartsFindingsTable({ findings }: { findings: PartsFinding[] }) {
           <table className="w-full text-sm">
             <thead>
               <tr className="bg-gray-50 border-y border-gray-200">
+                <th className="px-3 py-2 w-8"></th>
                 <th className="text-left px-4 py-2 text-xs text-gray-500 font-semibold uppercase tracking-wider">Part</th>
                 <th className="text-left px-4 py-2 text-xs text-gray-500 font-semibold uppercase tracking-wider">Invoice</th>
                 <th className="text-left px-4 py-2 text-xs text-gray-500 font-semibold uppercase tracking-wider">Estimate</th>
@@ -255,42 +289,55 @@ function PartsFindingsTable({ findings }: { findings: PartsFinding[] }) {
               </tr>
             </thead>
             <tbody>
-              {impactRows.map((f, i) => (
-                <tr key={i} className="border-b border-gray-100 align-top">
-                  <td className="px-4 py-3">
-                    <div className="font-semibold text-gray-900">{f.description}</div>
-                    {f.partNumber && (
-                      <div className="text-xs text-gray-500 mt-0.5 font-mono">{f.partNumber}</div>
-                    )}
-                    {f.matchedBy === 'description' && (
-                      <div className="text-[10px] text-gray-400 mt-0.5">matched by description</div>
-                    )}
-                  </td>
-                  <td className="px-4 py-3 text-xs text-gray-700">
-                    {f.invoice && (
-                      <>
-                        <div>{f.invoice.qty} × {fmtMoney(f.invoice.unitPrice)} = {fmtMoney(f.invoice.total)}</div>
-                        <div className="text-gray-400 mt-0.5 truncate max-w-[180px]" title={f.invoice.fileName}>{f.invoice.fileName}</div>
-                      </>
-                    )}
-                  </td>
-                  <td className="px-4 py-3 text-xs text-gray-700">
-                    {f.estimate && (
-                      <div>{f.estimate.qty} × {fmtMoney(f.estimate.unitPrice)} = {fmtMoney(f.estimate.total)}</div>
-                    )}
-                  </td>
-                  <td className={cn(
-                    "px-4 py-3 text-right tabular-nums font-semibold",
-                    f.priceDeltaPerUnit > 0 ? "text-amber-700" : f.priceDeltaPerUnit < 0 ? "text-green-700" : "text-gray-400",
-                  )}>
-                    {f.priceDeltaPerUnit !== 0 ? `${f.priceDeltaPerUnit > 0 ? "+" : ""}${fmtMoney(f.priceDeltaPerUnit)}` : "—"}
-                    {f.qtyDelta !== 0 && <div className="text-[10px] font-normal text-gray-500">qty Δ {f.qtyDelta > 0 ? "+" : ""}{f.qtyDelta}</div>}
-                  </td>
-                  <td className="px-4 py-3 text-right tabular-nums font-bold text-amber-700">
-                    {f.dollarImpact < 0 ? "-" : "+"}{fmtMoney(Math.abs(f.dollarImpact))}
-                  </td>
-                </tr>
-              ))}
+              {impactRows.map((f, i) => {
+                const key = `parts_${i}`;
+                const isChecked = checked.has(key);
+                return (
+                  <tr key={i} className={cn("border-b border-gray-100 align-top", !isChecked && "opacity-40")}>
+                    <td className="px-3 py-3">
+                      <input
+                        type="checkbox"
+                        checked={isChecked}
+                        onChange={() => onToggle(key)}
+                        className="accent-blue-600"
+                        aria-label="Include in report"
+                      />
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="font-semibold text-gray-900">{f.description}</div>
+                      {f.partNumber && (
+                        <div className="text-xs text-gray-500 mt-0.5 font-mono">{f.partNumber}</div>
+                      )}
+                      {f.matchedBy === 'description' && (
+                        <div className="text-[10px] text-gray-400 mt-0.5">matched by description</div>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-xs text-gray-700">
+                      {f.invoice && (
+                        <>
+                          <div>{f.invoice.qty} × {fmtMoney(f.invoice.unitPrice)} = {fmtMoney(f.invoice.total)}</div>
+                          <div className="text-gray-400 mt-0.5 truncate max-w-[180px]" title={f.invoice.fileName}>{f.invoice.fileName}</div>
+                        </>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-xs text-gray-700">
+                      {f.estimate && (
+                        <div>{f.estimate.qty} × {fmtMoney(f.estimate.unitPrice)} = {fmtMoney(f.estimate.total)}</div>
+                      )}
+                    </td>
+                    <td className={cn(
+                      "px-4 py-3 text-right tabular-nums font-semibold",
+                      f.priceDeltaPerUnit > 0 ? "text-amber-700" : f.priceDeltaPerUnit < 0 ? "text-green-700" : "text-gray-400",
+                    )}>
+                      {f.priceDeltaPerUnit !== 0 ? `${f.priceDeltaPerUnit > 0 ? "+" : ""}${fmtMoney(f.priceDeltaPerUnit)}` : "—"}
+                      {f.qtyDelta !== 0 && <div className="text-[10px] font-normal text-gray-500">qty Δ {f.qtyDelta > 0 ? "+" : ""}{f.qtyDelta}</div>}
+                    </td>
+                    <td className="px-4 py-3 text-right tabular-nums font-bold text-amber-700">
+                      {f.dollarImpact < 0 ? "-" : "+"}{fmtMoney(Math.abs(f.dollarImpact))}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -331,7 +378,15 @@ function PartsFindingsTable({ findings }: { findings: PartsFinding[] }) {
   );
 }
 
-function TaxFindingsTable({ findings }: { findings: TaxFinding[] }) {
+function TaxFindingsTable({
+  findings,
+  checked,
+  onToggle,
+}: {
+  findings: TaxFinding[];
+  checked: Set<string>;
+  onToggle: (key: string) => void;
+}) {
   const noRuleRow = findings.find((f) => f.type === 'no_state_rule');
   const impactRows = findings.filter((f) => f.type !== 'no_state_rule');
   const total = impactRows.reduce((sum, f) => sum + Math.abs(f.dollarImpact), 0);
@@ -360,6 +415,7 @@ function TaxFindingsTable({ findings }: { findings: TaxFinding[] }) {
           <table className="w-full text-sm">
             <thead>
               <tr className="bg-gray-50 border-y border-gray-200">
+                <th className="px-3 py-2 w-8"></th>
                 <th className="text-left px-4 py-2 text-xs text-gray-500 font-semibold uppercase tracking-wider">Component</th>
                 <th className="text-right px-4 py-2 text-xs text-gray-500 font-semibold uppercase tracking-wider">Base</th>
                 <th className="text-right px-4 py-2 text-xs text-gray-500 font-semibold uppercase tracking-wider">Estimate Tax</th>
@@ -369,18 +425,31 @@ function TaxFindingsTable({ findings }: { findings: TaxFinding[] }) {
               </tr>
             </thead>
             <tbody>
-              {impactRows.map((f, i) => (
-                <tr key={i} className="border-b border-gray-100 align-top">
-                  <td className="px-4 py-3 font-semibold text-gray-900">{f.component}</td>
-                  <td className="px-4 py-3 text-right tabular-nums text-gray-700">{fmtMoney(f.estimateAmount)}</td>
-                  <td className="px-4 py-3 text-right tabular-nums text-gray-700">{fmtMoney(f.estimateTax)}</td>
-                  <td className="px-4 py-3 text-right tabular-nums text-gray-700">{fmtMoney(f.expectedTax)}</td>
-                  <td className="px-4 py-3 text-xs text-gray-600 max-w-md">{f.reason}</td>
-                  <td className="px-4 py-3 text-right tabular-nums font-bold text-amber-700">
-                    {f.dollarImpact < 0 ? "-" : "+"}{fmtMoney(Math.abs(f.dollarImpact))}
-                  </td>
-                </tr>
-              ))}
+              {impactRows.map((f, i) => {
+                const key = `tax_${i}`;
+                const isChecked = checked.has(key);
+                return (
+                  <tr key={i} className={cn("border-b border-gray-100 align-top", !isChecked && "opacity-40")}>
+                    <td className="px-3 py-3">
+                      <input
+                        type="checkbox"
+                        checked={isChecked}
+                        onChange={() => onToggle(key)}
+                        className="accent-blue-600"
+                        aria-label="Include in report"
+                      />
+                    </td>
+                    <td className="px-4 py-3 font-semibold text-gray-900">{f.component}</td>
+                    <td className="px-4 py-3 text-right tabular-nums text-gray-700">{fmtMoney(f.estimateAmount)}</td>
+                    <td className="px-4 py-3 text-right tabular-nums text-gray-700">{fmtMoney(f.estimateTax)}</td>
+                    <td className="px-4 py-3 text-right tabular-nums text-gray-700">{fmtMoney(f.expectedTax)}</td>
+                    <td className="px-4 py-3 text-xs text-gray-600 max-w-md">{f.reason}</td>
+                    <td className="px-4 py-3 text-right tabular-nums font-bold text-amber-700">
+                      {f.dollarImpact < 0 ? "-" : "+"}{fmtMoney(Math.abs(f.dollarImpact))}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -389,7 +458,15 @@ function TaxFindingsTable({ findings }: { findings: TaxFinding[] }) {
   );
 }
 
-function GuidelineFindingsTable({ findings }: { findings: GuidelineFinding[] }) {
+function GuidelineFindingsTable({
+  findings,
+  checked,
+  onToggle,
+}: {
+  findings: GuidelineFinding[];
+  checked: Set<string>;
+  onToggle: (key: string) => void;
+}) {
   const total = findings.reduce((sum, f) => sum + Math.abs(f.dollarImpact), 0);
   return (
     <div className="mt-4">
@@ -411,6 +488,7 @@ function GuidelineFindingsTable({ findings }: { findings: GuidelineFinding[] }) 
         <table className="w-full text-sm">
           <thead>
             <tr className="bg-gray-50 border-y border-gray-200">
+              <th className="px-3 py-2 w-8"></th>
               <th className="text-left px-4 py-2 text-xs text-gray-500 font-semibold uppercase tracking-wider">Operation / Type</th>
               <th className="text-left px-4 py-2 text-xs text-gray-500 font-semibold uppercase tracking-wider">Document</th>
               <th className="text-left px-4 py-2 text-xs text-gray-500 font-semibold uppercase tracking-wider">Reason</th>
@@ -418,33 +496,46 @@ function GuidelineFindingsTable({ findings }: { findings: GuidelineFinding[] }) 
             </tr>
           </thead>
           <tbody>
-            {findings.map((f, i) => (
-              <tr key={i} className="border-b border-gray-100 align-top">
-                <td className="px-4 py-3">
-                  <div className="font-semibold text-gray-900">{f.operation || '—'}</div>
-                  <span className={cn("inline-block mt-1 text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded", GUIDELINE_TYPE_STYLE[f.type])}>
-                    {GUIDELINE_TYPE_LABEL[f.type]}
-                  </span>
-                </td>
-                <td className="px-4 py-3 text-xs text-gray-700 max-w-xs">
-                  <div className="font-semibold text-gray-800">{f.documentTitle}</div>
-                  {f.documentSection && (
-                    <div className="text-gray-500">{f.documentSection}</div>
-                  )}
-                  {f.documentQuote && (
-                    <div className="italic text-gray-500 mt-1 line-clamp-3" title={f.documentQuote}>
-                      &ldquo;{f.documentQuote}&rdquo;
-                    </div>
-                  )}
-                </td>
-                <td className="px-4 py-3 text-sm text-gray-700 max-w-md">{f.reason}</td>
-                <td className="px-4 py-3 text-right tabular-nums font-bold text-amber-700">
-                  {f.dollarImpact !== 0
-                    ? `${f.dollarImpact < 0 ? "-" : "+"}${fmtMoney(Math.abs(f.dollarImpact))}`
-                    : <span className="text-gray-400 font-normal">Informational</span>}
-                </td>
-              </tr>
-            ))}
+            {findings.map((f, i) => {
+              const key = `guideline_${i}`;
+              const isChecked = checked.has(key);
+              return (
+                <tr key={i} className={cn("border-b border-gray-100 align-top", !isChecked && "opacity-40")}>
+                  <td className="px-3 py-3">
+                    <input
+                      type="checkbox"
+                      checked={isChecked}
+                      onChange={() => onToggle(key)}
+                      className="accent-blue-600"
+                      aria-label="Include in report"
+                    />
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="font-semibold text-gray-900">{f.operation || '—'}</div>
+                    <span className={cn("inline-block mt-1 text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded", GUIDELINE_TYPE_STYLE[f.type])}>
+                      {GUIDELINE_TYPE_LABEL[f.type]}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 text-xs text-gray-700 max-w-xs">
+                    <div className="font-semibold text-gray-800">{f.documentTitle}</div>
+                    {f.documentSection && (
+                      <div className="text-gray-500">{f.documentSection}</div>
+                    )}
+                    {f.documentQuote && (
+                      <div className="italic text-gray-500 mt-1 line-clamp-3" title={f.documentQuote}>
+                        &ldquo;{f.documentQuote}&rdquo;
+                      </div>
+                    )}
+                  </td>
+                  <td className="px-4 py-3 text-sm text-gray-700 max-w-md">{f.reason}</td>
+                  <td className="px-4 py-3 text-right tabular-nums font-bold text-amber-700">
+                    {f.dollarImpact !== 0
+                      ? `${f.dollarImpact < 0 ? "-" : "+"}${fmtMoney(Math.abs(f.dollarImpact))}`
+                      : <span className="text-gray-400 font-normal">Informational</span>}
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
@@ -452,7 +543,15 @@ function GuidelineFindingsTable({ findings }: { findings: GuidelineFinding[] }) 
   );
 }
 
-function LaborRateFindingsTable({ findings }: { findings: LaborRateFinding[] }) {
+function LaborRateFindingsTable({
+  findings,
+  checked,
+  onToggle,
+}: {
+  findings: LaborRateFinding[];
+  checked: Set<string>;
+  onToggle: (key: string) => void;
+}) {
   const total = findings.reduce((sum, f) => sum + Math.abs(f.dollarImpact), 0);
   return (
     <div className="mt-4">
@@ -469,8 +568,9 @@ function LaborRateFindingsTable({ findings }: { findings: LaborRateFinding[] }) 
         <table className="w-full text-sm">
           <thead>
             <tr className="bg-gray-50 border-y border-gray-200">
+              <th className="px-3 py-2 w-8"></th>
               <th className="text-left px-4 py-2 text-xs text-gray-500 font-semibold uppercase tracking-wider">Category</th>
-              <th className="text-right px-4 py-2 text-xs text-gray-500 font-semibold uppercase tracking-wider">Your Rate</th>
+              <th className="text-right px-4 py-2 text-xs text-gray-500 font-semibold uppercase tracking-wider">Labor Rate Hero</th>
               <th className="text-right px-4 py-2 text-xs text-gray-500 font-semibold uppercase tracking-wider">Estimate Rate</th>
               <th className="text-right px-4 py-2 text-xs text-gray-500 font-semibold uppercase tracking-wider">Δ/hr</th>
               <th className="text-right px-4 py-2 text-xs text-gray-500 font-semibold uppercase tracking-wider">Hours</th>
@@ -478,23 +578,116 @@ function LaborRateFindingsTable({ findings }: { findings: LaborRateFinding[] }) 
             </tr>
           </thead>
           <tbody>
-            {findings.map((f, i) => (
-              <tr key={i} className="border-b border-gray-100">
-                <td className="px-4 py-2.5 font-semibold text-gray-900">{f.label}</td>
-                <td className="px-4 py-2.5 text-right tabular-nums text-gray-700">{fmtMoney(f.assertedRate)}/hr</td>
-                <td className="px-4 py-2.5 text-right tabular-nums text-gray-700">{fmtMoney(f.estimateRate)}/hr</td>
-                <td className={cn(
-                  "px-4 py-2.5 text-right tabular-nums font-semibold",
-                  f.diffPerHour > 0 ? "text-amber-700" : "text-green-700",
+            {findings.map((f, i) => {
+              const key = `rate_${i}`;
+              const isChecked = checked.has(key);
+              return (
+                <tr key={i} className={cn("border-b border-gray-100", !isChecked && "opacity-40")}>
+                  <td className="px-3 py-2.5">
+                    <input
+                      type="checkbox"
+                      checked={isChecked}
+                      onChange={() => onToggle(key)}
+                      className="accent-blue-600"
+                      aria-label="Include in report"
+                    />
+                  </td>
+                  <td className="px-4 py-2.5 font-semibold text-gray-900">{f.label}</td>
+                  <td className="px-4 py-2.5 text-right tabular-nums text-gray-700">{fmtMoney(f.assertedRate)}/hr</td>
+                  <td className="px-4 py-2.5 text-right tabular-nums text-gray-700">{fmtMoney(f.estimateRate)}/hr</td>
+                  <td className={cn(
+                    "px-4 py-2.5 text-right tabular-nums font-semibold",
+                    f.diffPerHour > 0 ? "text-amber-700" : "text-green-700",
+                  )}>
+                    {f.diffPerHour > 0 ? "+" : ""}{fmtMoney(f.diffPerHour)}
+                  </td>
+                  <td className="px-4 py-2.5 text-right tabular-nums text-gray-700">{f.hoursOnEstimate.toFixed(1)}</td>
+                  <td className="px-4 py-2.5 text-right tabular-nums font-bold text-amber-700">
+                    {f.dollarImpact < 0 ? "-" : "+"}{fmtMoney(Math.abs(f.dollarImpact))}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+// ── VIN findings table (Item 1) ──────────────────────────────────────────────
+function VinFindingsTable({
+  findings,
+  checked,
+  onToggle,
+}: {
+  findings: VinFinding[];
+  checked: Set<string>;
+  onToggle: (key: string) => void;
+}) {
+  const mismatches = findings.filter((f) => !f.matches);
+  return (
+    <div className="mt-4">
+      <div className="flex items-center gap-2 mb-2 px-4">
+        <span className={cn(
+          "text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded",
+          mismatches.length > 0 ? "bg-red-100 text-red-800" : "bg-green-100 text-green-800",
+        )}>
+          VIN Check
+        </span>
+        <span className="text-xs text-gray-500">
+          {findings.length} VIN{findings.length === 1 ? "" : "s"} found
+          {mismatches.length > 0 && (
+            <span className="text-red-600 font-semibold"> · {mismatches.length} mismatch{mismatches.length === 1 ? "" : "es"}</span>
+          )}
+        </span>
+      </div>
+      <div className="overflow-x-auto -mx-4 sm:mx-0">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="bg-gray-50 border-y border-gray-200">
+              <th className="px-3 py-2 w-8"></th>
+              <th className="text-left px-4 py-2 text-xs text-gray-500 font-semibold uppercase tracking-wider">VIN Found</th>
+              <th className="text-left px-4 py-2 text-xs text-gray-500 font-semibold uppercase tracking-wider">Source</th>
+              <th className="text-left px-4 py-2 text-xs text-gray-500 font-semibold uppercase tracking-wider">Match</th>
+            </tr>
+          </thead>
+          <tbody>
+            {findings.map((f, i) => {
+              const key = `vin_${i}`;
+              const isChecked = checked.has(key);
+              return (
+                <tr key={i} className={cn(
+                  "border-b border-gray-100 align-top",
+                  !f.matches && "bg-red-50",
+                  !isChecked && "opacity-40",
                 )}>
-                  {f.diffPerHour > 0 ? "+" : ""}{fmtMoney(f.diffPerHour)}
-                </td>
-                <td className="px-4 py-2.5 text-right tabular-nums text-gray-700">{f.hoursOnEstimate.toFixed(1)}</td>
-                <td className="px-4 py-2.5 text-right tabular-nums font-bold text-amber-700">
-                  {f.dollarImpact < 0 ? "-" : "+"}{fmtMoney(Math.abs(f.dollarImpact))}
-                </td>
-              </tr>
-            ))}
+                  <td className="px-3 py-3">
+                    <input
+                      type="checkbox"
+                      checked={isChecked}
+                      onChange={() => onToggle(key)}
+                      className="accent-blue-600"
+                      aria-label="Include in report"
+                    />
+                  </td>
+                  <td className="px-4 py-3 font-mono text-sm text-gray-900">{f.foundVin}</td>
+                  <td className="px-4 py-3 text-xs text-gray-600 truncate max-w-[220px]" title={f.source}>{f.source}</td>
+                  <td className="px-4 py-3">
+                    {f.matches ? (
+                      <span className="inline-flex items-center gap-1 text-green-700 text-xs font-semibold">
+                        <span>✓</span> Match
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 text-red-600 text-xs font-semibold">
+                        <span>✗</span> MISMATCH
+                        <span className="font-normal text-gray-500 ml-1">claim VIN: {f.claimVin}</span>
+                      </span>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
@@ -694,6 +887,254 @@ function DocumentPicker({
   );
 }
 
+// ── PrintableReview — hidden off-screen element for PDF capture (Item 5) ────
+// Renders only the checked findings with a branded header. Mounted off-screen
+// (visibility:hidden, position:absolute left:-9999px) so html2canvas can
+// capture it without the user seeing it flash on screen.
+function PrintableReview({
+  review,
+  checkedKeys,
+  elRef,
+}: {
+  review: EstimateReview;
+  checkedKeys: Set<string>;
+  elRef: (el: HTMLDivElement | null) => void;
+}) {
+  const checkedFlags = review.flags.filter((_, i) => checkedKeys.has(`flag_${i}`));
+  const checkedRates = (review.rateFindings ?? []).filter((_, i) => checkedKeys.has(`rate_${i}`));
+  const checkedPartsAll = (review.partsFindings ?? []).filter(
+    (f) => f.type === 'price_mismatch' || f.type === 'qty_mismatch'
+  );
+  const checkedParts = checkedPartsAll.filter((_, i) => checkedKeys.has(`parts_${i}`));
+  const checkedTaxAll = (review.taxFindings ?? []).filter((f) => f.type !== 'no_state_rule');
+  const checkedTax = checkedTaxAll.filter((_, i) => checkedKeys.has(`tax_${i}`));
+  const checkedGuidelines = (review.guidelineFindings ?? []).filter((_, i) => checkedKeys.has(`guideline_${i}`));
+  const checkedVins = (review.vinFindings ?? []).filter((_, i) => checkedKeys.has(`vin_${i}`));
+
+  const flagImpact = checkedFlags.reduce((s, f) => s + Math.abs(f.impact), 0);
+  const rateImpact = checkedRates.reduce((s, f) => s + Math.abs(f.dollarImpact), 0);
+  const partsImpact = checkedParts.reduce((s, f) => s + Math.abs(f.dollarImpact), 0);
+  const taxImpact = checkedTax.reduce((s, f) => s + Math.abs(f.dollarImpact), 0);
+  const guidelineImpact = checkedGuidelines.reduce((s, f) => s + Math.abs(f.dollarImpact), 0);
+  const totalImpact = flagImpact + rateImpact + partsImpact + taxImpact + guidelineImpact;
+
+  return (
+    <div
+      ref={elRef}
+      style={{
+        visibility: 'hidden',
+        position: 'absolute',
+        left: '-9999px',
+        top: '-9999px',
+        zIndex: -1,
+        width: '816px',
+        background: '#fff',
+        fontFamily: 'sans-serif',
+        padding: '32px',
+        boxSizing: 'border-box',
+      }}
+    >
+      {/* Header */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '24px' }}>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src="/companies/modern-appraisers/logo.png"
+          alt="Modern Appraisers"
+          style={{ height: '48px', objectFit: 'contain' }}
+        />
+        <div style={{ textAlign: 'right' }}>
+          <div style={{ fontSize: '22px', fontWeight: 'bold', color: '#111' }}>Estimate Review</div>
+          <div style={{ fontSize: '13px', color: '#555', marginTop: '4px' }}>
+            Review #{review.reviewNumber} · {review.fileName}
+          </div>
+          <div style={{ fontSize: '12px', color: '#888', marginTop: '2px' }}>
+            {review.software} · {new Date(review.savedAt).toLocaleString()}
+          </div>
+        </div>
+      </div>
+
+      {/* Total impact */}
+      {totalImpact > 0 && (
+        <div style={{ background: '#fffbeb', border: '1px solid #fcd34d', borderRadius: '8px', padding: '12px 16px', marginBottom: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span style={{ fontSize: '12px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#92400e' }}>Total Disputed Amount</span>
+          <span style={{ fontSize: '24px', fontWeight: 900, color: '#92400e' }}>-{fmtMoney(totalImpact)}</span>
+        </div>
+      )}
+
+      {/* VIN check */}
+      {checkedVins.length > 0 && (
+        <div style={{ marginBottom: '20px' }}>
+          <div style={{ fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', background: '#fee2e2', color: '#991b1b', padding: '3px 8px', borderRadius: '4px', display: 'inline-block', marginBottom: '8px' }}>VIN Check</div>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+            <thead>
+              <tr style={{ background: '#f9fafb', borderBottom: '1px solid #e5e7eb' }}>
+                <th style={{ textAlign: 'left', padding: '6px 12px', fontSize: '11px', color: '#6b7280', fontWeight: 600 }}>VIN Found</th>
+                <th style={{ textAlign: 'left', padding: '6px 12px', fontSize: '11px', color: '#6b7280', fontWeight: 600 }}>Source</th>
+                <th style={{ textAlign: 'left', padding: '6px 12px', fontSize: '11px', color: '#6b7280', fontWeight: 600 }}>Match</th>
+              </tr>
+            </thead>
+            <tbody>
+              {checkedVins.map((f, i) => (
+                <tr key={i} style={{ borderBottom: '1px solid #f3f4f6', background: f.matches ? 'transparent' : '#fef2f2' }}>
+                  <td style={{ padding: '8px 12px', fontFamily: 'monospace' }}>{f.foundVin}</td>
+                  <td style={{ padding: '8px 12px', color: '#6b7280' }}>{f.source}</td>
+                  <td style={{ padding: '8px 12px', fontWeight: 600, color: f.matches ? '#15803d' : '#dc2626' }}>
+                    {f.matches ? '✓ Match' : '✗ MISMATCH'}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* P-Pages flags */}
+      {checkedFlags.length > 0 && (
+        <div style={{ marginBottom: '20px' }}>
+          <div style={{ fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', background: '#f3f4f6', color: '#374151', padding: '3px 8px', borderRadius: '4px', display: 'inline-block', marginBottom: '8px' }}>P-Pages Flags</div>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+            <thead>
+              <tr style={{ background: '#f9fafb', borderBottom: '1px solid #e5e7eb' }}>
+                <th style={{ textAlign: 'left', padding: '6px 12px', fontSize: '11px', color: '#6b7280', fontWeight: 600 }}>Line</th>
+                <th style={{ textAlign: 'left', padding: '6px 12px', fontSize: '11px', color: '#6b7280', fontWeight: 600 }}>IA Billed</th>
+                <th style={{ textAlign: 'left', padding: '6px 12px', fontSize: '11px', color: '#6b7280', fontWeight: 600 }}>Suggested</th>
+                <th style={{ textAlign: 'right', padding: '6px 12px', fontSize: '11px', color: '#6b7280', fontWeight: 600 }}>Impact</th>
+              </tr>
+            </thead>
+            <tbody>
+              {checkedFlags.map((f, i) => (
+                <Fragment key={i}>
+                  <tr style={{ borderBottom: '1px solid #e5e7eb' }}>
+                    <td style={{ padding: '8px 12px', fontWeight: 600 }}>{f.lineDescription}<br /><span style={{ fontSize: '11px', color: '#9ca3af' }}>{f.panelOrArea}</span></td>
+                    <td style={{ padding: '8px 12px', color: '#374151', fontSize: '12px' }}>{fmtBilled(f.iaBilled)}</td>
+                    <td style={{ padding: '8px 12px', color: '#374151', fontSize: '12px' }}>{fmtSuggested(f.suggested)}</td>
+                    <td style={{ padding: '8px 12px', textAlign: 'right', fontWeight: 700, color: '#b45309' }}>{f.impact < 0 ? '-' : '+'}{fmtMoney(Math.abs(f.impact))}</td>
+                  </tr>
+                  <tr style={{ borderBottom: '1px solid #f3f4f6' }}>
+                    <td colSpan={4} style={{ padding: '4px 12px 10px', fontSize: '12px', color: '#4b5563' }}>{f.reason}</td>
+                  </tr>
+                </Fragment>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Labor rate findings */}
+      {checkedRates.length > 0 && (
+        <div style={{ marginBottom: '20px' }}>
+          <div style={{ fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', background: '#ccfbf1', color: '#134e4a', padding: '3px 8px', borderRadius: '4px', display: 'inline-block', marginBottom: '8px' }}>Labor Rates</div>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+            <thead>
+              <tr style={{ background: '#f9fafb', borderBottom: '1px solid #e5e7eb' }}>
+                <th style={{ textAlign: 'left', padding: '6px 12px', fontSize: '11px', color: '#6b7280', fontWeight: 600 }}>Category</th>
+                <th style={{ textAlign: 'right', padding: '6px 12px', fontSize: '11px', color: '#6b7280', fontWeight: 600 }}>LRH Rate</th>
+                <th style={{ textAlign: 'right', padding: '6px 12px', fontSize: '11px', color: '#6b7280', fontWeight: 600 }}>Estimate Rate</th>
+                <th style={{ textAlign: 'right', padding: '6px 12px', fontSize: '11px', color: '#6b7280', fontWeight: 600 }}>Hours</th>
+                <th style={{ textAlign: 'right', padding: '6px 12px', fontSize: '11px', color: '#6b7280', fontWeight: 600 }}>Impact</th>
+              </tr>
+            </thead>
+            <tbody>
+              {checkedRates.map((f, i) => (
+                <tr key={i} style={{ borderBottom: '1px solid #f3f4f6' }}>
+                  <td style={{ padding: '8px 12px', fontWeight: 600 }}>{f.label}</td>
+                  <td style={{ padding: '8px 12px', textAlign: 'right', color: '#374151' }}>{fmtMoney(f.assertedRate)}/hr</td>
+                  <td style={{ padding: '8px 12px', textAlign: 'right', color: '#374151' }}>{fmtMoney(f.estimateRate)}/hr</td>
+                  <td style={{ padding: '8px 12px', textAlign: 'right', color: '#374151' }}>{f.hoursOnEstimate.toFixed(1)}</td>
+                  <td style={{ padding: '8px 12px', textAlign: 'right', fontWeight: 700, color: '#b45309' }}>{f.dollarImpact < 0 ? '-' : '+'}{fmtMoney(Math.abs(f.dollarImpact))}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Parts findings */}
+      {checkedParts.length > 0 && (
+        <div style={{ marginBottom: '20px' }}>
+          <div style={{ fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', background: '#fdf4ff', color: '#6b21a8', padding: '3px 8px', borderRadius: '4px', display: 'inline-block', marginBottom: '8px' }}>Parts vs. Invoices</div>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+            <thead>
+              <tr style={{ background: '#f9fafb', borderBottom: '1px solid #e5e7eb' }}>
+                <th style={{ textAlign: 'left', padding: '6px 12px', fontSize: '11px', color: '#6b7280', fontWeight: 600 }}>Part</th>
+                <th style={{ textAlign: 'right', padding: '6px 12px', fontSize: '11px', color: '#6b7280', fontWeight: 600 }}>Invoice</th>
+                <th style={{ textAlign: 'right', padding: '6px 12px', fontSize: '11px', color: '#6b7280', fontWeight: 600 }}>Estimate</th>
+                <th style={{ textAlign: 'right', padding: '6px 12px', fontSize: '11px', color: '#6b7280', fontWeight: 600 }}>Impact</th>
+              </tr>
+            </thead>
+            <tbody>
+              {checkedParts.map((f, i) => (
+                <tr key={i} style={{ borderBottom: '1px solid #f3f4f6' }}>
+                  <td style={{ padding: '8px 12px', fontWeight: 600 }}>{f.description}</td>
+                  <td style={{ padding: '8px 12px', textAlign: 'right', color: '#374151', fontSize: '12px' }}>{f.invoice ? `${f.invoice.qty} × ${fmtMoney(f.invoice.unitPrice)}` : '—'}</td>
+                  <td style={{ padding: '8px 12px', textAlign: 'right', color: '#374151', fontSize: '12px' }}>{f.estimate ? `${f.estimate.qty} × ${fmtMoney(f.estimate.unitPrice)}` : '—'}</td>
+                  <td style={{ padding: '8px 12px', textAlign: 'right', fontWeight: 700, color: '#b45309' }}>{f.dollarImpact < 0 ? '-' : '+'}{fmtMoney(Math.abs(f.dollarImpact))}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Tax findings */}
+      {checkedTax.length > 0 && (
+        <div style={{ marginBottom: '20px' }}>
+          <div style={{ fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', background: '#fff7ed', color: '#9a3412', padding: '3px 8px', borderRadius: '4px', display: 'inline-block', marginBottom: '8px' }}>Sales Tax</div>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+            <thead>
+              <tr style={{ background: '#f9fafb', borderBottom: '1px solid #e5e7eb' }}>
+                <th style={{ textAlign: 'left', padding: '6px 12px', fontSize: '11px', color: '#6b7280', fontWeight: 600 }}>Component</th>
+                <th style={{ textAlign: 'right', padding: '6px 12px', fontSize: '11px', color: '#6b7280', fontWeight: 600 }}>Estimate Tax</th>
+                <th style={{ textAlign: 'right', padding: '6px 12px', fontSize: '11px', color: '#6b7280', fontWeight: 600 }}>Expected Tax</th>
+                <th style={{ textAlign: 'right', padding: '6px 12px', fontSize: '11px', color: '#6b7280', fontWeight: 600 }}>Impact</th>
+              </tr>
+            </thead>
+            <tbody>
+              {checkedTax.map((f, i) => (
+                <tr key={i} style={{ borderBottom: '1px solid #f3f4f6' }}>
+                  <td style={{ padding: '8px 12px', fontWeight: 600 }}>{f.component}</td>
+                  <td style={{ padding: '8px 12px', textAlign: 'right', color: '#374151' }}>{fmtMoney(f.estimateTax)}</td>
+                  <td style={{ padding: '8px 12px', textAlign: 'right', color: '#374151' }}>{fmtMoney(f.expectedTax)}</td>
+                  <td style={{ padding: '8px 12px', textAlign: 'right', fontWeight: 700, color: '#b45309' }}>{f.dollarImpact < 0 ? '-' : '+'}{fmtMoney(Math.abs(f.dollarImpact))}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Guideline findings */}
+      {checkedGuidelines.length > 0 && (
+        <div style={{ marginBottom: '20px' }}>
+          <div style={{ fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', background: '#eef2ff', color: '#3730a3', padding: '3px 8px', borderRadius: '4px', display: 'inline-block', marginBottom: '8px' }}>Guidelines</div>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+            <thead>
+              <tr style={{ background: '#f9fafb', borderBottom: '1px solid #e5e7eb' }}>
+                <th style={{ textAlign: 'left', padding: '6px 12px', fontSize: '11px', color: '#6b7280', fontWeight: 600 }}>Operation</th>
+                <th style={{ textAlign: 'left', padding: '6px 12px', fontSize: '11px', color: '#6b7280', fontWeight: 600 }}>Document</th>
+                <th style={{ textAlign: 'left', padding: '6px 12px', fontSize: '11px', color: '#6b7280', fontWeight: 600 }}>Reason</th>
+                <th style={{ textAlign: 'right', padding: '6px 12px', fontSize: '11px', color: '#6b7280', fontWeight: 600 }}>Impact</th>
+              </tr>
+            </thead>
+            <tbody>
+              {checkedGuidelines.map((f, i) => (
+                <tr key={i} style={{ borderBottom: '1px solid #f3f4f6' }}>
+                  <td style={{ padding: '8px 12px', fontWeight: 600 }}>{f.operation || '—'}</td>
+                  <td style={{ padding: '8px 12px', color: '#374151', fontSize: '12px' }}>{f.documentTitle}</td>
+                  <td style={{ padding: '8px 12px', color: '#4b5563', fontSize: '12px' }}>{f.reason}</td>
+                  <td style={{ padding: '8px 12px', textAlign: 'right', fontWeight: 700, color: '#b45309' }}>
+                    {f.dollarImpact !== 0 ? `${f.dollarImpact < 0 ? '-' : '+'}${fmtMoney(Math.abs(f.dollarImpact))}` : 'Info'}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── The tab ─────────────────────────────────────────────────────────────────
 export function EstimateReviewTab({
   claim,
@@ -720,7 +1161,44 @@ export function EstimateReviewTab({
   const [elapsedMs, setElapsedMs] = useState(0);
   const [estimatedTotalSec, setEstimatedTotalSec] = useState(0);
   const [pendingDeleteReviewId, setPendingDeleteReviewId] = useState<string | null>(null);
+  const [printingReviewId, setPrintingReviewId] = useState<string | null>(null);
   const cardRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const printRefs = useRef<Record<string, HTMLDivElement | null>>({});
+
+  // Per-review selected findings: reviewId → Set of finding keys.
+  // Default: all findings checked. Initialized lazily when a review is loaded.
+  const [selectedFindings, setSelectedFindings] = useState<Record<string, Set<string>>>({});
+
+  // Build the default all-checked Set for a review.
+  const buildDefaultChecked = useCallback((review: EstimateReview): Set<string> => {
+    const keys: string[] = [];
+    review.flags.forEach((_, i) => keys.push(`flag_${i}`));
+    (review.rateFindings ?? []).forEach((_, i) => keys.push(`rate_${i}`));
+    (review.partsFindings ?? []).filter(f => f.type === 'price_mismatch' || f.type === 'qty_mismatch')
+      .forEach((_, i) => keys.push(`parts_${i}`));
+    (review.taxFindings ?? []).filter(f => f.type !== 'no_state_rule')
+      .forEach((_, i) => keys.push(`tax_${i}`));
+    (review.guidelineFindings ?? []).forEach((_, i) => keys.push(`guideline_${i}`));
+    (review.vinFindings ?? []).forEach((_, i) => keys.push(`vin_${i}`));
+    return new Set(keys);
+  }, []);
+
+  // Get the checked set for a review, initializing to all-checked if unseen.
+  const getChecked = useCallback((review: EstimateReview): Set<string> => {
+    if (selectedFindings[review.id]) return selectedFindings[review.id];
+    return buildDefaultChecked(review);
+  }, [selectedFindings, buildDefaultChecked]);
+
+  const handleToggle = useCallback((reviewId: string, key: string) => {
+    setSelectedFindings((prev) => {
+      const current = prev[reviewId] ?? buildDefaultChecked(
+        reviews.find((r) => r.id === reviewId)!
+      );
+      const next = new Set(current);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return { ...prev, [reviewId]: next };
+    });
+  }, [reviews, buildDefaultChecked]);
 
   // Tick the elapsed clock while a run is in flight.
   useEffect(() => {
@@ -750,6 +1228,7 @@ export function EstimateReviewTab({
           supportingDocIds,
           claimId: claimId ?? "",
           claimState,
+          claimVin: claim.vin ?? "",
           nextReviewNumber: nextNumber,
         }),
       });
@@ -800,6 +1279,41 @@ export function EstimateReviewTab({
     next.reviews = reviews.filter((r) => r.id !== pendingDeleteReviewId);
     onChange(next);
     setPendingDeleteReviewId(null);
+  };
+
+  const handlePrint = async (review: EstimateReview) => {
+    setPrintingReviewId(review.id);
+    // Defer one tick so React renders the hidden PrintableReview element.
+    await new Promise((r) => setTimeout(r, 150));
+    try {
+      const el = printRefs.current[review.id];
+      if (!el) return;
+      const checkedKeys = getChecked(review);
+      // Temporarily make element visible off-screen for capture
+      el.style.visibility = 'visible';
+      el.style.position = 'fixed';
+      el.style.left = '-9999px';
+      el.style.top = '0';
+      el.style.zIndex = '9999';
+      const blob = await captureReviewPdf(el);
+      el.style.visibility = 'hidden';
+      el.style.position = 'absolute';
+      el.style.left = '-9999px';
+      el.style.top = '-9999px';
+      el.style.zIndex = '-1';
+      if (!blob) return;
+      const fileName = reviewPdfFileName(review.reviewNumber, review.fileName);
+      await savePdfWithPicker(blob, fileName);
+      if (onDocumentSaved) {
+        onDocumentSaved(blob, fileName, "estimate-review");
+      }
+      // Suppress unused-var lint: checkedKeys is passed to PrintableReview via state
+      void checkedKeys;
+    } catch (err) {
+      console.error("Failed to print review PDF:", err);
+    } finally {
+      setPrintingReviewId(null);
+    }
   };
 
   return (
@@ -882,132 +1396,185 @@ export function EstimateReviewTab({
 
       {reviews.length > 0 && (
         <div className="space-y-4">
-          {reviews.map((review) => (
-            <div
-              key={review.id}
-              ref={(el) => { cardRefs.current[review.id] = el; }}
-              className="bg-white border border-gray-200 rounded-lg shadow-sm p-4"
-            >
-              <div className="flex items-start justify-between gap-4">
-                <div>
-                  <div className="text-sm font-bold text-gray-900">
-                    Review #{review.reviewNumber} · {review.fileName}
-                  </div>
-                  <div className="text-xs text-gray-500 mt-0.5">
-                    {review.software} · {new Date(review.savedAt).toLocaleString()}
-                    {review.photoCount > 0
-                      ? ` · ${review.photoCount} photo${review.photoCount === 1 ? "" : "s"}`
-                      : ""}
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setPendingDeleteReviewId(review.id)}
-                  className="text-gray-300 hover:text-red-500 shrink-0"
-                  aria-label="Delete review"
+          {reviews.map((review) => {
+            const checkedKeys = getChecked(review);
+            const toggle = (key: string) => handleToggle(review.id, key);
+            const isPrinting = printingReviewId === review.id;
+            const vinMismatches = (review.vinFindings ?? []).filter((f) => !f.matches).length;
+            return (
+              <Fragment key={review.id}>
+                <div
+                  ref={(el) => { cardRefs.current[review.id] = el; }}
+                  className="bg-white border border-gray-200 rounded-lg shadow-sm p-4"
                 >
-                  <Trash2 className="w-4 h-4" />
-                </button>
-              </div>
-              {review.error ? (
-                <div className="mt-3 p-3 rounded bg-red-50 border border-red-200 text-red-600 text-sm">
-                  Review failed: {review.error}
-                </div>
-              ) : review.flags.length === 0 && (review.manualEntries?.length ?? 0) === 0 && (review.rateFindings?.length ?? 0) === 0 && (review.partsFindings?.length ?? 0) === 0 && (review.guidelineFindings?.length ?? 0) === 0 && (review.taxFindings?.filter(f => f.type !== 'no_state_rule').length ?? 0) === 0 ? (
-                <div className="mt-3 p-3 rounded bg-green-50 border border-green-200 text-green-700 text-sm">
-                  No violations, manual entries, rate discrepancies, invoice mismatches, guideline findings, or tax issues. Estimate looks clean.
-                </div>
-              ) : (
-                <>
-                  {(() => {
-                    const flagImpact = review.flags.reduce((sum, f) => sum + Math.abs(f.impact), 0);
-                    const rateImpact = (review.rateFindings ?? []).reduce((sum, f) => sum + Math.abs(f.dollarImpact), 0);
-                    const partsImpact = (review.partsFindings ?? []).reduce((sum, f) => sum + Math.abs(f.dollarImpact), 0);
-                    const guidelineImpact = (review.guidelineFindings ?? []).reduce((sum, f) => sum + Math.abs(f.dollarImpact), 0);
-                    const taxImpact = (review.taxFindings ?? []).reduce((sum, f) => sum + Math.abs(f.dollarImpact), 0);
-                    const totalImpact = flagImpact + rateImpact + partsImpact + guidelineImpact + taxImpact;
-                    if (totalImpact === 0) return null;
-                    return (
-                      <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 flex items-baseline justify-between gap-4">
-                        <span className="text-xs font-semibold uppercase tracking-wider text-amber-800">
-                          Total disputed amount
-                        </span>
-                        <span className="text-2xl font-black tabular-nums text-amber-800">
-                          -{fmtMoney(totalImpact)}
-                        </span>
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <div className="text-sm font-bold text-gray-900">
+                        Review #{review.reviewNumber} · {review.fileName}
                       </div>
-                    );
-                  })()}
-                  <div className="mt-2 text-sm text-gray-600">
-                    {(() => {
-                      const flagImpact = review.flags.reduce((sum, f) => sum + Math.abs(f.impact), 0);
-                      const rateImpact = (review.rateFindings ?? []).reduce((sum, f) => sum + Math.abs(f.dollarImpact), 0);
-                      const partsImpact = (review.partsFindings ?? []).reduce((sum, f) => sum + Math.abs(f.dollarImpact), 0);
-                      const guidelineImpact = (review.guidelineFindings ?? []).reduce((sum, f) => sum + Math.abs(f.dollarImpact), 0);
-                      const taxImpact = (review.taxFindings ?? []).reduce((sum, f) => sum + Math.abs(f.dollarImpact), 0);
-                      const totalImpact = flagImpact + rateImpact + partsImpact + guidelineImpact + taxImpact;
-                      return totalImpact > 0 ? (
-                        <span className="text-gray-500">Breakdown:</span>
-                      ) : (
-                        <span className="text-gray-500">No dollar-impact findings.</span>
-                      );
-                    })()}
-                    {review.flags.length > 0 && (
-                      <span className="text-gray-500">
-                        {" · "}{review.flags.length} P-Pages flag{review.flags.length === 1 ? "" : "s"}
-                      </span>
-                    )}
-                    {(review.rateFindings?.length ?? 0) > 0 && (
-                      <span className="text-teal-700">
-                        {" · "}{review.rateFindings!.length} rate discrepanc{review.rateFindings!.length === 1 ? "y" : "ies"}
-                      </span>
-                    )}
-                    {(review.partsFindings?.filter(f => f.type === 'price_mismatch' || f.type === 'qty_mismatch').length ?? 0) > 0 && (
-                      <span className="text-fuchsia-700">
-                        {" · "}{review.partsFindings!.filter(f => f.type === 'price_mismatch' || f.type === 'qty_mismatch').length} invoice mismatch{review.partsFindings!.filter(f => f.type === 'price_mismatch' || f.type === 'qty_mismatch').length === 1 ? "" : "es"}
-                      </span>
-                    )}
-                    {(review.guidelineFindings?.length ?? 0) > 0 && (
-                      <span className="text-indigo-700">
-                        {" · "}{review.guidelineFindings!.length} guideline finding{review.guidelineFindings!.length === 1 ? "" : "s"}
-                      </span>
-                    )}
-                    {(review.taxFindings?.filter(f => f.type !== 'no_state_rule').length ?? 0) > 0 && (
-                      <span className="text-orange-700">
-                        {" · "}{review.taxFindings!.filter(f => f.type !== 'no_state_rule').length} tax discrepanc{review.taxFindings!.filter(f => f.type !== 'no_state_rule').length === 1 ? "y" : "ies"}
-                      </span>
-                    )}
-                    {(review.manualEntries?.length ?? 0) > 0 && (
-                      <span className="text-slate-600">
-                        {" · "}{review.manualEntries!.length} manual entr{review.manualEntries!.length === 1 ? "y" : "ies"}
-                      </span>
-                    )}
-                    {review.grandTotalBilled > 0 && (
-                      <span className="text-gray-400">
-                        {" · IA billed "}{fmtMoney(review.grandTotalBilled)}
-                      </span>
-                    )}
+                      <div className="text-xs text-gray-500 mt-0.5">
+                        {review.software} · {new Date(review.savedAt).toLocaleString()}
+                        {review.photoCount > 0
+                          ? ` · ${review.photoCount} photo${review.photoCount === 1 ? "" : "s"}`
+                          : ""}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      {!review.error && (
+                        <button
+                          type="button"
+                          onClick={() => handlePrint(review)}
+                          disabled={isPrinting}
+                          className="text-gray-400 hover:text-blue-600 disabled:opacity-40"
+                          aria-label="Print review"
+                          title="Print selected findings to PDF"
+                        >
+                          {isPrinting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Printer className="w-4 h-4" />}
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => setPendingDeleteReviewId(review.id)}
+                        className="text-gray-300 hover:text-red-500"
+                        aria-label="Delete review"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
                   </div>
-                  {review.flags.length > 0 && <FlagTable flags={review.flags} />}
-                  {(review.manualEntries?.length ?? 0) > 0 && (
-                    <ManualEntriesTable entries={review.manualEntries!} />
+                  {review.error ? (
+                    <div className="mt-3 p-3 rounded bg-red-50 border border-red-200 text-red-600 text-sm">
+                      Review failed: {review.error}
+                    </div>
+                  ) : review.flags.length === 0 && (review.rateFindings?.length ?? 0) === 0 && (review.partsFindings?.length ?? 0) === 0 && (review.guidelineFindings?.length ?? 0) === 0 && (review.taxFindings?.filter(f => f.type !== 'no_state_rule').length ?? 0) === 0 && vinMismatches === 0 ? (
+                    <div className="mt-3 p-3 rounded bg-green-50 border border-green-200 text-green-700 text-sm">
+                      No violations, rate discrepancies, invoice mismatches, guideline findings, tax issues, or VIN mismatches. Estimate looks clean.
+                    </div>
+                  ) : (
+                    <>
+                      {(() => {
+                        const flagImpact = review.flags.reduce((sum, f) => sum + Math.abs(f.impact), 0);
+                        const rateImpact = (review.rateFindings ?? []).reduce((sum, f) => sum + Math.abs(f.dollarImpact), 0);
+                        const partsImpact = (review.partsFindings ?? []).reduce((sum, f) => sum + Math.abs(f.dollarImpact), 0);
+                        const guidelineImpact = (review.guidelineFindings ?? []).reduce((sum, f) => sum + Math.abs(f.dollarImpact), 0);
+                        const taxImpact = (review.taxFindings ?? []).reduce((sum, f) => sum + Math.abs(f.dollarImpact), 0);
+                        const totalImpact = flagImpact + rateImpact + partsImpact + guidelineImpact + taxImpact;
+                        if (totalImpact === 0) return null;
+                        return (
+                          <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 flex items-baseline justify-between gap-4">
+                            <span className="text-xs font-semibold uppercase tracking-wider text-amber-800">
+                              Total disputed amount
+                            </span>
+                            <span className="text-2xl font-black tabular-nums text-amber-800">
+                              -{fmtMoney(totalImpact)}
+                            </span>
+                          </div>
+                        );
+                      })()}
+                      <div className="mt-2 text-sm text-gray-600">
+                        {(() => {
+                          const flagImpact = review.flags.reduce((sum, f) => sum + Math.abs(f.impact), 0);
+                          const rateImpact = (review.rateFindings ?? []).reduce((sum, f) => sum + Math.abs(f.dollarImpact), 0);
+                          const partsImpact = (review.partsFindings ?? []).reduce((sum, f) => sum + Math.abs(f.dollarImpact), 0);
+                          const guidelineImpact = (review.guidelineFindings ?? []).reduce((sum, f) => sum + Math.abs(f.dollarImpact), 0);
+                          const taxImpact = (review.taxFindings ?? []).reduce((sum, f) => sum + Math.abs(f.dollarImpact), 0);
+                          const totalImpact = flagImpact + rateImpact + partsImpact + guidelineImpact + taxImpact;
+                          return totalImpact > 0 ? (
+                            <span className="text-gray-500">Breakdown:</span>
+                          ) : (
+                            <span className="text-gray-500">No dollar-impact findings.</span>
+                          );
+                        })()}
+                        {review.flags.length > 0 && (
+                          <span className="text-gray-500">
+                            {" · "}{review.flags.length} P-Pages flag{review.flags.length === 1 ? "" : "s"}
+                          </span>
+                        )}
+                        {(review.rateFindings?.length ?? 0) > 0 && (
+                          <span className="text-teal-700">
+                            {" · "}{review.rateFindings!.length} rate discrepanc{review.rateFindings!.length === 1 ? "y" : "ies"}
+                          </span>
+                        )}
+                        {(review.partsFindings?.filter(f => f.type === 'price_mismatch' || f.type === 'qty_mismatch').length ?? 0) > 0 && (
+                          <span className="text-fuchsia-700">
+                            {" · "}{review.partsFindings!.filter(f => f.type === 'price_mismatch' || f.type === 'qty_mismatch').length} invoice mismatch{review.partsFindings!.filter(f => f.type === 'price_mismatch' || f.type === 'qty_mismatch').length === 1 ? "" : "es"}
+                          </span>
+                        )}
+                        {(review.guidelineFindings?.length ?? 0) > 0 && (
+                          <span className="text-indigo-700">
+                            {" · "}{review.guidelineFindings!.length} guideline finding{review.guidelineFindings!.length === 1 ? "" : "s"}
+                          </span>
+                        )}
+                        {(review.taxFindings?.filter(f => f.type !== 'no_state_rule').length ?? 0) > 0 && (
+                          <span className="text-orange-700">
+                            {" · "}{review.taxFindings!.filter(f => f.type !== 'no_state_rule').length} tax discrepanc{review.taxFindings!.filter(f => f.type !== 'no_state_rule').length === 1 ? "y" : "ies"}
+                          </span>
+                        )}
+                        {vinMismatches > 0 && (
+                          <span className="text-red-600 font-semibold">
+                            {" · "}{vinMismatches} VIN mismatch{vinMismatches === 1 ? "" : "es"}
+                          </span>
+                        )}
+                        {review.grandTotalBilled > 0 && (
+                          <span className="text-gray-400">
+                            {" · IA billed "}{fmtMoney(review.grandTotalBilled)}
+                          </span>
+                        )}
+                      </div>
+                      {(review.vinFindings?.length ?? 0) > 0 && (
+                        <VinFindingsTable
+                          findings={review.vinFindings!}
+                          checked={checkedKeys}
+                          onToggle={toggle}
+                        />
+                      )}
+                      {review.flags.length > 0 && (
+                        <FlagTable
+                          flags={review.flags}
+                          checked={checkedKeys}
+                          onToggle={toggle}
+                        />
+                      )}
+                      {(review.rateFindings?.length ?? 0) > 0 && (
+                        <LaborRateFindingsTable
+                          findings={review.rateFindings!}
+                          checked={checkedKeys}
+                          onToggle={toggle}
+                        />
+                      )}
+                      {(review.partsFindings?.length ?? 0) > 0 && (
+                        <PartsFindingsTable
+                          findings={review.partsFindings!}
+                          checked={checkedKeys}
+                          onToggle={toggle}
+                        />
+                      )}
+                      {(review.guidelineFindings?.length ?? 0) > 0 && (
+                        <GuidelineFindingsTable
+                          findings={review.guidelineFindings!}
+                          checked={checkedKeys}
+                          onToggle={toggle}
+                        />
+                      )}
+                      {(review.taxFindings?.length ?? 0) > 0 && (
+                        <TaxFindingsTable
+                          findings={review.taxFindings!}
+                          checked={checkedKeys}
+                          onToggle={toggle}
+                        />
+                      )}
+                    </>
                   )}
-                  {(review.rateFindings?.length ?? 0) > 0 && (
-                    <LaborRateFindingsTable findings={review.rateFindings!} />
-                  )}
-                  {(review.partsFindings?.length ?? 0) > 0 && (
-                    <PartsFindingsTable findings={review.partsFindings!} />
-                  )}
-                  {(review.guidelineFindings?.length ?? 0) > 0 && (
-                    <GuidelineFindingsTable findings={review.guidelineFindings!} />
-                  )}
-                  {(review.taxFindings?.length ?? 0) > 0 && (
-                    <TaxFindingsTable findings={review.taxFindings!} />
-                  )}
-                </>
-              )}
-            </div>
-          ))}
+                </div>
+                {/* Hidden printable element for PDF capture — always mounted so the ref is stable */}
+                <PrintableReview
+                  review={review}
+                  checkedKeys={checkedKeys}
+                  elRef={(el) => { printRefs.current[review.id] = el; }}
+                />
+              </Fragment>
+            );
+          })}
         </div>
       )}
 

@@ -17,7 +17,7 @@ import {
   type PhotoMediaType,
   type ReferenceAttachment,
 } from '@/lib/estimate-review/prompt'
-import type { EstimateReview } from '@/lib/estimate-review/types'
+import type { EstimateReview, Flag, VinFinding } from '@/lib/estimate-review/types'
 import { requireAuth } from '@/lib/auth/require-admin'
 import { rateLimit } from '@/lib/rate-limit'
 import { createClient as createServerClient } from '@/lib/supabase/server'
@@ -64,6 +64,83 @@ async function encodeAttachment(file: File): Promise<ReferenceAttachment> {
   return { kind: 'image', media_type: normalizePhotoMediaType(file.type), data, fileName: file.name }
 }
 
+// ── Item 3a: cascade corrected labor rates to flag line calculations ─────────
+// After Claude returns, if rateFindings exist, recompute flags' suggested totals
+// using the corrected rate for the line's inferred labor category.
+function inferLaborCategory(flag: Flag): string | null {
+  const text = `${flag.lineDescription} ${flag.panelOrArea}`.toLowerCase()
+  if (/paint|refinish/.test(text)) return 'paint'
+  if (/frame|structural/.test(text)) return 'frame'
+  if (/mech|r&r|r\/i/.test(text)) return 'mechanical'
+  if (flag.suggested.laborHours !== undefined && flag.suggested.laborHours > 0) return 'body'
+  return null
+}
+
+function cascadeCorrectedRates(flags: Flag[], rateFindings: import('@/lib/estimate-review/types').LaborRateFinding[]): Flag[] {
+  if (rateFindings.length === 0) return flags
+  // Build map from category → correctedRate (assertedRate from the finding)
+  const rateMap = new Map<string, number>()
+  for (const rf of rateFindings) {
+    if (rf.assertedRate > 0) rateMap.set(rf.category as string, rf.assertedRate)
+  }
+  if (rateMap.size === 0) return flags
+
+  return flags.map((flag) => {
+    // Only cascade when both labor hours and rate are present on the suggestion
+    if (
+      flag.suggested.laborHours === undefined ||
+      flag.suggested.laborHours <= 0 ||
+      flag.suggested.laborRate === undefined ||
+      flag.suggested.laborRate <= 0
+    ) return flag
+
+    const cat = inferLaborCategory(flag)
+    if (!cat) return flag
+    const correctedRate = rateMap.get(cat)
+    if (!correctedRate || correctedRate === flag.suggested.laborRate) return flag
+
+    const newSuggestedTotal =
+      flag.suggested.laborHours * correctedRate + (flag.suggested.partPrice ?? 0)
+    const newImpact = newSuggestedTotal - flag.iaBilled.total
+
+    // Only apply if it actually changes things (and don't accidentally make impact positive)
+    if (Math.abs(newImpact) < 0.01) return flag
+
+    return {
+      ...flag,
+      suggested: {
+        ...flag.suggested,
+        laborRate: correctedRate,
+        total: newSuggestedTotal,
+      },
+      impact: newImpact,
+    }
+  })
+}
+
+// ── Item 1: VIN mismatch check ───────────────────────────────────────────────
+const VIN_REGEX = /\b[A-HJ-NPR-Z0-9]{17}\b/gi
+
+function extractVinFindings(
+  texts: Array<{ text: string; source: string }>,
+  claimVin: string,
+): VinFinding[] {
+  const claimVinUpper = claimVin.toUpperCase()
+  const seen = new Map<string, string>() // foundVin → source (first occurrence)
+  for (const { text, source } of texts) {
+    const matches = text.match(VIN_REGEX) ?? []
+    for (const vin of matches) {
+      const upper = vin.toUpperCase()
+      if (!seen.has(upper)) seen.set(upper, source)
+    }
+  }
+  const findings: VinFinding[] = []
+  for (const [foundVin, source] of seen) {
+    findings.push({ claimVin: claimVinUpper, foundVin, source, matches: foundVin === claimVinUpper })
+  }
+  return findings
+}
+
 async function reviewOne(
   estimate: File,
   attachments: ReferenceAttachment[],
@@ -72,6 +149,7 @@ async function reviewOne(
   laborRateRefs: LaborRateReference[],
   stateRule: StateTaxRule | null,
   claimState: string,
+  claimVin: string,
 ): Promise<EstimateReview> {
   try {
     const text = await extractEstimateText(estimate)
@@ -89,7 +167,8 @@ async function reviewOne(
     const first = finalMessage.content[0]
     const raw = first && first.type === 'text' ? first.text : ''
     const parsed = parseReviewResponse(raw)
-    return buildReview({
+
+    const review = buildReview({
       parsed,
       fileName: estimate.name,
       photoCount: attachments.length,
@@ -104,6 +183,22 @@ async function reviewOne(
       stateRule,
       claimState,
     })
+
+    // Item 3a: cascade corrected labor rates into flag line calculations.
+    if ((review.rateFindings?.length ?? 0) > 0) {
+      review.flags = cascadeCorrectedRates(review.flags, review.rateFindings!)
+    }
+
+    // Item 1: VIN mismatch check — scan extracted texts for 17-char VINs.
+    if (claimVin) {
+      const textsToScan: Array<{ text: string; source: string }> = [
+        { text, source: estimate.name },
+        ...invoices.map((inv) => ({ text: inv.text, source: inv.fileName })),
+      ]
+      review.vinFindings = extractVinFindings(textsToScan, claimVin)
+    }
+
+    return review
   } catch (err) {
     console.error('review-estimate: failed for', estimate.name, err)
     return {
@@ -205,6 +300,7 @@ export async function POST(request: NextRequest) {
       supportingDocIds?: string[]
       claimId?: string
       claimState?: string
+      claimVin?: string
       nextReviewNumber?: number
     }
 
@@ -212,6 +308,7 @@ export async function POST(request: NextRequest) {
     const supportingDocIds: string[] = Array.isArray(body.supportingDocIds) ? body.supportingDocIds : []
     const claimId = typeof body.claimId === 'string' ? body.claimId.trim() : ''
     const claimState = typeof body.claimState === 'string' ? body.claimState.trim().toUpperCase() : ''
+    const claimVin = typeof body.claimVin === 'string' ? body.claimVin.trim().toUpperCase() : ''
     const nextNumber = typeof body.nextReviewNumber === 'number' ? body.nextReviewNumber : 1
 
     if (!estimateDocId) {
@@ -327,7 +424,7 @@ export async function POST(request: NextRequest) {
     }
 
     const reviews = await processInBatches([estimateFile], MAX_CONCURRENT, (file, i) =>
-      reviewOne(file, encodedAttachments, nextNumber + i, invoiceTexts, laborRateRefs, stateRule, claimState),
+      reviewOne(file, encodedAttachments, nextNumber + i, invoiceTexts, laborRateRefs, stateRule, claimState, claimVin),
     )
 
     return NextResponse.json({ reviews })

@@ -113,7 +113,9 @@ If no invoice text is provided, return an empty invoiceLineItems array.
 
 ### Extract labor rate reference (top-level referenceLaborRates[])
 
-If any files are attached above the estimate marked "LABOR RATES REFERENCE" (either an image or a PDF titled that way), those are the CORRECT per-category labor rates for this claim — extracted from a labor-rate sheet, a shop's posted rates, an agreement letter, etc. Read the rates from those files and emit them as a top-level "referenceLaborRates" array with the SAME shape as the "laborRates" array (category / label / rate — hours is not needed, use 0). Categories normalize to the same five buckets ("body", "paint", "mechanical", "frame", "structural", "other"); label is the display name as shown on the reference; rate is $/hr as a number.
+If any files are attached above the estimate marked "LABOR RATES REFERENCE" (either an image or a PDF titled that way), those are the CORRECT per-category labor rates for this claim — extracted from a labor-rate sheet (often Labor Rate Hero / LRH), a shop's posted rates, an agreement letter, etc. Read the rates from those files and emit them as a top-level "referenceLaborRates" array with the SAME shape as the "laborRates" array (category / label / rate — hours is not needed, use 0). Categories normalize to the same five buckets ("body", "paint", "mechanical", "frame", "structural", "other"); label is the display name as shown on the reference; rate is $/hr as a number.
+
+**CRITICAL — when the reference sheet shows multiple columns (LOW / AVERAGE / HIGH, or 25th / 50th / 75th percentile, or similar):** always use the LOW column (or the lowest numeric value shown). Appraisers negotiate from the low end of market rates. Never pick the AVERAGE or HIGH column, even if the reference emphasizes them visually.
 
 If NO labor-rates reference is attached, return an empty referenceLaborRates array. Do NOT infer or guess correct rates from anywhere else — the reference is the only source.
 
