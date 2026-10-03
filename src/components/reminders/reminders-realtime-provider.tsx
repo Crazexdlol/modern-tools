@@ -5,6 +5,15 @@ import { createClient } from '@/lib/supabase/client';
 import type { Reminder } from '@/lib/reminders/types';
 import { ReminderToast } from './reminder-toast';
 
+function urlB64ToUint8Array(base64String: string): BufferSource {
+  const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const raw = atob(base64);
+  const out = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);
+  return out;
+}
+
 export function RemindersRealtimeProvider() {
   const [queue, setQueue] = useState<Reminder[]>([]);
   const [userId, setUserId] = useState<string | null>(null);
@@ -17,6 +26,44 @@ export function RemindersRealtimeProvider() {
       const { data } = await supabase.auth.getUser();
       if (!data.user) return;
       setUserId(data.user.id);
+
+      // Register the push service worker (idempotent — browser dedupes).
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('/sw.js').catch((err) => {
+          // non-fatal — reminders still work via in-app toast
+          console.warn('reminder sw registration failed', err);
+        });
+      }
+
+      // Subscribe to web-push if permission already granted. We only subscribe
+      // here (not request); the create-reminder sheet requests permission
+      // when the user checks the "Browser push" box.
+      if (
+        'serviceWorker' in navigator &&
+        'PushManager' in window &&
+        typeof Notification !== 'undefined' &&
+        Notification.permission === 'granted'
+      ) {
+        try {
+          const reg = await navigator.serviceWorker.ready;
+          const existing = await reg.pushManager.getSubscription();
+          const vapid = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
+          if (!existing && vapid) {
+            const sub = await reg.pushManager.subscribe({
+              userVisibleOnly: true,
+              applicationServerKey: urlB64ToUint8Array(vapid),
+            });
+            const json = sub.toJSON();
+            await fetch('/api/reminders/push-subscribe', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ endpoint: json.endpoint, keys: json.keys }),
+            });
+          }
+        } catch (err) {
+          console.warn('push subscribe failed', err);
+        }
+      }
 
       // Pull any already-fired reminders the user hasn't acted on yet.
       const { data: fired } = await supabase
