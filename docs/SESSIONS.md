@@ -18,6 +18,180 @@ Read `CLAUDE.md` first if you haven't. Then read the top entry here before touch
 
 ---
 
+## 2026-10-03 — Opposing Appraisers registry (admin CRUD + claim-side picker)
+
+**Worked on:** Built the full Opposing Appraisers feature: DB migration, admin settings page, server API routes (GET/POST/PATCH/soft-DELETE), client-side helper, and a claim-side fuzzy picker that replaces the OA Name InlineEditText in ClaimWorkspace.
+
+**Changed:**
+- `supabase/migration-opposing-appraisers.sql` — new table, trigram GIN indexes, unique partial index, RLS policies, updated_at trigger, verification queries.
+- `supabase/migration-opposing-appraisers-rollback.sql` — drops table + trigger + function + policies.
+- `src/app/api/admin/opposing-appraisers/route.ts` — GET (list, admin) + POST (create, admin).
+- `src/app/api/admin/opposing-appraisers/[id]/route.ts` — PATCH (edit, admin) + DELETE (soft-delete, admin).
+- `src/app/api/opposing-appraisers/search/route.ts` — GET fuzzy search, any authenticated user.
+- `src/lib/supabase/opposing-appraisers.ts` — `OpposingAppraiser` type, `searchOpposingAppraisers`, `fetchAllOpposingAppraisers`.
+- `src/app/admin/settings/opposing-appraisers/page.tsx` — minimal server component wrapper.
+- `src/app/admin/settings/opposing-appraisers/opposing-appraisers-client.tsx` — full CRUD table UI (add, edit inline, archive) matching fee-catalog-client pattern.
+- `src/app/admin/settings/_settings-nav.tsx` — added `Scale` icon import + new "Opposing Appraisers" nav entry between Guidelines and Cycle Times.
+- `src/components/claim/opposing-appraiser-picker.tsx` — debounced picker with dropdown, onMouseDown to avoid blur race, free-text fallback.
+- `src/components/claim/ClaimWorkspace.tsx` — import picker; replace OA Name `InlineEditText` with `OpposingAppraiserPicker` (onSelect fills both name + company).
+
+**Deploy status:** NOT deployed — migration must be run by Henry first.
+
+**In progress / broken / unknowns:**
+- Migration has NOT been run. Henry must run `supabase/migration-opposing-appraisers.sql` in the Supabase SQL Editor before the admin page or picker will show live data. All routes return empty arrays (not errors) if the table doesn't exist, so deploying before running the migration is safe.
+- Unarchive is not supported in v1 via the UI — admin sees a message to contact super-admin or run a DB query. Can add a PATCH endpoint for unarchive if needed.
+- `npx tsc --noEmit` passes clean (exit 0). Build and deploy not run per spec.
+
+**Next:** Run migration in Supabase, then deploy. Optionally: add unarchive support to the admin UI (add `PATCH /api/admin/opposing-appraisers/[id]/unarchive` or accept `archived_at: null` in the existing PATCH).
+
+---
+
+## 2026-10-02 — Cycle-time tracking ledger + Activity/Forms claim tabs + Henry floating launcher + RLS tighten + submit-without-handoff + dashboard rename
+
+**Worked on:** Daytime continuation of the overnight dashboard-tabs push. **Henry forgot to save the end-of-session log** (session URL `claude.ai/code/session_015YWQFkDqEzJTYFhjXrnNwF`, transcript not retrievable from here). This entry is a **backfill reconstructed from the working-tree diff on 2026-10-03** — Henry should correct any dates/scope that are off.
+
+**Session state as of this backfill:** everything below is **live on prod** (`modern-tools-rho.vercel.app`) — Henry deployed through the day on 10-02 and confirmed on 10-03 that everything is working and looking good. The 4 new migrations were applied by Henry in the Supabase SQL Editor. The code is still **uncommitted to git** at the time of this backfill (git drift from live), but that's a bookkeeping concern, not a functional one — nothing to re-deploy. Deploy id for the final 10-02 build was not captured in this reconstruction.
+
+**Timeline from file mtimes:**
+- `01:44–03:01` — immediate continuation of the overnight session: scaffolded `/negotiations/[id]/page.tsx` detail-page route; dropped `design-preview.html` at repo root (scratch, 53 KB — probably a design mockup, confirm before shipping)
+- `09:16–15:10` — the main daytime push, below
+
+**Round 1 — Cycle-time tracking ledger** (new `claim_stage_events` table + API hooks)
+- `supabase/migration-cycle-times.sql` + rollback *(new, pending apply)* — one row per (claim, stage, assignee) span with `entered_at` / `exited_at`. Indexed by claim_id, assigned_to (where not null), open events (where `exited_at is null`), and (stage, exited_at). Supports aggregations: per-stage avg, per-appraiser totals, per-claim duration.
+- `src/lib/supabase/stage-events.ts` *(new)* — `recordStageTransition()` + `closeOpenStageEvent()` helpers, both fail-safe (try/catch, never throw into caller).
+- Claim mutation routes wired up: `src/app/api/claims/[id]/{approve,assign,reopen,submit,advance-workflow}/route.ts` all now call the ledger helpers on stage or assignee changes.
+- `src/app/admin/settings/cycle-times/page.tsx` + `src/app/api/admin/cycle-times/route.ts` *(new)* — admin analytics page: per-stage avg, per-appraiser leaderboard, per-claim breakdown. Open events compute `(now - entered_at)` client-side so counters tick without polling.
+- Added **Cycle Times** to the admin settings nav (`src/app/admin/settings/_settings-nav.tsx`).
+
+**Round 2 — Complete Report endpoint** (new workflow transition)
+- `src/app/api/claims/[id]/complete-report/route.ts` *(new)* — companion to `advance-workflow`. Scope not fully reviewed; likely the "Complete Report" button on ClaimWorkspace that preps a claim for QC submission. **Confirm what differs from `advance-workflow`'s `action: 'advance'` path before merging** — may be redundant.
+
+**Round 3 — Activity + Forms tabs in ClaimWorkspace**
+- `src/components/claim/activity-tab.tsx` *(new, 9.4 KB)* — reads `claim_stage_events` + claim messages, merges into a chronological timeline of stage changes + message activity. First consumer of the ledger from Round 1.
+- `src/components/claim/forms-tab.tsx` *(new, 1.1 KB)* — placeholder with empty-state ("No forms configured yet"). **Intentionally stubbed — pending admin-population pass.** Don't ship this to end users without content behind it.
+- `src/components/claim/ClaimWorkspace.tsx` (modified) — mounts the two new tabs, extended tab nav. (Diff not individually reviewed in depth — spot-check before merging.)
+
+**Round 4 — Henry floating launcher** (AI assistant chat popover)
+- `src/components/henry-floating-launcher.tsx` *(new, 9.5 KB)* — circular "Ask Henry" button bottom-right on every page except `/login` and `/help`. Popover chat with 20-minute session persistence (sessionStorage), calls `POST /api/help/ask`.
+- Hooked up in `src/app/layout.tsx` (modified).
+- `src/app/api/help/ask/route.ts` (modified) — likely adjusted for the launcher's call shape; confirm before merging.
+
+**Round 5 — RLS tighten on `acv_history` SELECT** (security hardening)
+- `supabase/migration-rls-tighten-acv-select.sql` + rollback *(new, pending apply)* — non-admin appraisers now see only claims where `assigned_to = me`. **Removes the previous "creator-forever" visibility** (reassigned claims had been staying visible to the original creator and polluting their dashboard counts). Preserves creator self-assignment on INSERT.
+- Related: `src/lib/supabase/profiles.ts`, `src/lib/auth/require-admin.ts` (modified) — adjusted to reflect the tighter policy.
+
+**Round 6 — Submit-without-handoff flag** (per-user permission)
+- `supabase/migration-submit-without-handoff.sql` + rollback *(new, pending apply)* — adds `profiles.can_submit_without_handoff boolean default false`. When true, an appraiser can submit a claim to QC directly even when not the handling appraiser (bypasses the handoff step).
+- `scripts/seed-submit-without-handoff.mjs` *(new)* — one-off that flips the flag on for Henry + George. Idempotent.
+- `src/app/admin/settings/users/[id]/_tabs/permissions-tab.tsx` (modified) — adds the toggle to the per-user admin permissions UI.
+- `src/app/api/claims/[id]/submit/route.ts` (modified) — honors the flag.
+
+**Round 7 — Dashboard terminology refresh** ("Main" → "Appraiser")
+- `supabase/migration-rename-main-to-appraiser.sql` + rollback *(new, pending apply)* — **label-only** (updates `dashboard_configs` display label). The `main` code and workflow_stage value stay unchanged.
+- `src/components/dashboard-tabs.tsx` is already in place (shipped in overnight commit `14fb0a2`); the dashboard-tabs component reads display labels from the configs table, so the migration alone is enough to flip the UI.
+- Possibly adds "New Assignments" + "All" virtual tabs — flagged by the Explore agent but **I did not verify** that in the diff. Confirm by reading `src/app/page.tsx` + `src/components/dashboard-tabs.tsx` diffs before merging.
+
+**Other modified files (bulk list, not individually reviewed):**
+- `next.config.ts` — one-line change (unknown)
+- `src/components/app-header.tsx` — likely to wire up the floating launcher mount or admin nav
+- `src/components/claim/{assignment-sheet,dv-tab,estimate-review-tab,state-licensing-top-badge}.tsx`
+- `src/components/claim-message-preview.tsx`, `src/components/claims-table.tsx`
+- `src/components/ui/confirm-dialog.tsx`
+- Admin settings pages: `_shared`, `data`, `fee-catalog`, `guidelines`, `layout`, `licensed-states`, `status-phases`, `users`, `users/[id]/profile-detail-client`
+- App pages: `claims`, `help`, `login`, `marketing`, `messages`, `my-profile`, `negotiations/muted`, `page`, `profile`, `reports`, `reports/invoice`, `rules-laws`, `summary-page/{SummaryFields,page}`
+- `src/lib/acv/{dv-pdf-filler,types}.ts` — ACV type / PDF filler tweaks
+- `src/hooks/use-user-dashboards.ts` — hook touched (likely to add Appraiser rename or new virtual tabs)
+- Favicon/icon updates (`src/app/{favicon.ico,icon.png,globals.css}`)
+- `src/app/api/admin/users/[id]/route.ts` — likely adds the `can_submit_without_handoff` field to the admin PATCH surface
+
+**Dependencies added** (`package.json`):
+- `imapflow@^2.0.5`, `mailparser@^3.9.28`, `@types/mailparser@^3.4.6` — **but these are for the Sept IMAP work, not this session's work.** They're being added to `package.json` now because they were missing when that work went in.
+
+**IMPORTANT — Sept uncommitted backlog comes along for the ride.** The commit of this session's work will ALSO pull in a mountain of uncommitted-since-Sept-17/18 code: the entire negotiations backend (IMAP client/parse, draft generation, voice reply, process/sync/search-claims/download-award/threads-[id]/voice API routes, require-negotiations auth helper, matcher-v2 migrations), plus the Sept negotiations detail page. **These are live in prod already** (Henry ran the SQL by hand weeks ago and the matcher v2 code was committed), but the files themselves were never git-added. Committing them now closes the drift. **Nothing to re-deploy from the Sept files — just the git bookkeeping.**
+
+**Deploy status:** **LIVE on `modern-tools-rho.vercel.app`** — Henry deployed on 10-02 and confirmed on 10-03 that the site is working and looking good. Everything in this entry is in production. Deploy id for the final 10-02 build was not captured in this reconstruction; `vercel inspect modern-tools-rho.vercel.app --scope henry-as-projects-88caed67` will show the current one. All 4 new migrations applied in Supabase (confirmed by site working).
+
+**Migrations applied in Supabase SQL Editor (all run, confirmed via live site working):**
+1. `supabase/migration-submit-without-handoff.sql`
+2. `supabase/migration-cycle-times.sql`
+3. `supabase/migration-rls-tighten-acv-select.sql`
+4. `supabase/migration-rename-main-to-appraiser.sql`
+
+**In progress / broken / unknowns:**
+- Local git state is drifted from prod — this session's code is live but still uncommitted. Not blocking anything; future session can tidy up the git history whenever convenient.
+- Backfilled from diff, so Round labels + ordering are a best-guess reconstruction, not a true session log. Scope is right; narrative order may not match what Henry actually did.
+
+**Next:**
+- Back to work. Henry's call on what's next.
+
+---
+
+## 2026-10-01 (late/overnight into 10-02) — Workflow dashboard tabs (Main→QC→Billing→Delivery→Payment) + more negotiations polish + ghost-claim guard
+
+**Worked on:** Direct continuation of the previous entry — same evening, same keyboard. Started with more negotiations fallout (badge-stuck-at-10, open/closed duplicate matching, auto-sync UX), then pivoted into a brand-new top-level feature: a 5-tab workflow dashboard that gates each stage of a claim's lifecycle by per-user permissions. Capped the overnight with a defense-in-depth fix for a 16-row "ghost claim" pattern that had been accumulating for months. Backfilling this entry on 10-02 because Henry forgot the end-of-session log.
+
+**Round 7 — negotiations UX polish** (commits `512454b` → `9260335` → `692ec19`, deployed in sequence):
+- `src/app/negotiations/negotiations-client.tsx` — dropped the "Incoming negotiation email from henry@... Read-only" subtitle under the Inbox heading (Henry didn't want it). Re-added auto-sync on first mount only, gated by the same `didInitialMountRef` the counters-fetch already uses — filter changes and search typing still skip, so no reintroduction of the earlier mount-race.
+- `src/app/negotiations/page.tsx` — guard tweak alongside the subtitle removal.
+- `src/app/negotiations/negotiations-client.tsx` — added `visibilitychange` / `focus` listeners with a 60 s floor since last sync. Fixes the "I replied in my mail client, came back, badge still says needs_response" complaint — now a focus-back fires `runSync()` which flips the Sent-folder replies to `responded` before the counter refresh.
+- `src/app/api/negotiations/threads/route.ts` + `src/app/negotiations/negotiations-client.tsx` — ditched `count: 'planned'` (pg_class stats, which were stale after the previous session's mass bulk-reflips because autovacuum hadn't re-ANALYZEd) for `count: 'exact'`. On ~290 rows with a status index it's sub-100 ms × 5 queries parallel — "slightly slower" is worth not lying to the user. Client also now requests counters on *every* `fetchThreads` (filter clicks, search typing, mount), not just first mount.
+
+**Round 8 — open/closed duplicate tie-break** (commit `060b014`, matcher v2 → v3):
+- `src/lib/negotiations/match.ts` + `src/lib/negotiations/process.ts` — Henry has at least one claim duplicated in `acv_history` (3964743 Lord Explorer, once open + once closed). Both scored identically on MA# and claim#, failed the "decisive = score ≥ 80 AND 30 pt gap" rule, and left the thread orphan. Added `isClosed` to `ClaimCandidate`, pulled `status` into every `acv_history` SELECT the matcher runs, extended the rank sort to tie-break open-before-closed, and widened the decisive rule to also fire when `top is open && runner-up is closed && top ≥ 80`. Bumped `CURRENT_MATCHER_VERSION` 2 → 3 so the ~92 still-orphan threads from Round 5/6 get re-processed on next Sync.
+
+**Round 9 — workflow dashboard tabs** (commit `14fb0a2`, plus UI iteration in `e60ca60` + `39fde51`):
+
+The big one. Adds a 5-tab top-level dashboard on `/` where each tab represents a stage of claim processing: **Main → QC → Billing → Delivery → Payment**. Appraisers see only tabs they're granted via a new `user_dashboard_access` table; admins see all tabs (unassigned ones dimmed with a "View only" chip). Per-claim progression goes through a single new endpoint:
+- Main → QC (Submit button; assignee or admin)
+- QC → Billing (admin)
+- Billing → Delivery (admin or user with billing access)
+- Delivery → Payment (admin or user with delivery access)
+- Payment → Closed (admin or user with payment access, sets `acv_history.status='closed'`)
+- Reverse (`send_back`) is admin-only, same endpoint.
+
+The existing Rush / Umpire / Hold / DV Response chips stay as **orthogonal** filters within each tab. The old `completed` and `pending_payment` status_phase chips are archived by the migration — their semantics now live on the QC and Payment tabs. Data migration moved 26 ex-`completed` claims → `workflow_stage='qc'` and 65 ex-`pending_payment` claims → `workflow_stage='payment'`; everything else defaults to `main`.
+
+Files touched:
+- `supabase/migration-workflow-dashboards.sql` + rollback — schema (`workflow_stage` column on `acv_history`, `dashboard_configs` seed table, `user_dashboard_access` grant table with RLS), seed, and data migration. Idempotent. **Henry confirmed ran.**
+- `scripts/seed-dashboard-access.mjs` — one-off that grants admins all 5 tabs and appraisers 'main' only. Idempotent.
+- `src/hooks/use-user-dashboards.ts` *(new)* — loads `dashboard_configs` + the current user's `user_dashboard_access` rows (RLS-gated).
+- `src/components/dashboard-tabs.tsx` *(new)* — the 5-tab bar component. Iterated twice tonight (see Round 10).
+- `src/app/api/claims/[id]/advance-workflow/route.ts` *(new)* — the generic transition endpoint. Accepts `{ action: 'advance' | 'send_back', toStage? }`. Payment → Closed also sets `status='closed'`.
+- `src/app/api/admin/users/[id]/dashboards/route.ts` *(new)* — GET + PUT the grants map for a user.
+- `src/app/api/claims/[id]/submit/route.ts` — writes `workflow_stage='qc'` instead of `status_phase='completed'` (with 42703 fallback for pre-migration safety).
+- `src/app/page.tsx` — mounts `<DashboardTabs>`, filters the claims table by `activeTab`, removes the now-obsolete "Completed" filter button.
+- `src/components/claim/ClaimWorkspace.tsx` — stage-aware primary action button ("Submit for QC" → "Pass QC → Billing" → ... → "Mark Paid & Close"). Finalize dropdown reduced to Cancel-only (Complete merged into Advance).
+- `src/app/admin/settings/users/[id]/_tabs/permissions-tab.tsx` — 5 dashboard checkboxes under the existing permission toggles so Henry can grant tabs per user from the user detail page.
+- `src/lib/supabase/history.ts` + `src/lib/auth/require-admin.ts` — added `workflowStage` to `ACVHistoryEntry` + `WorkflowClaim` with 42703 fallbacks everywhere.
+
+**Round 10 — dashboard-tabs UI iteration** (commits `e60ca60` → `39fde51`):
+
+Henry's reaction to the first cut: "tabs look weird." Two quick iterations:
+- `e60ca60` — moved from thick colored-underline active state to a solid dark pill (gray-900) with white text + white count badge. Count badge is now ALWAYS rendered (even at 0) so pill widths stay even — Billing and Delivery were badge-less before and the row looked uneven. Each stage keeps its color as a small 1.5×1.5 dot in front of the label. Consistent 22 px min-width tabular-nums badges. Container `rounded-xl` + `p-1` for the segmented-control feel.
+- `39fde51` — softened further: white active pill on a light gray container instead of black-on-white. Visually more consistent with the rest of the admin UI.
+
+**Round 11 — block "ghost" acv_history rows** (commit `dac7ad5`, 01:22 AM):
+
+Historical pattern Henry noticed while poking around: scratchpad VIN lookups from the old standalone Comp Finder tool had been saving as `acv_history` rows with no `ma_number`, no `claim.insuredName`, no `claim.claimNumber`, `mode='comp-finder'`, `status='closed'`. **16 of them accumulated across the DB** (now deleted). Invisible in the dashboard (closed) and un-findable in All Claims (no identifiers to search on). Defense-in-depth:
+- `src/lib/supabase/history.ts` — `saveACVHistory()` short-circuits a save if the entry has NONE of (`ma_number`, `claim.insuredName`, `claim.claimNumber`). Complements the existing client-side auto-save guard in `ClaimWorkspace`.
+- `supabase/migration-prevent-ghost-claims.sql` + rollback — `acv_history_identifiable_check` CHECK constraint that physically rejects such rows at the DB level. Added as `NOT VALID` first then validated — fast, non-blocking on existing data. **Henry confirmed ran.**
+
+**Deploy status:** LIVE. Henry deployed each round of changes separately through the overnight (and continued iterating after this session into 10-02 current session). As of this backfill the live deploy is `dpl_2Lrx2SZWefNmTpVUwATs31k2Pd1a` on alias `modern-tools-rho.vercel.app` — but note that includes some 10-02 WIP on top of last session's work. One build back (rollback target during this session): `modern-tools-i14fy580c-henry-as-projects-88caed67.vercel.app`. Both SQL migrations (`migration-workflow-dashboards.sql` and `migration-prevent-ghost-claims.sql`) applied by Henry in Supabase SQL Editor.
+
+**In progress / broken / unknowns:**
+- Dashboard-tabs feature is new and shipping. If any stage transition misbehaves (e.g. a user with Billing grant can't advance a Billing→Delivery claim), the single endpoint to inspect is `src/app/api/claims/[id]/advance-workflow/route.ts`. The permission check lives there.
+- The ~92 orphan threads from the previous entry's Round 5 should drain on the next few Syncs now that matcher v3 ships the open-wins tie-break; monitor needs_response + unmatched counts and the `scripts/neg-perf-probe.mjs` output.
+- `IMAP_OWNER_ALIASES` env var still not set in Vercel (same note as previous entry). Doesn't affect last session's work directly.
+
+**Next:**
+- Watch dashboard-tabs behavior in real triage flow — specifically Submit, Pass QC, and Mark Paid buttons on the ClaimWorkspace, and the per-user access gating when non-admin appraisers log in.
+- If any of the 92 orphans don't resolve after a few Syncs, raise the fuzzy overlap threshold or add another identifier source (sender address + domain company mapping).
+- The deferred backlog in `project_hamsportal_deferred.md` is still unchanged.
+
+**Verification:** no `tsc --noEmit` or `npm run build` output was captured in this backfill since the work is already shipped and running — treat the production green builds as the verification. Future sessions touching workflow stages should re-run both.
+
+---
+
 ## 2026-10-01 (afternoon/evening) — Negotiations iteration: no-auto-sync, 1-row-per-claim, domain-owner, closed_claim status, bulk-select, trigger, mount race, orphan processor, fuzzy perf
 
 **Worked on:** After the morning deploy of the matcher v2 (previous entry), Henry hit the live tab and surfaced seven real issues in rapid succession. Each got diagnosed, fixed, and deployed as its own round. Also unlocked the Negotiations tab for the demo account + added Eagleview access.

@@ -73,6 +73,7 @@ import { SummaryPrintDoc } from '@/app/summary-page/SummaryPrintDoc'
 import { AppHeader } from '@/components/app-header'
 import { StateLicensingTopBadge } from '@/components/claim/state-licensing-top-badge'
 import { HandlingAppraiserLicenseSummary } from '@/components/claim/handling-appraiser-license-summary'
+import { OpposingAppraiserPicker } from '@/components/claim/opposing-appraiser-picker'
 
 async function saveToHistory(
   claim: ClaimInfo,
@@ -4649,7 +4650,7 @@ function ClaimWorkspaceInner({ claimId }: { claimId: string }) {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-w-2xl">
                 <div>
                   <label className={vLabelCls}>Opposing Appraiser Name</label>
-                  <InlineEditText
+                  <OpposingAppraiserPicker
                     value={reportsState.notesData.appraiserName}
                     placeholder="First Last"
                     onChange={(value) => {
@@ -4659,6 +4660,21 @@ function ClaimWorkspaceInner({ claimId }: { claimId: string }) {
                         ...prev,
                         notesData: { ...prev.notesData, appraiserName: value, appraiserLastName: lastName },
                         awardData: { ...prev.awardData, signatureBlock2: [value, prev.notesData.appraiserCompany].filter(Boolean).join('\n') },
+                      }))
+                    }}
+                    onSelect={(oa) => {
+                      setReportsState(prev => ({
+                        ...prev,
+                        notesData: {
+                          ...prev.notesData,
+                          appraiserName: oa.name,
+                          appraiserCompany: oa.company ?? '',
+                          appraiserLastName: oa.name.trim().split(/\s+/).pop() ?? oa.name,
+                        },
+                        awardData: {
+                          ...prev.awardData,
+                          signatureBlock2: [oa.name, oa.company ?? ''].filter(Boolean).join('\n'),
+                        },
                       }))
                     }}
                   />
