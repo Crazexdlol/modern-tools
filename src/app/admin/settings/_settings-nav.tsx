@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Users, Database, BookOpen, DollarSign, ShieldCheck, Tag, Activity, HelpCircle, Timer, Scale } from 'lucide-react'
+import { Users, Database, BookOpen, DollarSign, ShieldCheck, Tag, Activity, HelpCircle, Timer, Scale, BarChart3 } from 'lucide-react'
 import { useCurrentProfile } from '@/lib/supabase/profiles'
 
 const SECTIONS = [
@@ -13,6 +13,7 @@ const SECTIONS = [
   { href: '/admin/settings/guidelines',           label: 'Guidelines',           Icon: BookOpen,  superAdminOnly: false },
   { href: '/admin/settings/opposing-appraisers', label: 'Opposing Appraisers',  Icon: Scale,     superAdminOnly: false },
   { href: '/admin/settings/cycle-times',          label: 'Cycle Times',          Icon: Timer,     superAdminOnly: false },
+  { href: '/admin/settings/data-reports',         label: 'Data Reports',         Icon: BarChart3, superAdminOnly: false },
   { href: '/admin/settings/help',            label: 'Help Articles',    Icon: HelpCircle,   superAdminOnly: true  },
   { href: '/admin/settings/data',            label: 'Data',             Icon: Database,     superAdminOnly: false },
   { href: '/admin/settings/activity',        label: 'Activity',         Icon: Activity,     superAdminOnly: true  },
