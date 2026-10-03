@@ -27,12 +27,14 @@ export function EstimateTab({
   estimate,
   onChange,
   onDocumentSaved,
+  documents,
 }: {
   claim: ClaimInfo;
   claimId: string | null;
   estimate: ClaimEstimate | null;
   onChange: (next: ClaimEstimate) => void;
   onDocumentSaved?: (blob: Blob, name: string, source: ClaimDocument["source"]) => void;
+  documents: ClaimDocument[];
 }) {
   return (
     <EstimateReviewTab
@@ -41,6 +43,7 @@ export function EstimateTab({
       estimate={estimate}
       onChange={onChange}
       onDocumentSaved={onDocumentSaved}
+      documents={documents}
     />
   );
 }

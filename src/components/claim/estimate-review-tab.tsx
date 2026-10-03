@@ -1,8 +1,7 @@
 "use client";
 
-import { Fragment, useCallback, useEffect, useRef, useState } from "react";
-import { useDropzone } from "react-dropzone";
-import { AlertCircle, FileText, Loader2, Trash2, Upload, X } from "lucide-react";
+import { Fragment, useEffect, useRef, useState } from "react";
+import { AlertCircle, FileText, Loader2, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { cn } from "@/lib/utils";
@@ -195,18 +194,13 @@ function FlagTable({ flags }: { flags: Flag[] }) {
   );
 }
 
-// Soft cap on photo count. Guards against accidental drag-a-folder-of-500-files
-// mistakes and Anthropic request-size limits, but is otherwise generous. Raise
-// if a real workflow needs more.
-const MAX_PHOTOS = 100;
-
-// Rough ETA for the review call, in seconds. Baseline 30s per estimate + 5s per
-// photo + a bit more for subsequent estimates (they run 3-at-a-time in parallel
+// Rough ETA for the review call, in seconds. Baseline 30s for the estimate + 5s per
+// supporting doc + a bit more for subsequent estimates (they run 3-at-a-time in parallel
 // on the server, so wall time grows less than linearly).
-function estimateReviewSeconds(estimateCount: number, photoCount: number): number {
+function estimateReviewSeconds(estimateCount: number, supportingCount: number): number {
   const perEstimate = 30 + Math.ceil(estimateCount / 3 - 1) * 20;
-  const photos = photoCount * 5;
-  return Math.max(20, perEstimate + photos);
+  const supporting = supportingCount * 5;
+  return Math.max(20, perEstimate + supporting);
 }
 
 function fmtDuration(ms: number): string {
@@ -508,84 +502,193 @@ function LaborRateFindingsTable({ findings }: { findings: LaborRateFinding[] }) 
   );
 }
 
-// ── Drop zone for one-or-more files ────────────────────────────────────────
-function MultiDropZone({
+// Sources that represent generated outputs — not meaningful inputs for review.
+const EXCLUDED_SOURCES: ClaimDocument["source"][] = [
+  "acv-report",
+  "award",
+  "closing-notes",
+  "summary",
+  "dv-report",
+  "estimate-review",
+];
+
+function fmtSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / 1024 / 1024).toFixed(2)} MB`;
+}
+
+// ── Document picker — select from existing claim documents ─────────────────
+function DocumentPicker({
   label,
-  files,
-  onAdd,
-  onRemove,
-  accept,
-  hint,
-  max,
+  documents,
+  multiSelect,
+  selectedIds,
+  onChange,
 }: {
   label: string;
-  files: File[];
-  onAdd: (files: File[]) => void;
-  onRemove: (index: number) => void;
-  accept: Record<string, string[]>;
-  hint: string;
-  max?: number;
+  documents: ClaimDocument[];
+  multiSelect: boolean;
+  selectedIds: string[];
+  onChange: (ids: string[]) => void;
 }) {
-  const disabled = max !== undefined && files.length >= max;
-  const onDrop = useCallback(
-    (accepted: File[]) => {
-      if (!accepted.length) return;
-      const room = max !== undefined ? Math.max(0, max - files.length) : accepted.length;
-      onAdd(accepted.slice(0, room));
-    },
-    [files.length, max, onAdd],
-  );
-  const { getRootProps, getInputProps, isDragActive } = useDropzone({ onDrop, accept, disabled });
+  const [open, setOpen] = useState(false);
+
+  // Docs available for selection (exclude generated-report sources)
+  const pickable = documents.filter((d) => !EXCLUDED_SOURCES.includes(d.source));
+  const selected = documents.filter((d) => selectedIds.includes(d.id));
+
+  // Close on Escape
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [open]);
+
+  const toggle = (id: string) => {
+    if (multiSelect) {
+      if (selectedIds.includes(id)) {
+        onChange(selectedIds.filter((x) => x !== id));
+      } else {
+        onChange([...selectedIds, id]);
+      }
+    } else {
+      onChange(selectedIds.includes(id) ? [] : [id]);
+    }
+  };
+
+  const remove = (id: string) => {
+    onChange(selectedIds.filter((x) => x !== id));
+  };
 
   return (
     <div className="flex flex-col gap-2">
-      <div className="flex items-center justify-between">
-        <label className="text-sm font-semibold text-gray-700">{label}</label>
-        {max !== undefined && (
-          <span className="text-xs text-gray-400">
-            {files.length}/{max}
-          </span>
-        )}
-      </div>
-      <div
-        {...getRootProps()}
-        className={cn(
-          "border-2 border-dashed rounded-lg p-6 text-center transition-all",
-          disabled
-            ? "border-gray-200 bg-gray-50 cursor-not-allowed opacity-60"
-            : "cursor-pointer",
-          !disabled && isDragActive
-            ? "border-blue-500 bg-blue-50"
-            : !disabled && "border-gray-300 bg-white hover:border-gray-400",
-        )}
-      >
-        <input {...getInputProps()} />
-        <Upload className="w-6 h-6 text-gray-400 mx-auto mb-2" />
-        <p className="text-sm text-gray-500">
-          {disabled ? `Max ${max} reached` : isDragActive ? "Drop here…" : hint}
-        </p>
-      </div>
-      {files.length > 0 && (
-        <ul className="space-y-1">
-          {files.map((f, i) => (
-            <li
-              key={`${f.name}-${i}`}
-              className="flex items-center gap-2 p-2 rounded border border-gray-200 bg-gray-50 text-sm"
+      <label className="text-sm font-semibold text-gray-700">{label}</label>
+
+      {/* Selected chips */}
+      {selected.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {selected.map((doc) => (
+            <span
+              key={doc.id}
+              className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs bg-blue-50 border border-blue-200 text-blue-800"
             >
-              <FileText className="w-4 h-4 text-blue-600 shrink-0" />
-              <span className="truncate flex-1 text-gray-800">{f.name}</span>
-              <span className="text-xs text-gray-400 shrink-0">{(f.size / 1024 / 1024).toFixed(2)} MB</span>
+              <FileText className="w-3 h-3 shrink-0" />
+              <span className="truncate max-w-[180px]" title={doc.name}>{doc.name}</span>
               <button
                 type="button"
-                onClick={() => onRemove(i)}
-                className="text-gray-400 hover:text-red-500 shrink-0"
-                aria-label={`Remove ${f.name}`}
+                onClick={() => remove(doc.id)}
+                className="text-blue-400 hover:text-red-500 ml-0.5 shrink-0"
+                aria-label={`Remove ${doc.name}`}
+              >
+                <X className="w-3 h-3" />
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+
+      {/* Placeholder when nothing selected */}
+      {selected.length === 0 && (
+        <div className="border-2 border-dashed border-gray-200 rounded-lg px-4 py-3 text-center text-sm text-gray-400">
+          {multiSelect ? "No documents selected" : "No document selected"}
+        </div>
+      )}
+
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="self-start text-sm font-medium text-blue-600 hover:text-blue-800 underline underline-offset-2"
+      >
+        + Select from Documents
+      </button>
+
+      {/* Modal */}
+      {open && (
+        <div
+          className="fixed inset-0 bg-slate-950/50 flex items-center justify-center z-50 p-4 backdrop-blur-[2px]"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setOpen(false);
+          }}
+        >
+          <div
+            className="bg-white rounded-xl w-full max-w-lg flex flex-col ring-1 ring-slate-200"
+            style={{ maxHeight: "80vh", boxShadow: "var(--hp-elev-pop)" }}
+          >
+            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200">
+              <h2 className="text-[16px] font-semibold text-slate-900 tracking-tight">{label}</h2>
+              <button
+                type="button"
+                onClick={() => setOpen(false)}
+                className="text-slate-400 hover:text-slate-700"
+                aria-label="Close"
               >
                 <X className="w-4 h-4" />
               </button>
-            </li>
-          ))}
-        </ul>
+            </div>
+            <div className="overflow-y-auto flex-1 px-4 py-3">
+              {pickable.length === 0 ? (
+                <p className="text-sm text-gray-500 text-center py-6">
+                  No documents available. Upload files in the Documents tab first.
+                </p>
+              ) : (
+                <ul className="space-y-1">
+                  {pickable.map((doc) => {
+                    const isChecked = selectedIds.includes(doc.id);
+                    return (
+                      <li key={doc.id}>
+                        <label
+                          className={cn(
+                            "flex items-center gap-3 p-2.5 rounded-lg cursor-pointer transition-colors",
+                            isChecked
+                              ? "bg-blue-50 border border-blue-200"
+                              : "border border-transparent hover:bg-gray-50",
+                          )}
+                        >
+                          <input
+                            type={multiSelect ? "checkbox" : "radio"}
+                            checked={isChecked}
+                            onChange={() => toggle(doc.id)}
+                            className="shrink-0 accent-blue-600"
+                          />
+                          <FileText className="w-4 h-4 text-blue-500 shrink-0" />
+                          <div className="flex-1 min-w-0">
+                            <div className="text-sm font-medium text-gray-900 truncate" title={doc.name}>
+                              {doc.name}
+                            </div>
+                            <div className="text-xs text-gray-400 mt-0.5">
+                              <span className="inline-block px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-600 text-[10px] font-medium mr-1.5">
+                                {doc.source}
+                              </span>
+                              {fmtSize(doc.size)}
+                            </div>
+                          </div>
+                        </label>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </div>
+            <div className="px-5 py-3 border-t border-slate-200 flex justify-end gap-2">
+              {multiSelect && selectedIds.length > 0 && (
+                <span className="text-xs text-gray-500 self-center mr-auto">
+                  {selectedIds.filter((id) => pickable.some((d) => d.id === id)).length} selected
+                </span>
+              )}
+              <button
+                type="button"
+                onClick={() => setOpen(false)}
+                className="hp-btn hp-btn-secondary"
+              >
+                Done
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
@@ -598,17 +701,18 @@ export function EstimateReviewTab({
   estimate,
   onChange,
   onDocumentSaved,
+  documents,
 }: {
   claim: ClaimInfo;
   claimId: string | null;
   estimate: ClaimEstimate | null;
   onChange: (next: ClaimEstimate) => void;
   onDocumentSaved?: (blob: Blob, name: string, source: ClaimDocument["source"]) => void;
+  documents: ClaimDocument[];
 }) {
   const reviews = estimate?.reviews ?? [];
-  const [estimates, setEstimates] = useState<File[]>([]);
-  const [photos, setPhotos] = useState<File[]>([]);
-  const [invoices, setInvoices] = useState<File[]>([]);
+  const [estimateDocId, setEstimateDocId] = useState<string | null>(null);
+  const [supportingDocIds, setSupportingDocIds] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showUpload, setShowUpload] = useState(reviews.length === 0);
@@ -627,31 +731,28 @@ export function EstimateReviewTab({
     return () => window.clearInterval(id);
   }, [loading, runStartMs]);
 
-  const vehicleLabel = [claim.year || "", claim.make, claim.model].filter(Boolean).join(" ");
-
   const handleRun = async () => {
-    if (estimates.length === 0) return;
+    if (!estimateDocId) return;
     setLoading(true);
     setError(null);
     setRunStartMs(Date.now());
     setElapsedMs(0);
-    setEstimatedTotalSec(estimateReviewSeconds(estimates.length, photos.length));
+    setEstimatedTotalSec(estimateReviewSeconds(1, supportingDocIds.length));
     try {
-      const formData = new FormData();
-      for (const f of estimates) formData.append("estimates", f);
-      for (const f of photos) formData.append("photos", f);
-      for (const f of invoices) formData.append("invoices", f);
-      // Phase 4: loss state for automated sales-tax check. Extracted from the
-      // claim's owner address; if unknown, server returns a "no rule" finding.
       const claimState = extractLossState(claim.ownerAddress) ?? "";
-      if (claimState) formData.append("claimState", claimState);
-      // Claim id lets the server pull labor-rate reference photos tagged in
-      // the Documents tab (source='labor-rates'). Missing = no rate findings.
-      if (claimId) formData.append("claimId", claimId);
       const nextNumber = reviews.length + 1;
-      formData.append("nextReviewNumber", String(nextNumber));
 
-      const res = await fetch("/api/acv/review-estimate", { method: "POST", body: formData });
+      const res = await fetch("/api/acv/review-estimate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          estimateDocId,
+          supportingDocIds,
+          claimId: claimId ?? "",
+          claimState,
+          nextReviewNumber: nextNumber,
+        }),
+      });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Review failed");
 
@@ -659,9 +760,8 @@ export function EstimateReviewTab({
       const next = buildEmptyEstimate(estimate);
       next.reviews = [...newReviews, ...reviews]; // newest on top
       onChange(next);
-      setEstimates([]);
-      setPhotos([]);
-      setInvoices([]);
+      setEstimateDocId(null);
+      setSupportingDocIds([]);
       setShowUpload(false);
 
       // Auto-file successful reviews to Documents. Refs won't exist until React
@@ -716,51 +816,25 @@ export function EstimateReviewTab({
       )}
 
       {showUpload && (
-        <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-6 space-y-5 max-w-3xl">
+        <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-6 space-y-5">
           <div>
             <h3 className="text-base font-semibold text-gray-900">Estimate Review</h3>
           </div>
-          <MultiDropZone
-            label="Estimates to review"
-            files={estimates}
-            onAdd={(files) => setEstimates((prev) => [...prev, ...files])}
-            onRemove={(i) => setEstimates((prev) => prev.filter((_, idx) => idx !== i))}
-            accept={{
-              "application/pdf": [".pdf"],
-              "image/*": [".jpg", ".jpeg", ".png", ".webp", ".tiff", ".bmp"],
-            }}
-            hint="Drop PDFs or images, or click to browse (drop multiple at once)"
-          />
-          <MultiDropZone
-            label="Reference photos & documents (optional)"
-            files={photos}
-            onAdd={(files) => setPhotos((prev) => [...prev, ...files])}
-            onRemove={(i) => setPhotos((prev) => prev.filter((_, idx) => idx !== i))}
-            accept={{
-              "image/*": [".jpg", ".jpeg", ".png", ".webp"],
-              "application/pdf": [".pdf"],
-            }}
-            hint="Drop as many vehicle photos or PDFs as you need (multi-page PDFs are fine)"
-            max={MAX_PHOTOS}
-          />
-          <MultiDropZone
-            label="Parts invoices (optional)"
-            files={invoices}
-            onAdd={(files) => setInvoices((prev) => [...prev, ...files])}
-            onRemove={(i) => setInvoices((prev) => prev.filter((_, idx) => idx !== i))}
-            accept={{
-              "application/pdf": [".pdf"],
-              "image/*": [".jpg", ".jpeg", ".png", ".webp", ".tiff", ".bmp"],
-            }}
-            hint="Drop supplier invoices — line items are matched to estimate parts by part # then description"
-            max={100}
-          />
-          <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 text-xs text-gray-600 leading-relaxed">
-            <span className="font-semibold text-gray-700">Labor rate check:</span> upload the correct labor rate sheet
-            (photo or PDF) to the <span className="font-semibold">Documents</span> tab and set its Type to
-            <span className="mx-1 inline-block text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-teal-50 border border-teal-200 text-teal-800">Labor Rates</span>.
-            Every review below auto-includes those documents; rates on the estimate that differ from the reference are flagged.
-            Add or remove tagged docs any time to re-run.
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <DocumentPicker
+              label="Estimate to review"
+              documents={documents}
+              multiSelect={false}
+              selectedIds={estimateDocId ? [estimateDocId] : []}
+              onChange={(ids) => setEstimateDocId(ids[0] ?? null)}
+            />
+            <DocumentPicker
+              label="Supporting documents (photos, invoices, labor-rate sheets — auto-detected by filename)"
+              documents={documents}
+              multiSelect={true}
+              selectedIds={supportingDocIds}
+              onChange={setSupportingDocIds}
+            />
           </div>
           {error && (
             <div className="flex items-start gap-2 p-3 rounded-lg bg-red-50 border border-red-200 text-red-600 text-sm">
@@ -771,13 +845,11 @@ export function EstimateReviewTab({
           <div className="flex items-center gap-3">
             <Button
               onClick={handleRun}
-              disabled={estimates.length === 0 || loading}
+              disabled={!estimateDocId || loading}
               className="bg-blue-600 hover:bg-blue-500 text-white font-bold gap-2"
             >
               {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
-              {loading
-                ? `Reviewing ${estimates.length} estimate${estimates.length === 1 ? "" : "s"}…`
-                : "Run Review"}
+              {loading ? "Reviewing estimate…" : "Run Review"}
             </Button>
             {loading && (
               <div className="text-xs text-gray-500 tabular-nums">
@@ -796,8 +868,8 @@ export function EstimateReviewTab({
                 onClick={() => {
                   setShowUpload(false);
                   setError(null);
-                  setEstimates([]);
-                  setPhotos([]);
+                  setEstimateDocId(null);
+                  setSupportingDocIds([]);
                 }}
                 className="text-sm text-gray-500 hover:text-gray-700"
               >

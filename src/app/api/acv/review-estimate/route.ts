@@ -1,6 +1,6 @@
 // POST /api/acv/review-estimate
-// Multipart form: estimates=<file>[] (1+), photos=<file>[] (0–10),
-//                 nextReviewNumber=<number> (optional, defaults to 1).
+// JSON body: { estimateDocId: string, supportingDocIds: string[],
+//              claimId: string, claimState?: string, nextReviewNumber: number }
 // Returns: { reviews: EstimateReview[] } — one per estimate file.
 // Failed estimates come back as review entries with { error, flags: [] }.
 import { NextRequest, NextResponse } from 'next/server'
@@ -21,6 +21,7 @@ import type { EstimateReview } from '@/lib/estimate-review/types'
 import { requireAuth } from '@/lib/auth/require-admin'
 import { rateLimit } from '@/lib/rate-limit'
 import { createClient as createServerClient } from '@/lib/supabase/server'
+import { createServiceClient } from '@/lib/supabase/service'
 import { fetchStateTaxRule, type StateTaxRule } from '@/lib/supabase/state-tax-rules'
 import type { ClaimDocument } from '@/lib/supabase/documents'
 
@@ -29,9 +30,6 @@ export const maxDuration = 300 // allow long AI streams
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 const MAX_CONCURRENT = 3
-// Hard safety cap on photos per request. Prevents accidental drag-a-folder mistakes
-// and stays inside Anthropic request-size limits. Client-side soft cap matches.
-const MAX_PHOTOS = 100
 
 async function extractEstimateText(file: File): Promise<string> {
   const buffer = Buffer.from(await file.arrayBuffer())
@@ -122,6 +120,34 @@ async function reviewOne(
   }
 }
 
+// Infer MIME type from file extension for blobs downloaded from storage.
+function inferMime(name: string): string {
+  const ext = name.split('.').pop()?.toLowerCase() ?? ''
+  const map: Record<string, string> = {
+    pdf: 'application/pdf',
+    jpg: 'image/jpeg',
+    jpeg: 'image/jpeg',
+    png: 'image/png',
+    gif: 'image/gif',
+    webp: 'image/webp',
+    tiff: 'image/tiff',
+    tif: 'image/tiff',
+    bmp: 'image/bmp',
+    heic: 'image/heic',
+    heif: 'image/heif',
+  }
+  return map[ext] ?? 'application/octet-stream'
+}
+
+// Filename-based heuristics to classify supporting documents.
+function isLaborRateFilename(name: string): boolean {
+  return /\b(labor|rate|wage|chart|sheet)\b/i.test(name)
+}
+
+function isInvoiceFilename(name: string): boolean {
+  return /\binvoice\b/i.test(name) || /\bpo\b|\bpurchase[\s-]?order\b/i.test(name)
+}
+
 async function extractInvoiceTexts(files: File[]): Promise<InvoiceText[]> {
   const results = await Promise.all(
     files.map(async (f): Promise<InvoiceText | null> => {
@@ -173,104 +199,134 @@ export async function POST(request: NextRequest) {
     )
   }
   try {
-    const formData = await request.formData()
-    const estimates = formData
-      .getAll('estimates')
-      .filter((v): v is File => v instanceof File)
-    const photos = formData
-      .getAll('photos')
-      .filter((v): v is File => v instanceof File)
-      .slice(0, MAX_PHOTOS)
-    const invoices = formData
-      .getAll('invoices')
-      .filter((v): v is File => v instanceof File)
-      .slice(0, 100) // safety cap
-    // Loss state for automated tax check (Phase 4). Client sends the resolved
-    // 2-letter code from claim.ownerAddress via `claimState`; a missing/empty
-    // value degrades to a "no state rule" informational finding.
-    const claimStateRaw = formData.get('claimState')
-    const claimState = typeof claimStateRaw === 'string' ? claimStateRaw.trim().toUpperCase() : ''
-    const nextNumberRaw = formData.get('nextReviewNumber')
-    const nextNumber = typeof nextNumberRaw === 'string' ? Number(nextNumberRaw) : 1
+    // Accept JSON body with document IDs referencing the claim's Documents tab.
+    const body = await request.json() as {
+      estimateDocId?: string
+      supportingDocIds?: string[]
+      claimId?: string
+      claimState?: string
+      nextReviewNumber?: number
+    }
 
-    // Claim id lets us pull the claim's labor-rate reference photos from the
-    // Documents tab (source === 'labor-rates') and feed them to Claude so it
-    // extracts the correct labor rates itself instead of the appraiser typing
-    // them into a form. If claimId is missing or no such docs exist, the
-    // review still runs — it just won't produce labor-rate findings.
-    const claimIdRaw = formData.get('claimId')
-    const claimId = typeof claimIdRaw === 'string' ? claimIdRaw.trim() : ''
+    const estimateDocId = typeof body.estimateDocId === 'string' ? body.estimateDocId.trim() : ''
+    const supportingDocIds: string[] = Array.isArray(body.supportingDocIds) ? body.supportingDocIds : []
+    const claimId = typeof body.claimId === 'string' ? body.claimId.trim() : ''
+    const claimState = typeof body.claimState === 'string' ? body.claimState.trim().toUpperCase() : ''
+    const nextNumber = typeof body.nextReviewNumber === 'number' ? body.nextReviewNumber : 1
 
-    if (estimates.length === 0) {
+    if (!estimateDocId) {
       return NextResponse.json(
-        { error: 'At least one estimate file is required' },
+        { error: 'An estimate document must be selected' },
+        { status: 400 },
+      )
+    }
+    if (!claimId) {
+      return NextResponse.json(
+        { error: 'claimId is required' },
         { status: 400 },
       )
     }
 
-    // Per-file size cap: 25 MB. Anything above that is almost certainly
-    // wrong (bulk export, malformed PDF, adversarial payload) and would
-    // stall OCR / burn Anthropic tokens.
+    // Download all needed docs from the claim-documents storage bucket.
+    // Use the service client so storage downloads are not subject to user-level RLS.
+    const supabaseService = createServiceClient()
+    const supabaseServer = await createServerClient()
+
+    // Load the claim's document manifest from acv_history.
+    const { data: row, error: rowErr } = await supabaseService
+      .from('acv_history')
+      .select('documents')
+      .eq('id', claimId)
+      .maybeSingle()
+    if (rowErr) {
+      console.error('review-estimate: failed to load claim documents', rowErr)
+      return NextResponse.json({ error: 'Failed to load claim documents' }, { status: 500 })
+    }
+    const allDocs = (row?.documents ?? []) as ClaimDocument[]
+
+    // Helper: download one ClaimDocument as a File object.
+    async function downloadDoc(doc: ClaimDocument): Promise<File | null> {
+      const { data: blob, error: dlErr } = await supabaseService.storage
+        .from('claim-documents')
+        .download(doc.path)
+      if (dlErr || !blob) {
+        console.error('review-estimate: failed to download', doc.path, dlErr)
+        return null
+      }
+      const mime = inferMime(doc.name)
+      return new File([await blob.arrayBuffer()], doc.name, { type: mime })
+    }
+
+    // Resolve the estimate document.
+    const estimateDocMeta = allDocs.find(d => d.id === estimateDocId)
+    if (!estimateDocMeta) {
+      return NextResponse.json({ error: 'Estimate document not found on this claim' }, { status: 400 })
+    }
+    const estimateFile = await downloadDoc(estimateDocMeta)
+    if (!estimateFile) {
+      return NextResponse.json({ error: `Failed to download estimate: ${estimateDocMeta.name}` }, { status: 500 })
+    }
+
+    // Per-file size cap: 25 MB.
     const MAX_FILE_BYTES = 25 * 1024 * 1024
-    for (const f of [...estimates, ...photos, ...invoices]) {
-      if (f.size > MAX_FILE_BYTES) {
-        return NextResponse.json(
-          { error: `File ${f.name} exceeds 25 MB limit` },
-          { status: 413 },
-        )
+    if (estimateFile.size > MAX_FILE_BYTES) {
+      return NextResponse.json(
+        { error: `File ${estimateFile.name} exceeds 25 MB limit` },
+        { status: 413 },
+      )
+    }
+
+    // Resolve and download supporting documents, then classify by filename.
+    const photoFiles: File[] = []
+    const invoiceFiles: File[] = []
+    const laborRateFiles: File[] = []
+
+    const supportingDocsMeta = allDocs.filter(d => supportingDocIds.includes(d.id))
+    for (const doc of supportingDocsMeta) {
+      const file = await downloadDoc(doc)
+      if (!file) continue
+      if (file.size > MAX_FILE_BYTES) {
+        console.warn(`review-estimate: skipping ${doc.name} — exceeds 25 MB`)
+        continue
+      }
+      if (isLaborRateFilename(doc.name)) {
+        laborRateFiles.push(file)
+      } else if (isInvoiceFilename(doc.name)) {
+        invoiceFiles.push(file)
+      } else {
+        photoFiles.push(file)
       }
     }
 
-    const encodedAttachments = await Promise.all(photos.map(encodeAttachment))
-    const invoiceTexts = await extractInvoiceTexts(invoices)
+    // Build encoded attachments, invoice texts, labor rate refs.
+    const encodedAttachments = await Promise.all(photoFiles.map(encodeAttachment))
+    const invoiceTexts = await extractInvoiceTexts(invoiceFiles)
 
-    // Fetch state tax rule for the loss state + labor-rate reference photos
-    // for the claim. Both wrapped so any failure degrades gracefully.
-    let stateRule: StateTaxRule | null = null
-    let laborRateRefs: LaborRateReference[] = []
-    try {
-      const supabase = await createServerClient()
-      if (claimState) {
-        stateRule = await fetchStateTaxRule(claimState, supabase)
+    // Build labor rate refs from the classified labor-rate files.
+    const laborRateRefs: LaborRateReference[] = []
+    for (const f of laborRateFiles) {
+      const buf = Buffer.from(await f.arrayBuffer())
+      const mime = (f.type || '').toLowerCase()
+      const isPdf = mime === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf')
+      const isImg = mime.startsWith('image/') || /\.(png|jpe?g|gif|webp|heic|heif|tiff?)$/i.test(f.name)
+      if (isPdf) {
+        laborRateRefs.push({ kind: 'pdf', data: buf.toString('base64'), fileName: f.name })
+      } else if (isImg) {
+        laborRateRefs.push({ kind: 'image', media_type: normalizePhotoMediaType(mime), data: buf.toString('base64'), fileName: f.name })
       }
-      if (claimId) {
-        const { data: row } = await supabase
-          .from('acv_history')
-          .select('documents')
-          .eq('id', claimId)
-          .maybeSingle()
-        const docs = (row?.documents ?? []) as ClaimDocument[]
-        const laborRateDocs = docs.filter(d => d && d.source === 'labor-rates')
-        for (const doc of laborRateDocs) {
-          const { data: file, error: dlErr } = await supabase.storage
-            .from('claim-documents')
-            .download(doc.path)
-          if (dlErr || !file) continue
-          const buf = Buffer.from(await file.arrayBuffer())
-          const mime = (file.type || '').toLowerCase()
-          const isPdf = mime === 'application/pdf' || doc.name.toLowerCase().endsWith('.pdf')
-          const isImage = mime.startsWith('image/') || /\.(png|jpe?g|gif|webp|heic|heif|tiff?)$/i.test(doc.name)
-          if (isPdf) {
-            laborRateRefs.push({
-              kind: 'pdf',
-              data: buf.toString('base64'),
-              fileName: doc.name,
-            })
-          } else if (isImage) {
-            laborRateRefs.push({
-              kind: 'image',
-              media_type: normalizePhotoMediaType(mime),
-              data: buf.toString('base64'),
-              fileName: doc.name,
-            })
-          }
-        }
+    }
+
+    // Fetch state tax rule; degrade gracefully on failure.
+    let stateRule: StateTaxRule | null = null
+    try {
+      if (claimState) {
+        stateRule = await fetchStateTaxRule(claimState, supabaseServer)
       }
     } catch (err) {
-      console.error('Failed to load state tax rule / labor rate refs (continuing):', err)
+      console.error('Failed to load state tax rule (continuing):', err)
     }
 
-    const reviews = await processInBatches(estimates, MAX_CONCURRENT, (file, i) =>
+    const reviews = await processInBatches([estimateFile], MAX_CONCURRENT, (file, i) =>
       reviewOne(file, encodedAttachments, nextNumber + i, invoiceTexts, laborRateRefs, stateRule, claimState),
     )
 
