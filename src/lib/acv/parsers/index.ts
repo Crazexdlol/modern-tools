@@ -1,6 +1,7 @@
 import { detectFormat } from './detect'
 import { parseModernAppraisers } from './modern-appraisers'
 import { parseEagleView } from './eagle-view'
+import { parseCcc } from './ccc'
 import type { ParsedClaim } from './types'
 
 // Entry point every caller uses. Detects the source format and dispatches
@@ -8,6 +9,8 @@ import type { ParsedClaim } from './types'
 export function parseClaim(text: string): ParsedClaim {
   const format = detectFormat(text)
   switch (format) {
+    case 'ccc':
+      return parseCcc(text)
     case 'eagle-view':
       return parseEagleView(text)
     case 'modern-appraisers':

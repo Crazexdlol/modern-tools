@@ -3,7 +3,7 @@
 // block, a raw `notes` string, and a `format` discriminator so downstream
 // callers can branch (e.g. only Eagle View triggers the auto-message flow).
 
-export type ClaimFormat = 'modern-appraisers' | 'eagle-view'
+export type ClaimFormat = 'modern-appraisers' | 'eagle-view' | 'ccc'
 
 export interface ParsedClaim {
   format: ClaimFormat
@@ -25,6 +25,10 @@ export interface ParsedClaim {
   adjuster: string
   adjusterPhone: string
   adjusterEmail: string
+  // Policy deductible in dollars. Optional — parsers set it only when the
+  // source document carries the value. undefined means "not parsed" (the UI
+  // keeps whatever the claim already has).
+  deductible?: number
   vin: string
   year: number
   make: string

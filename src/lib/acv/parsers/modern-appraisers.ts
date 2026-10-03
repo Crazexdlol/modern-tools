@@ -146,6 +146,30 @@ export function parseModernAppraisers(text: string): ParsedClaim {
   const na = (val: string) => val || 'N/A'
   const resolvedInsuredName = insuredName || `${firstName} ${lastName}`.trim()
 
+  // Deductible — best-effort extraction. The MA sheet labels this inconsistently
+  // across clients; try the common variants and fall through to undefined so
+  // the UI shows blank rather than a wrong value.
+  const deductibleRaw =
+    grab(text, 'Deductible') ||
+    grab(text, 'Policy Deductible') ||
+    grab(text, 'Deductible Amount')
+  const deductibleNum = deductibleRaw
+    ? Number(deductibleRaw.replace(/[^0-9.]/g, ''))
+    : NaN
+  const deductible = Number.isFinite(deductibleNum) && deductibleNum >= 0 ? deductibleNum : undefined
+
+  // Adjuster email — may be present inline near the adjuster block.
+  const adjusterEmailExtracted =
+    grab(text, 'Adjuster Email') ||
+    grab(text, 'Email') // last-resort; may match wrong field — only use if nothing better
+      .trim()
+  // Guard against the generic 'Email' grab returning the client/owner email
+  // we already captured. If it equals ownerEmail (or empty), fall back to N/A.
+  const adjusterEmailFinal =
+    adjusterEmailExtracted && adjusterEmailExtracted !== ownerEmail
+      ? adjusterEmailExtracted
+      : ''
+
   // When clientType is 'Insured', the insured IS the claimant (first-party
   // claim) — mirror the insured fields into the claimant fields so the UI
   // reflects that without manual re-entry. For 'Claimant' (third-party),
@@ -172,7 +196,8 @@ export function parseModernAppraisers(text: string): ParsedClaim {
     insuranceCompany: na(insuranceCompany),
     adjuster: na(adjuster),
     adjusterPhone: na(adjusterPhone),
-    adjusterEmail: 'N/A',
+    adjusterEmail: na(adjusterEmailFinal),
+    deductible,
     vin: na(vin),
     year,
     make: na(make),

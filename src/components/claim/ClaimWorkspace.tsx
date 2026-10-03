@@ -534,6 +534,7 @@ function ClaimInfoForm({
         adjuster: data.adjuster || claim.adjuster,
         adjusterPhone: data.adjusterPhone || claim.adjusterPhone,
         adjusterEmail: data.adjusterEmail || claim.adjusterEmail,
+        deductible: data.deductible !== undefined ? data.deductible : claim.deductible,
         vin: data.vin || claim.vin,
         year: data.year || claim.year,
         make: data.make || claim.make,
