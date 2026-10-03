@@ -2,15 +2,16 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Users, Database, BookOpen, DollarSign, ShieldCheck, Tag, Activity, HelpCircle, Timer, Scale, BarChart3 } from 'lucide-react'
+import { Users, Database, BookOpen, DollarSign, ShieldCheck, Tag, Activity, HelpCircle, Timer, Scale, BarChart3, Percent } from 'lucide-react'
 import { useCurrentProfile } from '@/lib/supabase/profiles'
 
 const SECTIONS = [
   { href: '/admin/settings/users',           label: 'Users',            Icon: Users,        superAdminOnly: false },
   { href: '/admin/settings/fee-catalog',     label: 'Fee Catalog',      Icon: DollarSign,   superAdminOnly: false },
   { href: '/admin/settings/status-phases',   label: 'Status Phases',    Icon: Tag,          superAdminOnly: false },
-  { href: '/admin/settings/licensed-states', label: 'Licensed States',  Icon: ShieldCheck,  superAdminOnly: false },
-  { href: '/admin/settings/guidelines',           label: 'Guidelines',           Icon: BookOpen,  superAdminOnly: false },
+  { href: '/admin/settings/licensed-states',  label: 'Licensed States',  Icon: ShieldCheck, superAdminOnly: false },
+  { href: '/admin/settings/state-tax-rules',  label: 'State Tax Rules',  Icon: Percent,     superAdminOnly: false },
+  { href: '/admin/settings/guidelines',       label: 'Guidelines',       Icon: BookOpen,    superAdminOnly: false },
   { href: '/admin/settings/opposing-appraisers', label: 'Opposing Appraisers',  Icon: Scale,     superAdminOnly: false },
   { href: '/admin/settings/cycle-times',          label: 'Cycle Times',          Icon: Timer,     superAdminOnly: false },
   { href: '/admin/settings/data-reports',         label: 'Data Reports',         Icon: BarChart3, superAdminOnly: false },

@@ -70,6 +70,7 @@ export interface EstimateReview {
   guidelineTitles?: string[]                 // display list of the guideline docs used at review time
   taxFindings?: TaxFinding[]                 // state sales tax check (Phase 4)
   taxBreakdown?: TaxComponentBreakdown[]     // per-component amount + tax extracted from the estimate
+  estimateTaxRate?: number | null            // effective overall tax rate (%) derived from the breakdown
   vinFindings?: VinFinding[]                 // VIN cross-check across estimate + supporting doc texts
   documentId?: string       // set after auto-filing to Documents tab
   error?: string            // set if this file's review failed (empty flags[])
@@ -189,7 +190,8 @@ export interface GuidelineFinding {
 // Every review auto-runs this: fetch the state's rule from state_tax_rules,
 // extract per-component tax breakdown from the estimate, flag any tax
 // charged on components the rule doesn't allow.
-export type TaxIssueType = 'taxed_should_not_be' | 'undertaxed_should_be' | 'no_state_rule'
+// rate_mismatch: the IA charged a rate different from the state's base rate.
+export type TaxIssueType = 'taxed_should_not_be' | 'undertaxed_should_be' | 'no_state_rule' | 'rate_mismatch'
 
 export interface TaxComponentBreakdown {
   category: string     // "parts", "body_labor", "refinish_labor", "materials", "sublet", etc.
@@ -211,6 +213,11 @@ export interface TaxFinding {
   dollarImpact: number   // -(estimateTax − expectedTax), negative = dispute reduction
   severity: FlagSeverity
   reason: string
+  // rate_mismatch only — populated when the IA's derived rate differs from
+  // the known state base rate by >= 0.1 percentage points.
+  billedRate?: number    // effective % rate Claude extracted from the estimate
+  ruleRate?: number      // base state rate from state_tax_rules.rate
+  deltaRate?: number     // billedRate − ruleRate (positive = IA over)
 }
 
 // Human-facing label lookup for a category badge.

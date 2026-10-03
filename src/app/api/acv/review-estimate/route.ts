@@ -184,6 +184,34 @@ async function reviewOne(
       claimState,
     })
 
+    // Rate-mismatch check: if the state rule has a known base rate AND we
+    // derived an effective rate from the estimate's tax breakdown, flag any
+    // discrepancy >= 0.1 percentage points. This is informational (local taxes
+    // may push the rate above the state base), so it's always severity 'low'.
+    if (stateRule?.rate != null && review.estimateTaxRate != null) {
+      const diff = review.estimateTaxRate - stateRule.rate
+      if (Math.abs(diff) >= 0.1) {
+        review.taxFindings = review.taxFindings ?? []
+        review.taxFindings.unshift({
+          type: 'rate_mismatch',
+          state: claimState,
+          rule: stateRule.rule,
+          ruleLabel: '',
+          component: '',
+          taxableUnderRule: false,
+          estimateAmount: 0,
+          estimateTax: 0,
+          expectedTax: 0,
+          dollarImpact: 0,
+          severity: 'low',
+          billedRate: review.estimateTaxRate,
+          ruleRate: stateRule.rate,
+          deltaRate: diff,
+          reason: `Estimate used an effective tax rate of ${review.estimateTaxRate.toFixed(3)}% but ${claimState}'s state base rate is ${stateRule.rate.toFixed(3)}%. Local taxes may add on top; verify the applicable combined rate.`,
+        })
+      }
+    }
+
     // Item 3a: cascade corrected labor rates into flag line calculations.
     if ((review.rateFindings?.length ?? 0) > 0) {
       review.flags = cascadeCorrectedRates(review.flags, review.rateFindings!)

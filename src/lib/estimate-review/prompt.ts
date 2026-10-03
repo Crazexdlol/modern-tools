@@ -770,6 +770,23 @@ export function buildReview(input: {
     taxFindings = []
   }
 
+  // Derive an effective overall tax rate (%) from the breakdown.
+  // Use all taxed components; fall back to null if nothing is taxed.
+  let estimateTaxRate: number | null = null
+  {
+    let totalBase = 0
+    let totalTax = 0
+    for (const row of taxBreakdown) {
+      if (row.taxAmount > 0 && row.amount > 0) {
+        totalBase += row.amount
+        totalTax += row.taxAmount
+      }
+    }
+    if (totalBase > 0) {
+      estimateTaxRate = (totalTax / totalBase) * 100
+    }
+  }
+
   return {
     id: crypto.randomUUID(),
     reviewNumber: input.reviewNumber,
@@ -788,5 +805,6 @@ export function buildReview(input: {
     laborRateReferenceFileNames: laborRateReferenceFileNames.length > 0 ? laborRateReferenceFileNames : undefined,
     taxFindings,
     taxBreakdown,
+    estimateTaxRate,
   }
 }

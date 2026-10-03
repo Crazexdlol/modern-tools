@@ -18,6 +18,7 @@ export const TAX_RULE_LABELS: Record<TaxRule, string> = {
 export interface StateTaxRule {
   state: string
   rule: TaxRule
+  rate: number | null
   notes: string | null
   updatedAt: string
 }
@@ -25,12 +26,13 @@ export interface StateTaxRule {
 interface Row {
   state: string
   rule: TaxRule
+  rate?: number | null
   notes: string | null
   updated_at: string
 }
 
 function rowToRule(r: Row): StateTaxRule {
-  return { state: r.state, rule: r.rule, notes: r.notes, updatedAt: r.updated_at }
+  return { state: r.state, rule: r.rule, rate: r.rate ?? null, notes: r.notes, updatedAt: r.updated_at }
 }
 
 function isMissingTable(err: unknown): boolean {
@@ -82,6 +84,28 @@ export async function upsertStateTaxRule(
     .from('state_tax_rules')
     .upsert({ state: state.toUpperCase(), rule, notes, updated_at: new Date().toISOString() }, { onConflict: 'state' })
   if (error) { console.error('upsertStateTaxRule failed:', error); return false }
+  return true
+}
+
+export async function upsertStateTaxRuleWithRate(
+  state: string,
+  rule: TaxRule,
+  rate: number | null,
+  notes: string | null,
+  client?: SupabaseClient,
+): Promise<boolean> {
+  const supabase = client ?? createBrowserClient()
+  const payload: Record<string, unknown> = {
+    state: state.toUpperCase(),
+    rule,
+    notes,
+    updated_at: new Date().toISOString(),
+  }
+  if (rate !== null) payload.rate = rate
+  const { error } = await supabase
+    .from('state_tax_rules')
+    .upsert(payload, { onConflict: 'state' })
+  if (error) { console.error('upsertStateTaxRuleWithRate failed:', error); return false }
   return true
 }
 
