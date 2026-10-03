@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { ActivityHeartbeat } from "@/components/activity-heartbeat";
+import { HenryFloatingLauncher } from "@/components/henry-floating-launcher";
+import { RemindersRealtimeProvider } from "@/components/reminders/reminders-realtime-provider";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -30,6 +32,8 @@ export default function RootLayout({
       >
         <ActivityHeartbeat />
         {children}
+        <HenryFloatingLauncher />
+        <RemindersRealtimeProvider />
       </body>
     </html>
   );
