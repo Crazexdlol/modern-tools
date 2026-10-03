@@ -161,6 +161,9 @@ export function parseEagleView(text: string): ParsedClaim {
   const clientType: 'Insured' | 'Claimant' =
     partyRaw.toLowerCase().includes('claimant') ? 'Claimant' : 'Insured'
   const dateOfLoss = parseDate(grabInline(text, 'Date of Loss', ADMIN_LABELS.filter(l => l !== 'Date of Loss')))
+  const deductibleRaw = grabInline(text, 'Deductible', ADMIN_LABELS.filter(l => l !== 'Deductible'))
+  const deductibleNum = deductibleRaw ? Number(deductibleRaw.replace(/[^0-9.]/g, '')) : NaN
+  const deductible = Number.isFinite(deductibleNum) && deductibleNum > 0 ? deductibleNum : undefined
 
   // Vehicle
   const year = parseInt(grabInline(text, 'Vehicle Year', VEHICLE_LABELS.filter(l => l !== 'Vehicle Year')), 10) || 0
@@ -205,6 +208,7 @@ export function parseEagleView(text: string): ParsedClaim {
     adjuster: '',
     adjusterPhone: '',
     adjusterEmail: '',
+    deductible,
     vin,
     year,
     make,

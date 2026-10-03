@@ -175,6 +175,7 @@ export function ClaimsTable({
   // for every selected claim.
   const [bulkSendBackAssignee, setBulkSendBackAssignee] = useState<string>('')
   const [actionsMenuOpen, setActionsMenuOpen] = useState(false)
+  const [sendMessageSubmenuOpen, setSendMessageSubmenuOpen] = useState(false)
   const [statusRequestConfirmOpen, setStatusRequestConfirmOpen] = useState(false)
 
   // Column sort — Henry wants click-to-sort on Days Open (default), MA #,
@@ -702,7 +703,7 @@ export function ClaimsTable({
             )}
             <div className="relative">
               <Button
-                onClick={() => setActionsMenuOpen(o => !o)}
+                onClick={() => { setActionsMenuOpen(o => !o); setSendMessageSubmenuOpen(false) }}
                 disabled={bulkBusy}
                 className="bg-indigo-600 hover:bg-indigo-500 text-white text-sm"
               >
@@ -714,16 +715,32 @@ export function ClaimsTable({
                     type="button"
                     aria-label="Close actions menu"
                     className="fixed inset-0 z-10 cursor-default"
-                    onClick={() => setActionsMenuOpen(false)}
+                    onClick={() => { setActionsMenuOpen(false); setSendMessageSubmenuOpen(false) }}
                   />
-                  <div className="absolute right-0 top-full mt-1 w-56 rounded-md border border-gray-200 bg-white shadow-lg z-20">
+                  <div className="absolute right-0 top-full mt-1 w-56 rounded-md border border-gray-200 bg-white shadow-lg z-20 py-1">
+                    {/* Send Message — expandable category. Future message
+                        templates (not just "Request status") land under here. */}
                     <button
                       type="button"
-                      onClick={() => { setActionsMenuOpen(false); setStatusRequestConfirmOpen(true) }}
-                      className="block w-full text-left px-3 py-2 text-sm text-gray-900 hover:bg-gray-100 rounded-md"
+                      onClick={() => setSendMessageSubmenuOpen(o => !o)}
+                      className="flex w-full items-center justify-between px-3 py-2 text-sm text-gray-900 hover:bg-gray-100"
                     >
-                      Request status
+                      <span>Send Message</span>
+                      <span className="text-gray-400 text-xs">{sendMessageSubmenuOpen ? '▾' : '▸'}</span>
                     </button>
+                    {sendMessageSubmenuOpen && (
+                      <div className="border-t border-gray-100 bg-gray-50/60">
+                        <button
+                          type="button"
+                          onClick={() => { setActionsMenuOpen(false); setSendMessageSubmenuOpen(false); setStatusRequestConfirmOpen(true) }}
+                          className="block w-full text-left pl-6 pr-3 py-2 text-sm text-gray-900 hover:bg-gray-100"
+                        >
+                          Request status
+                        </button>
+                      </div>
+                    )}
+                    {/* Additional top-level action categories can be added
+                        here as siblings of "Send Message". */}
                   </div>
                 </>
               )}
