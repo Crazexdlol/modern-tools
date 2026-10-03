@@ -51,6 +51,8 @@ import { LossSearchTab, type LossListing } from '@/components/claim/loss-search-
 import { ClientPicker } from '@/components/claim/client-picker'
 import { EstimateTab } from '@/components/claim/estimate-tab'
 import { DocumentsTab } from '@/components/claim/documents-tab'
+import { FormsTab } from '@/components/claim/forms-tab'
+import { ActivityTab } from '@/components/claim/activity-tab'
 import { MessagesTab } from '@/components/claim/messages-tab'
 import { GuidelinesTab } from '@/components/claim/guidelines-tab'
 import { ReportsHubTab } from '@/components/claim/reports-hub-tab'
@@ -341,8 +343,13 @@ const CLAIM_TYPE_LABELS: Record<ClaimType, string> = {
   estimate: 'Est Dispute',
   storage:  'Storage',
   other:    'Other',
+  desk:     'Desk',
+  lou:      'LOU',
+  full:     'FULL',
+  salvage:  'Salvage',
 }
-const CLAIM_TYPE_ORDER: ClaimType[] = ['acv', 'dv', 'estimate', 'storage', 'other']
+const CLAIM_TYPE_PRIMARY: ClaimType[] = ['acv', 'dv', 'estimate', 'storage']
+const CLAIM_TYPE_EXTRA:   ClaimType[] = ['desk', 'lou', 'full', 'salvage']
 
 function ClaimTypeChips({
   selected,
@@ -358,22 +365,20 @@ function ClaimTypeChips({
       onChange([...selected, t])
     }
   }
+  const chipCls = (active: boolean) => cn(
+    'px-4 py-2 rounded-full text-sm font-semibold border transition-colors',
+    active
+      ? 'bg-blue-600 text-white border-blue-600 hover:bg-blue-500'
+      : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50',
+  )
+  // All 8 claim types rendered in a shared 4-column grid so both rows stay
+  // tight and width-aligned. No expand/collapse — everything is visible.
   return (
-    <div className="flex flex-wrap items-center gap-2">
-      {CLAIM_TYPE_ORDER.map(t => {
+    <div className="grid grid-cols-[repeat(4,max-content)] gap-2 justify-center">
+      {[...CLAIM_TYPE_PRIMARY, ...CLAIM_TYPE_EXTRA].map(t => {
         const active = selected.includes(t)
         return (
-          <button
-            key={t}
-            type="button"
-            onClick={() => toggle(t)}
-            className={cn(
-              'px-4 py-2 rounded-full text-sm font-semibold border transition-colors',
-              active
-                ? 'bg-blue-600 text-white border-blue-600 hover:bg-blue-500'
-                : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50',
-            )}
-          >
+          <button key={t} type="button" onClick={() => toggle(t)} className={chipCls(active)}>
             {CLAIM_TYPE_LABELS[t]}
           </button>
         )
@@ -395,6 +400,10 @@ function ClaimInfoForm({
   isAdmin,
   onParsedNotes,
   allProfiles,
+  opposingAppraiserSection,
+  valuationsSection,
+  editMode,
+  onEditModeChange,
 }: {
   claim: ClaimInfo
   onChange: (updated: ClaimInfo) => void
@@ -409,13 +418,21 @@ function ClaimInfoForm({
   isAdmin: boolean
   onParsedNotes?: (notes: string) => void
   allProfiles: Profile[]
+  // Rendered inside the 2-column grid at Row 4. The parent owns the state
+  // for both (reportsState lives on ClaimWorkspace) — these slots just drop
+  // the JSX into the right grid cell.
+  opposingAppraiserSection?: React.ReactNode
+  valuationsSection?: React.ReactNode
+  // Edit-lock state is owned by the parent (so the Edit toggle button can
+  // live in the Card header next to the "Claim Information" title). isNew
+  // claims are always unlocked.
+  editMode: boolean
+  // Setter so the "Edit" button inside the first SectionCard's navy bar
+  // can flip into edit mode without round-tripping through the parent.
+  onEditModeChange?: (next: boolean) => void
 }) {
-  // Edit mode: on for brand-new claims (nothing to protect yet), off by
-  // default for existing claims. The Edit button flips it. If the user
-  // doesn't have permission (`canEdit` false) the Edit button is hidden
-  // and the form stays locked — Handling Appraiser stays editable regardless
-  // since it feeds Award / Closing Notes downstream.
-  const [editMode, setEditMode] = useState<boolean>(isNew)
+  // Edit lock state is owned by the parent now (Edit button lives in the
+  // Card header). Existing claims lock by default; new claims always unlock.
   const locked = !editMode && !isNew
   const [pdfUploading, setPdfUploading] = useState(false)
   const [pdfError, setPdfError] = useState<string | null>(null)
@@ -538,12 +555,158 @@ function ClaimInfoForm({
     }
   }
 
+  // Compact inputs — py-1.5 and rounded-md keep the field just tall enough
+  // for the text without the big-bubble look the earlier py-2.5 produced.
   const inputCls =
-    'w-full bg-white border border-gray-200 rounded-lg px-3 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent'
-  const labelCls = 'block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5'
+    'w-full bg-white border border-gray-200 rounded-md px-2.5 py-1.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent'
+  const labelCls = 'block text-[12px] font-medium text-slate-500 tracking-tight mb-1'
+  // "Claim Information" sits at the Card title (text-lg). Everything inside
+  // (Owner / Vehicle / Claimant / Owner Insurance / etc.) uses this smaller
+  // sub-header so there's a clear visual hierarchy.
+  const sectionHeaderCls = 'text-[15px] font-bold text-black tracking-tight mb-2'
+
+  const textareaCls =
+    'w-full bg-white border border-gray-200 rounded-md px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-y min-h-[120px] leading-relaxed'
+
+  // Edit lock applies to every section EXCEPT Handling Appraiser (always
+  // editable so late reassignments still flow into Award/Notes signature
+  // blocks). We wrap each locked block in its own small fieldset so the
+  // non-locked Handling Appraiser can share a grid row with a locked
+  // sibling (fieldset[disabled] cascades to every descendant input).
+  // No opacity on the fieldset — would dim section headers inside and
+  // make them look lighter than Handling Appraiser (which is outside).
+  // The browser's native disabled-input styling is sufficient lock cue.
+  const lockedCn = 'm-0 p-0 border-0'
+
+  // Compact label/value pair for the read-only view. Replaces label+input
+  // with a tight one-liner so the whole claim fits on screen without
+  // scrolling. Clicking Edit swaps back to the full input form.
+  const ReadField = ({ label, value }: { label: string; value: React.ReactNode }) => (
+    <div className="flex items-baseline gap-2 py-1 min-w-0">
+      <span className="text-[11.5px] font-medium text-slate-500 shrink-0 min-w-[88px]">{label}</span>
+      <span className="text-[13.5px] text-slate-900 truncate flex-1">
+        {value !== null && value !== undefined && value !== '' ? value : <span className="text-slate-400">—</span>}
+      </span>
+    </div>
+  )
+
+  // READ MODE — dense single-screen view of everything on the claim. Only
+  // renders inputs where live interactions remain useful (Handling Appraiser
+  // dropdown stays interactive so admins can reassign without clicking Edit).
+  if (locked) {
+    const dolFormatted = claim.dateOfLoss
+      ? new Date(claim.dateOfLoss + 'T00:00').toLocaleDateString()
+      : ''
+    const claimTypesStr = (claim.claimTypes ?? [])
+      .map(t => CLAIM_TYPE_LABELS[t])
+      .filter(Boolean)
+      .join(', ')
+    const vehicleStr = [claim.year || '', claim.make, claim.model, claim.trim].filter(Boolean).join(' ')
+    const deductibleStr = claim.deductible ? `$${claim.deductible.toLocaleString()}` : ''
+    const editAction = canEdit && onEditModeChange ? (
+      <button
+        type="button"
+        onClick={() => onEditModeChange(true)}
+        className="h-6 px-2 inline-flex items-center gap-1 text-[11px] font-semibold text-white/90 hover:text-white bg-white/10 hover:bg-white/20 rounded border border-white/20 transition-colors"
+        title="Edit claim info"
+      >
+        <Pencil className="w-3 h-3" />
+        Edit
+      </button>
+    ) : null
+    return (
+      <div className="space-y-3">
+        {/* Claim Information — identification (MA/CL/DOL). Edit button lives
+            in the navy header bar on the right. */}
+        <SectionCard title="Claim Information" action={editAction}>
+          <div className="grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-slate-100">
+            <SectionRow label={fileLabel} value={claim.maNumber} />
+            <SectionRow label="Insurance Claim #" value={claim.claimNumber} />
+            <SectionRow label="Date of Loss" value={dolFormatted} />
+          </div>
+        </SectionCard>
+
+        {/* Row 1 — Claim Type (full width) */}
+        <SectionCard title="Claim Type">
+          <div className="px-3 py-2 text-[13px] text-slate-900">
+            {claimTypesStr || <span className="text-slate-400">—</span>}
+          </div>
+        </SectionCard>
+
+        {/* Row 2 — Owner | Owner Insurance */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+          <SectionCard title="Owner">
+            <div className="divide-y divide-slate-100">
+              <SectionRow label="Client Type" value={claim.clientType} />
+              <SectionRow label="Client Name" value={claim.clientName} />
+              <SectionRow label="Insured / Owner" value={claim.insuredName} />
+              <SectionRow label="Claimant Name" value={claim.claimantName} />
+              <SectionRow label="Phone" value={claim.ownerPhone} />
+              <SectionRow label="Email" value={claim.ownerEmail} />
+              <SectionRow label="Address" value={claim.ownerAddress} />
+            </div>
+          </SectionCard>
+          <SectionCard title="Owner Insurance">
+            <div className="divide-y divide-slate-100">
+              <SectionRow label="Insurance Co" value={claim.insuranceCompany} />
+              <SectionRow label="Adjuster" value={claim.adjuster} />
+              <SectionRow label="Adjuster Phone" value={claim.adjusterPhone} />
+              <SectionRow label="Adjuster Email" value={claim.adjusterEmail} />
+              <SectionRow label="Deductible" value={deductibleStr} />
+            </div>
+          </SectionCard>
+        </div>
+
+        {/* Row 3 — Claimant | Vehicle */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+          <SectionCard title="Claimant">
+            <div className="divide-y divide-slate-100">
+              <SectionRow label="Name" value={claim.claimantName} />
+              <SectionRow label="Phone" value={claim.claimantPhone} />
+              <SectionRow label="Email" value={claim.claimantEmail} />
+              <SectionRow label="Address" value={claim.claimantAddress} />
+            </div>
+          </SectionCard>
+          <SectionCard title="Vehicle">
+            <div className="divide-y divide-slate-100">
+              <SectionRow label="VIN" value={<span className="font-mono">{claim.vin}</span>} />
+              <SectionRow label="Vehicle" value={vehicleStr} />
+              <SectionRow label="Mileage" value={claim.mileage ? claim.mileage.toLocaleString() : ''} />
+            </div>
+          </SectionCard>
+        </div>
+
+        {/* Row 4 — Opposing Appraiser + Valuations (parent-injected) */}
+        {opposingAppraiserSection && (
+          <SectionCard title="Opposing Appraiser">
+            <div className="px-3 py-2">{opposingAppraiserSection}</div>
+          </SectionCard>
+        )}
+        {valuationsSection && (
+          <SectionCard title="Valuations">
+            <div className="px-3 py-2">{valuationsSection}</div>
+          </SectionCard>
+        )}
+
+        {/* Row 5 — Notes + Fact of Loss */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+          <SectionCard title="Appraiser's Notes">
+            <div className="px-3 py-2 text-[13px] text-slate-800 whitespace-pre-wrap leading-relaxed min-h-[48px]">
+              {claim.appraiserNotes || <span className="text-slate-400">—</span>}
+            </div>
+          </SectionCard>
+          <SectionCard title="Fact of Loss">
+            <div className="px-3 py-2 text-[13px] text-slate-800 whitespace-pre-wrap leading-relaxed min-h-[48px]">
+              {claim.factOfLoss || <span className="text-slate-400">—</span>}
+            </div>
+          </SectionCard>
+        </div>
+      </div>
+    )
+  }
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-5">
       {/* PDF Upload — only surfaced during initial claim creation. Once
           the claim exists there's nothing to auto-fill into. */}
       {isNew && (
@@ -584,96 +747,13 @@ function ClaimInfoForm({
         </div>
       )}
 
-      {/* Handling Appraiser — always editable (feeds Award / Closing Notes).
-          Header row also carries the Edit / Done toggle on the right for
-          admins or users with the can_edit_claim_info permission. */}
-      <div>
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-sm font-bold text-gray-900">Handling Appraiser</h3>
-          {!isNew && canEdit && (
-            locked ? (
-              <Button size="sm" variant="outline" onClick={() => setEditMode(true)}>
-                <Pencil className="w-3.5 h-3.5 mr-1" /> Edit
-              </Button>
-            ) : (
-              <Button size="sm" variant="outline" onClick={() => setEditMode(false)}>
-                <Lock className="w-3.5 h-3.5 mr-1" /> Done
-              </Button>
-            )
-          )}
-        </div>
-        <HandlingAppraiserLicenseSummary
-          claim={claim}
-          handlingAppraiserName={claim.handlingAppraiser ?? ''}
-          allProfiles={allProfiles}
-        />
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div>
-            <label className={labelCls}>Handling Appraiser</label>
-            {isAdmin ? (
-              <select
-                className={inputCls}
-                value={claim.handlingAppraiser ?? ''}
-                onChange={(e) => set('handlingAppraiser', e.target.value)}
-              >
-                <option value="">— Select appraiser —</option>
-                {(() => {
-                  const visible = allProfiles.filter(p =>
-                    p.isActive &&
-                    p.showInHandlingAppraiserList !== false &&
-                    (infoMemberIds === null || infoMemberIds.has(p.id))
-                  )
-                  const current = claim.handlingAppraiser ?? ''
-                  // If the current value points to a name not in the visible
-                  // list (e.g., removed from the handling-appraiser list, or a
-                  // legacy free-text entry), keep it as a disabled option so
-                  // the field still shows what's actually saved instead of
-                  // silently rendering blank.
-                  const currentInVisible = current && visible.some(p => (p.name || p.email) === current)
-                  return (
-                    <>
-                      {current && !currentInVisible && (
-                        <option value={current} disabled>{current} (not in list)</option>
-                      )}
-                      {visible.map(p => {
-                        const name = p.name || p.email
-                        return <option key={p.id} value={name}>{name}</option>
-                      })}
-                    </>
-                  )
-                })()}
-              </select>
-            ) : (
-              <input
-                className={inputCls}
-                value={claim.handlingAppraiser || '—'}
-                disabled
-                readOnly
-              />
-            )}
-          </div>
-        </div>
-      </div>
+      {/* Edit mode — same SectionCard shell as read mode, but each card body
+          holds the live inputs instead of static text. Keeps the two modes
+          visually aligned so toggling Edit / Done doesn't rearrange the page. */}
 
-      {/* Everything below is subject to the edit lock. A native fieldset with
-          disabled disables every descendant input in one shot and dims via
-          the styles below. */}
-      <fieldset disabled={locked} className={cn('space-y-8 m-0 p-0 border-0', locked && 'opacity-70')}>
-
-      {/* Claim Type — drives which tool tabs appear. Multi-select. "Other"
-          unlocks every tool. Empty = show all (backward compat). */}
-      <div>
-        <h3 className="text-sm font-bold text-gray-900 mb-4">Claim Type</h3>
-        <ClaimTypeChips
-          selected={claim.claimTypes ?? []}
-          onChange={(next) => onChange({ ...claim, claimTypes: next })}
-        />
-      </div>
-
-      {/* Report Info */}
-      <div>
-        <h3 className="text-sm font-bold text-gray-900 mb-4">Report Info</h3>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      {/* Claim Information — MA / CL / DOL */}
+      <SectionCard title="Claim Information">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 px-4 py-3">
           <div>
             <label className={labelCls}>{fileLabel}</label>
             <input
@@ -696,239 +776,228 @@ function ClaimInfoForm({
             <input type="date" className={inputCls} value={claim.dateOfLoss} onChange={(e) => set('dateOfLoss', e.target.value)} />
           </div>
         </div>
-      </div>
+      </SectionCard>
 
-      {/* Vehicle — VIN / Y / M / M / Trim / Mileage. Also lives on the ACV
-          Comp Search tab (same ClaimInfo fields, kept in sync automatically),
-          but mirrored here so DV / Storage / Estimate-only claims can still
-          enter and edit vehicle specs without opening the ACV flow. */}
-      <div>
-        <h3 className="text-sm font-bold text-gray-900 mb-4">Vehicle</h3>
-        <div className="mb-4">
-          <label className={labelCls}>VIN</label>
-          <div className="flex gap-2">
-            <input
-              className={cn(inputCls, 'flex-1 font-mono uppercase')}
-              placeholder="17-character VIN"
-              maxLength={17}
-              value={claim.vin}
-              onChange={(e) => set('vin', e.target.value.toUpperCase())}
-            />
-            <Button
-              type="button"
-              onClick={decodeVin}
-              disabled={decoding || claim.vin.length !== 17}
-              className="shrink-0 bg-blue-600 hover:bg-blue-500 text-white"
-              size="sm"
-            >
-              {decoding ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Decode'}
-            </Button>
-          </div>
-          {decodeError && (
-            <p className="text-xs text-red-500 mt-1">{decodeError}</p>
-          )}
-          <DuplicateWarning matches={duplicates.vinMatches} count={duplicates.vinCount} field="VIN" tone="red" />
+      {/* Claim Type (chips) */}
+      <SectionCard title="Claim Type">
+        <div className="px-4 py-3">
+          <ClaimTypeChips
+            selected={claim.claimTypes ?? []}
+            onChange={(next) => onChange({ ...claim, claimTypes: next })}
+          />
         </div>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <div>
-            <label className={labelCls}>Year</label>
-            <input
-              type="number"
-              className={inputCls}
-              placeholder="2020"
-              value={claim.year || ''}
-              onChange={(e) => set('year', parseInt(e.target.value) || 0)}
-            />
-          </div>
-          <div>
-            <label className={labelCls}>Make</label>
-            <input
-              className={inputCls}
-              placeholder="Toyota"
-              value={claim.make}
-              onChange={(e) => set('make', e.target.value)}
-            />
-          </div>
-          <div>
-            <label className={labelCls}>Model</label>
-            <input
-              className={inputCls}
-              placeholder="Camry"
-              value={claim.model}
-              onChange={(e) => set('model', e.target.value)}
-            />
-          </div>
-          <div>
-            <label className={labelCls}>Trim</label>
-            <input
-              className={inputCls}
-              placeholder="XLE"
-              value={claim.trim}
-              onChange={(e) => set('trim', e.target.value)}
-            />
-          </div>
-          <div>
-            <label className={labelCls}>Mileage</label>
-            <input
-              type="number"
-              className={inputCls}
-              placeholder="45000"
-              value={claim.mileage || ''}
-              onChange={(e) => set('mileage', parseInt(e.target.value) || 0)}
-            />
-          </div>
-        </div>
-      </div>
+      </SectionCard>
 
-      {/* Owner / Client */}
-      <div>
-        <h3 className="text-sm font-bold text-gray-900 mb-4">Owner / Client</h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div>
-            <label className={labelCls}>Client Type</label>
-            <select className={inputCls} value={claim.clientType} onChange={(e) => set('clientType', e.target.value as 'Insured' | 'Claimant')}>
-              <option value="Insured">Insured</option>
-              <option value="Claimant">Claimant</option>
-            </select>
-          </div>
-          <div>
-            <label className={labelCls}>Client Name</label>
-            {isAdmin ? (
-              <ClientPicker
-                value={clientId}
-                valueName={claim.clientName}
-                onChange={(id, name) => {
-                  onClientIdChange(id)
-                  set('clientName', name)
-                }}
-                placeholder="Sedgwick"
-                inputClassName={inputCls}
-              />
-            ) : (
-              <input
-                className={inputCls}
-                value={claim.clientName || '—'}
-                disabled
-                readOnly
-              />
-            )}
-          </div>
-          <div>
-            <label className={labelCls}>Insured / Owner Name</label>
-            <input className={inputCls} placeholder="John Smith" value={claim.insuredName} onChange={(e) => set('insuredName', e.target.value)} />
-          </div>
-          <div>
-            <label className={labelCls}>Owner Phone</label>
-            <input className={inputCls} placeholder="(555) 000-0000" value={claim.ownerPhone} onChange={(e) => set('ownerPhone', e.target.value)} />
-          </div>
-          <div>
-            <label className={labelCls}>Owner Email</label>
-            <input className={inputCls} placeholder="owner@email.com" value={claim.ownerEmail} onChange={(e) => set('ownerEmail', e.target.value)} />
-          </div>
-          <div className="md:col-span-2">
-            <label className={labelCls}>Owner Address</label>
-            <input className={inputCls} placeholder="123 Main St, City, ST 00000" value={claim.ownerAddress} onChange={(e) => set('ownerAddress', e.target.value)} />
-          </div>
-        </div>
-      </div>
-
-      {/* Claimant Contact — only fills when the assignment PDF has a
-          separate claimant party (Eagle View format). Always shown so
-          appraisers can enter/edit these manually. */}
-      <div>
-        <h3 className="text-sm font-bold text-gray-900 mb-4">Claimant Contact</h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div>
-            <label className={labelCls}>Claimant Name</label>
-            <input
-              className={inputCls}
-              placeholder="Full name"
-              value={claim.claimantName ?? ''}
-              onChange={(e) => set('claimantName', e.target.value)}
-            />
-          </div>
-          <div>
-            <label className={labelCls}>Claimant Phone</label>
-            <input
-              className={inputCls}
-              placeholder="(555) 000-0000"
-              value={claim.claimantPhone ?? ''}
-              onChange={(e) => set('claimantPhone', e.target.value)}
-            />
-          </div>
-          <div>
-            <label className={labelCls}>Claimant Email</label>
-            <input
-              className={inputCls}
-              placeholder="claimant@email.com"
-              value={claim.claimantEmail ?? ''}
-              onChange={(e) => set('claimantEmail', e.target.value)}
-            />
-          </div>
-          <div className="md:col-span-2">
-            <label className={labelCls}>Claimant Address</label>
-            <input
-              className={inputCls}
-              placeholder="123 Main St, City, ST 00000"
-              value={claim.claimantAddress ?? ''}
-              onChange={(e) => set('claimantAddress', e.target.value)}
-            />
-          </div>
-        </div>
-      </div>
-
-      {/* Insurance */}
-      <div>
-        <h3 className="text-sm font-bold text-gray-900 mb-4">Insurance</h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div>
-            <label className={labelCls}>Insurance Company</label>
-            <input
-              className={inputCls}
-              placeholder="State Farm"
-              value={claim.insuranceCompany}
-              onChange={(e) => set('insuranceCompany', e.target.value)}
-              list="insurance-company-options"
-              autoComplete="off"
-            />
-            <datalist id="insurance-company-options">
-              {insuranceCompanyOptions.map(name => (
-                <option key={name} value={name} />
-              ))}
-            </datalist>
-          </div>
-          <div>
-            <label className={labelCls}>Adjuster Name</label>
-            <input className={inputCls} placeholder="Jane Doe" value={claim.adjuster} onChange={(e) => set('adjuster', e.target.value)} />
-          </div>
-          <div>
-            <label className={labelCls}>Adjuster Phone</label>
-            <input className={inputCls} placeholder="(555) 000-0000" value={claim.adjusterPhone} onChange={(e) => set('adjusterPhone', e.target.value)} />
-          </div>
-          <div>
-            <label className={labelCls}>Adjuster Email</label>
-            <input className={inputCls} placeholder="adjuster@insurer.com" value={claim.adjusterEmail} onChange={(e) => set('adjusterEmail', e.target.value)} />
-          </div>
-          <div>
-            <label className={labelCls}>Deductible</label>
-            <div className="relative">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm pointer-events-none">$</span>
-              <input
-                type="number"
-                inputMode="decimal"
-                step="any"
-                min={0}
-                className={inputCls + ' pl-7'}
-                placeholder="500"
-                value={claim.deductible ? String(claim.deductible) : ''}
-                onChange={(e) => set('deductible', e.target.value === '' ? 0 : Number(e.target.value))}
-              />
+      {/* Row 2 — Owner | Owner Insurance */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+        <SectionCard title="Owner">
+          <div className="px-4 py-3 space-y-3">
+            <div>
+              <label className={labelCls}>Client Type</label>
+              <select className={inputCls} value={claim.clientType} onChange={(e) => set('clientType', e.target.value as 'Insured' | 'Claimant')}>
+                <option value="Insured">Insured</option>
+                <option value="Claimant">Claimant</option>
+              </select>
+            </div>
+            <div>
+              <label className={labelCls}>Client Name</label>
+              {isAdmin ? (
+                <ClientPicker
+                  value={clientId}
+                  valueName={claim.clientName}
+                  onChange={(id, name) => {
+                    onClientIdChange(id)
+                    set('clientName', name)
+                  }}
+                  placeholder="Sedgwick"
+                  inputClassName={inputCls}
+                />
+              ) : (
+                <input className={inputCls} value={claim.clientName || '—'} disabled readOnly />
+              )}
+            </div>
+            <div>
+              <label className={labelCls}>Insured / Owner Name</label>
+              <input className={inputCls} placeholder="John Smith" value={claim.insuredName} onChange={(e) => set('insuredName', e.target.value)} />
+            </div>
+            <div>
+              <label className={labelCls}>Claimant Name</label>
+              <input className={inputCls} placeholder="Full name (same as insured if third-party claim)" value={claim.claimantName ?? ''} onChange={(e) => set('claimantName', e.target.value)} />
+            </div>
+            <div>
+              <label className={labelCls}>Owner Phone</label>
+              <input className={inputCls} placeholder="(555) 000-0000" value={claim.ownerPhone} onChange={(e) => set('ownerPhone', e.target.value)} />
+            </div>
+            <div>
+              <label className={labelCls}>Owner Email</label>
+              <input className={inputCls} placeholder="owner@email.com" value={claim.ownerEmail} onChange={(e) => set('ownerEmail', e.target.value)} />
+            </div>
+            <div>
+              <label className={labelCls}>Owner Address</label>
+              <input className={inputCls} placeholder="123 Main St, City, ST 00000" value={claim.ownerAddress} onChange={(e) => set('ownerAddress', e.target.value)} />
             </div>
           </div>
-        </div>
+        </SectionCard>
+        <SectionCard title="Owner Insurance">
+          <div className="px-4 py-3 space-y-3">
+            <div>
+              <label className={labelCls}>Insurance Company</label>
+              <input
+                className={inputCls}
+                placeholder="State Farm"
+                value={claim.insuranceCompany}
+                onChange={(e) => set('insuranceCompany', e.target.value)}
+                list="insurance-company-options"
+                autoComplete="off"
+              />
+              <datalist id="insurance-company-options">
+                {insuranceCompanyOptions.map(name => (
+                  <option key={name} value={name} />
+                ))}
+              </datalist>
+            </div>
+            <div>
+              <label className={labelCls}>Adjuster Name</label>
+              <input className={inputCls} placeholder="Jane Doe" value={claim.adjuster} onChange={(e) => set('adjuster', e.target.value)} />
+            </div>
+            <div>
+              <label className={labelCls}>Adjuster Phone</label>
+              <input className={inputCls} placeholder="(555) 000-0000" value={claim.adjusterPhone} onChange={(e) => set('adjusterPhone', e.target.value)} />
+            </div>
+            <div>
+              <label className={labelCls}>Adjuster Email</label>
+              <input className={inputCls} placeholder="adjuster@insurer.com" value={claim.adjusterEmail} onChange={(e) => set('adjusterEmail', e.target.value)} />
+            </div>
+            <div>
+              <label className={labelCls}>Deductible</label>
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm pointer-events-none">$</span>
+                <input
+                  type="number"
+                  inputMode="decimal"
+                  step="any"
+                  min={0}
+                  className={inputCls + ' pl-7'}
+                  placeholder="500"
+                  value={claim.deductible ? String(claim.deductible) : ''}
+                  onChange={(e) => set('deductible', e.target.value === '' ? 0 : Number(e.target.value))}
+                />
+              </div>
+            </div>
+          </div>
+        </SectionCard>
       </div>
 
-      </fieldset>
+      {/* Row 3 — Claimant | Vehicle */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+        <SectionCard title="Claimant">
+          <div className="px-4 py-3 space-y-3">
+            <div>
+              <label className={labelCls}>Claimant Name</label>
+              <input className={inputCls} placeholder="Full name" value={claim.claimantName ?? ''} onChange={(e) => set('claimantName', e.target.value)} />
+            </div>
+            <div>
+              <label className={labelCls}>Claimant Phone</label>
+              <input className={inputCls} placeholder="(555) 000-0000" value={claim.claimantPhone ?? ''} onChange={(e) => set('claimantPhone', e.target.value)} />
+            </div>
+            <div>
+              <label className={labelCls}>Claimant Email</label>
+              <input className={inputCls} placeholder="claimant@email.com" value={claim.claimantEmail ?? ''} onChange={(e) => set('claimantEmail', e.target.value)} />
+            </div>
+            <div>
+              <label className={labelCls}>Claimant Address</label>
+              <input className={inputCls} placeholder="123 Main St, City, ST 00000" value={claim.claimantAddress ?? ''} onChange={(e) => set('claimantAddress', e.target.value)} />
+            </div>
+          </div>
+        </SectionCard>
+        <SectionCard title="Vehicle">
+          <div className="px-4 py-3 space-y-3">
+            <div>
+              <label className={labelCls}>VIN</label>
+              <div className="flex gap-2">
+                <input
+                  className={cn(inputCls, 'flex-1 font-mono uppercase')}
+                  placeholder="17-character VIN"
+                  maxLength={17}
+                  value={claim.vin}
+                  onChange={(e) => set('vin', e.target.value.toUpperCase())}
+                />
+                <Button
+                  type="button"
+                  onClick={decodeVin}
+                  disabled={decoding || claim.vin.length !== 17}
+                  className="shrink-0 bg-blue-600 hover:bg-blue-500 text-white"
+                  size="sm"
+                >
+                  {decoding ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Decode'}
+                </Button>
+              </div>
+              {decodeError && (
+                <p className="text-xs text-red-500 mt-1">{decodeError}</p>
+              )}
+              <DuplicateWarning matches={duplicates.vinMatches} count={duplicates.vinCount} field="VIN" tone="red" />
+            </div>
+            <div>
+              <label className={labelCls}>Year</label>
+              <input type="number" className={inputCls} placeholder="2020" value={claim.year || ''} onChange={(e) => set('year', parseInt(e.target.value) || 0)} />
+            </div>
+            <div>
+              <label className={labelCls}>Make</label>
+              <input className={inputCls} placeholder="Toyota" value={claim.make} onChange={(e) => set('make', e.target.value)} />
+            </div>
+            <div>
+              <label className={labelCls}>Model</label>
+              <input className={inputCls} placeholder="Camry" value={claim.model} onChange={(e) => set('model', e.target.value)} />
+            </div>
+            <div>
+              <label className={labelCls}>Trim</label>
+              <input className={inputCls} placeholder="XLE" value={claim.trim} onChange={(e) => set('trim', e.target.value)} />
+            </div>
+            <div>
+              <label className={labelCls}>Mileage</label>
+              <input type="number" className={inputCls} placeholder="45000" value={claim.mileage || ''} onChange={(e) => set('mileage', parseInt(e.target.value) || 0)} />
+            </div>
+          </div>
+        </SectionCard>
+      </div>
+
+      {/* Row 4 — Opposing Appraiser + Valuations (parent-injected) */}
+      {opposingAppraiserSection && (
+        <SectionCard title="Opposing Appraiser">
+          <div className="px-4 py-3">{opposingAppraiserSection}</div>
+        </SectionCard>
+      )}
+      {valuationsSection && (
+        <SectionCard title="Valuations">
+          <div className="px-4 py-3">{valuationsSection}</div>
+        </SectionCard>
+      )}
+
+      {/* Row 5 — Appraiser's Notes + Fact of Loss */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+        <SectionCard title="Appraiser's Notes">
+          <div className="px-4 py-3">
+            <textarea
+              className={textareaCls}
+              placeholder="Working notes, context the next person needs…"
+              rows={4}
+              value={claim.appraiserNotes ?? ''}
+              onChange={(e) => set('appraiserNotes', e.target.value)}
+            />
+          </div>
+        </SectionCard>
+        <SectionCard title="Fact of Loss">
+          <div className="px-4 py-3">
+            <textarea
+              className={textareaCls}
+              placeholder="Narrative of how the loss happened…"
+              rows={4}
+              value={claim.factOfLoss ?? ''}
+              onChange={(e) => set('factOfLoss', e.target.value)}
+            />
+          </div>
+        </SectionCard>
+      </div>
     </div>
   )
 }
@@ -987,20 +1056,22 @@ function SearchParametersPanel({
     }
   }
 
+  // Match the compact style used in Award / Closing Notes forms — smaller
+  // padding, less uppercase label noise, tighter grid.
   const inputCls =
-    'w-full bg-white border border-gray-200 rounded-lg px-3 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent'
-  const labelCls = 'block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5'
+    'w-full bg-white border border-gray-200 rounded-md px-2.5 py-1.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent'
+  const labelCls = 'block text-[12px] font-medium text-slate-500 tracking-tight mb-1'
 
   const canSearch = claim.year > 0 && claim.make && claim.model && (claim.radius === 0 || claim.zip.length === 5)
 
   return (
-    <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm">
-      <div className="flex items-center justify-between mb-5">
-        <h3 className="text-sm font-bold text-gray-900 uppercase tracking-wider">Search Parameters</h3>
+    <div className="bg-white border border-gray-200 rounded-xl p-5 shadow-sm">
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="text-[15px] font-bold text-black tracking-tight">Search Parameters</h3>
       </div>
 
       {/* VIN row */}
-      <div className="mb-4">
+      <div className="mb-3">
         <label className={labelCls}>VIN</label>
         <div className="flex gap-2">
           <input
@@ -1028,7 +1099,7 @@ function SearchParametersPanel({
       </div>
 
       {/* Vehicle fields grid */}
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-4">
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-3">
         <div>
           <label className={labelCls}>Year <span className="text-red-400">*</span></label>
           <input type="number" className={inputCls} placeholder="2020" value={claim.year || ''} onChange={(e) => set('year', parseInt(e.target.value) || 0)} />
@@ -1151,50 +1222,47 @@ function CompCard({
     >
       {/* Selection badge */}
       {selected && selectionIndex > 0 && (
-        <div className="absolute top-3 left-3 z-10 w-7 h-7 rounded-full bg-blue-600 text-white flex items-center justify-center text-xs font-bold shadow-lg">
+        <div className="absolute top-2 left-2 z-10 w-6 h-6 rounded-full bg-blue-600 text-white flex items-center justify-center text-[11px] font-bold shadow-md">
           {selectionIndex}
         </div>
       )}
 
       {/* Image with price overlay */}
-      <div className="relative h-44 bg-gray-100">
+      <div className="relative h-28 bg-gray-100">
         {comp.photoUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img src={comp.photoUrl} alt={vehicle} className="w-full h-full object-cover" />
         ) : (
           <div className="w-full h-full flex items-center justify-center">
-            <Car className="w-10 h-10 text-gray-300" />
+            <Car className="w-8 h-8 text-gray-300" />
           </div>
         )}
-        <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/70 via-black/30 to-transparent pt-10 pb-3 px-3">
-          <p className="text-xl font-extrabold text-white drop-shadow-sm">
+        <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/75 via-black/35 to-transparent pt-6 pb-2 px-2.5">
+          <p className="text-[15px] font-extrabold text-white drop-shadow-sm leading-none">
             {formatCurrency(comp.price)}
           </p>
         </div>
       </div>
 
       {/* Content */}
-      <div className="p-4">
-        <p className="text-[13px] font-extrabold text-gray-900 leading-snug tracking-tight">
+      <div className="px-3 pt-2.5 pb-2">
+        <p className="text-[12.5px] font-bold text-gray-900 leading-tight tracking-tight truncate">
           {comp.year && comp.make ? `${comp.year} ${comp.make} ${comp.model}` : comp.heading || 'Unknown Vehicle'}
         </p>
         {comp.trim && (
-          <p className="text-xs font-semibold text-gray-500 mt-0.5">{comp.trim}</p>
+          <p className="text-[11px] font-semibold text-gray-500 mt-0.5 truncate">{comp.trim}</p>
         )}
         {specs && (
-          <p className="text-[11px] text-gray-400 mt-1">{specs}</p>
+          <p className="text-[10.5px] text-gray-400 mt-0.5 truncate">{specs}</p>
         )}
-        <p className="text-[10px] font-mono text-gray-400 mt-1.5 tracking-wider">
-          {comp.vin || 'No VIN'}
-        </p>
 
         {/* Stats */}
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-3 text-xs text-gray-500">
-          <span>
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-1.5 text-[11px] text-gray-500">
+          <span className="tabular-nums">
             {(comp.miles ?? 0).toLocaleString()} mi
           </span>
           {(comp.distanceMi > 0 || comp.dealerCity) && (
-            <span>
+            <span className="truncate">
               {[
                 comp.dealerCity ? `${comp.dealerCity}, ${comp.dealerState}` : '',
                 comp.distanceMi > 0 ? `${comp.distanceMi} mi` : '',
@@ -1203,25 +1271,15 @@ function CompCard({
           )}
         </div>
 
-        {/* Dealer */}
-        {comp.dealerName && !comp.distanceMi && (
-          <p className="text-[11px] text-gray-400 mt-2 truncate">
-            {comp.dealerName}
-            {comp.dealerCity ? ` \u00B7 ${comp.dealerCity}, ${comp.dealerState}` : ''}
-          </p>
-        )}
-        {comp.dealerName && comp.distanceMi > 0 && (
-          <p className="text-[11px] text-gray-400 mt-1 truncate">{comp.dealerName}</p>
-        )}
       </div>
 
       {/* Action buttons */}
-      <div className="flex gap-2 px-4 pb-4">
+      <div className="flex gap-1.5 px-3 pb-3">
         <button
           onClick={onToggle}
           disabled={disabled && !selected}
           className={cn(
-            'flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs font-bold rounded-lg transition-all',
+            'flex-1 flex items-center justify-center gap-1 py-1.5 text-[11.5px] font-bold rounded-md transition-all',
             selected
               ? 'bg-blue-600 text-white hover:bg-blue-700'
               : 'bg-blue-600 text-white hover:bg-blue-700'
@@ -1229,12 +1287,12 @@ function CompCard({
         >
           {selected ? (
             <>
-              <Check className="w-3.5 h-3.5" />
+              <Check className="w-3 h-3" />
               Selected
             </>
           ) : (
             <>
-              <Plus className="w-3.5 h-3.5" />
+              <Plus className="w-3 h-3" />
               Select
             </>
           )}
@@ -1242,7 +1300,7 @@ function CompCard({
         {onEdit && (
           <button
             onClick={onEdit}
-            className="px-3 py-2.5 text-xs font-bold text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition-all"
+            className="px-2.5 py-1.5 text-[11.5px] font-bold text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-md transition-all"
           >
             Edit
           </button>
@@ -1252,7 +1310,7 @@ function CompCard({
           target="_blank"
           rel="noopener noreferrer"
           onClick={(e) => e.stopPropagation()}
-          className="px-4 py-2.5 text-xs font-bold text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-lg transition-all"
+          className="px-3 py-1.5 text-[11.5px] font-bold text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-md transition-all"
         >
           View
         </a>
@@ -1284,8 +1342,8 @@ function AdjustmentsForm({
   onMileageRateChange: (rate: number) => void
 }) {
   const inputCls =
-    'w-full bg-white border border-gray-200 rounded-lg px-3 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent'
-  const labelCls = 'block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5'
+    'w-full bg-white border border-gray-200 rounded-md px-2.5 py-1.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent'
+  const labelCls = 'block text-[12px] font-medium text-slate-500 tracking-tight mb-1'
 
   const [pctMode, setPctMode] = useState<Record<string, boolean>>({})
   const [pctInputs, setPctInputs] = useState<Record<string, { base: number; pct: number }>>({})
@@ -1715,10 +1773,6 @@ function ReviewStep({
       )}
 
       <div className="flex items-center gap-3">
-        <Button onClick={onBack} variant="outline" className="border-gray-200 text-gray-700 hover:bg-gray-100">
-          <ChevronLeft className="w-4 h-4 mr-1" />
-          Back
-        </Button>
         <Button onClick={onStartOver} variant="outline" className="border-gray-200 text-gray-700 hover:bg-gray-100">
           <RotateCcw className="w-4 h-4 mr-1" />
           Start Over
@@ -2155,8 +2209,8 @@ function ReportsStep({
   }
 
   const inputCls =
-    'w-full bg-white border border-gray-200 rounded-md px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent'
-  const labelCls = 'block text-xs font-medium text-gray-500 mb-1'
+    'w-full bg-white border border-gray-200 rounded-md px-2.5 py-1.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent'
+  const labelCls = 'block text-[12px] font-medium text-slate-500 tracking-tight mb-1'
 
   // Open the claim's Summary Page inline (like the Award / Closing Notes views).
   // Reuses this file's summary if it already exists, else creates one pre-filled.
@@ -2353,7 +2407,7 @@ function ReportsStep({
             </Button>
           )}
           <div className="flex-1">
-            <h3 className="text-base font-semibold text-gray-900">Summary Page</h3>
+            <h3 className="text-lg font-bold text-black tracking-tight">Summary Page</h3>
           </div>
           <Button
             onClick={async () => {
@@ -2402,11 +2456,11 @@ function ReportsStep({
   // Award Agreement form
   if (selectedReport === 'award-agreement') {
     return (
-      <div className="space-y-6">
+      <div className="space-y-4">
         <Card className="bg-white border-gray-200 shadow-sm">
-          <CardHeader>
+          <CardHeader className="py-3">
             <div className="flex items-center justify-between">
-              <CardTitle className="text-gray-900">Award Agreement</CardTitle>
+              <CardTitle className="text-black text-lg font-bold tracking-tight">Award Agreement</CardTitle>
               {!view && (
                 <Button
                   variant="ghost"
@@ -2420,7 +2474,7 @@ function ReportsStep({
               )}
             </div>
           </CardHeader>
-          <CardContent className="space-y-4">
+          <CardContent className="space-y-3 pt-0">
             {/* Variant toggle — controls the value-line label and whether the
                 ACV-specific exclusion clause prints. Auto-defaulted from
                 claim.claimTypes; user can still override here. */}
@@ -2448,37 +2502,33 @@ function ReportsStep({
                 ))}
               </div>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <div>
                 <label className={labelCls}>Insurance Company</label>
-                <input
-                  className={inputCls}
+                <InlineEditText
                   value={awardData.insuranceCompany}
-                  onChange={(e) => setAward('insuranceCompany', e.target.value)}
+                  onChange={(v) => setAward('insuranceCompany', v)}
                 />
               </div>
               <div>
                 <label className={labelCls}>Vehicle Owner</label>
-                <input
-                  className={inputCls}
+                <InlineEditText
                   value={awardData.vehicleOwner}
-                  onChange={(e) => setAward('vehicleOwner', e.target.value)}
+                  onChange={(v) => setAward('vehicleOwner', v)}
                 />
               </div>
               <div>
                 <label className={labelCls}>Vehicle</label>
-                <input
-                  className={inputCls}
+                <InlineEditText
                   value={awardData.vehicle}
-                  onChange={(e) => setAward('vehicle', e.target.value)}
+                  onChange={(v) => setAward('vehicle', v)}
                 />
               </div>
               <div>
                 <label className={labelCls}>Claim Number</label>
-                <input
-                  className={inputCls}
+                <InlineEditText
                   value={awardData.claimNumber}
-                  onChange={(e) => setAward('claimNumber', e.target.value)}
+                  onChange={(v) => setAward('claimNumber', v)}
                 />
               </div>
               <div>
@@ -2505,8 +2555,7 @@ function ReportsStep({
                     : awardType === 'estimate' ? 'Amount of Loss (Final Cost of Repair)'
                     : 'Actual Cash Value (ACV)'}
                 </label>
-                <CurrencyInput
-                  className={inputCls}
+                <InlineEditCurrency
                   placeholder="$0.00"
                   value={awardData.acvAmountNum}
                   onChange={(val) => onReportsStateChange(prev => ({
@@ -2518,27 +2567,25 @@ function ReportsStep({
               </div>
             </div>
 
-            <div className="border-t border-gray-100 pt-4">
-              <h4 className="text-xs font-medium text-gray-500 mb-3 uppercase tracking-wider">Appraisers</h4>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="border-t border-gray-100 pt-2">
+              <h4 className="text-xs font-medium text-gray-500 mb-2 uppercase tracking-wider">Appraisers</h4>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div>
                   <label className={labelCls}>Appraiser 1</label>
-                  <textarea
-                    className={inputCls}
+                  <InlineEditTextarea
                     rows={2}
                     placeholder="Name / Company"
                     value={awardData.signatureBlock1}
-                    onChange={(e) => setAward('signatureBlock1', e.target.value)}
+                    onChange={(v) => setAward('signatureBlock1', v)}
                   />
                 </div>
                 <div>
                   <label className={labelCls}>Appraiser 2</label>
-                  <textarea
-                    className={inputCls}
+                  <InlineEditTextarea
                     rows={2}
                     placeholder="Name / Company"
                     value={awardData.signatureBlock2}
-                    onChange={(e) => setAward('signatureBlock2', e.target.value)}
+                    onChange={(v) => setAward('signatureBlock2', v)}
                   />
                 </div>
                 <div>
@@ -2584,11 +2631,11 @@ function ReportsStep({
     const isEstimate = notesType === 'estimate' || notesType === 'estimate-umpire'
 
     return (
-      <div className="space-y-6">
+      <div className="space-y-4">
         <Card className="bg-white border-gray-200 shadow-sm">
-          <CardHeader>
+          <CardHeader className="py-3">
             <div className="flex items-center justify-between">
-              <CardTitle className="text-gray-900">Closing Notes</CardTitle>
+              <CardTitle className="text-black text-lg font-bold tracking-tight">Closing Notes</CardTitle>
               {!view && (
                 <Button
                   variant="ghost"
@@ -2602,35 +2649,53 @@ function ReportsStep({
               )}
             </div>
           </CardHeader>
-          <CardContent className="space-y-4">
-            {/* Date (auto-fills today on first open; editable) */}
-            <div className="w-48">
-              <label className={labelCls}>Date</label>
-              <input
-                type="date"
-                className={inputCls}
-                value={notesData.date}
-                onChange={(e) => setNotes('date', e.target.value)}
-              />
+          <CardContent className="space-y-3 pt-0">
+            {/* Top row — Date + Our Value side-by-side (both narrow fields),
+                followed by Assignment Type picker on a single row below. */}
+            <div className="flex flex-wrap items-end gap-4">
+              <div className="w-40">
+                <label className={labelCls}>Date</label>
+                <input
+                  type="date"
+                  className={inputCls}
+                  value={notesData.date}
+                  onChange={(e) => setNotes('date', e.target.value)}
+                />
+              </div>
+              <div className="w-[180px]">
+                <label className={labelCls}>
+                  {notesType === 'acv' || notesType === 'acv-umpire' ? 'Our Appraised Value (ACV)' : 'Our Appraised DV'}
+                </label>
+                {(notesType === 'acv' || notesType === 'acv-umpire') && result.acv > 0 ? (
+                  <div className="px-2.5 py-1.5 bg-gray-50 border border-gray-200 rounded-md text-sm text-gray-900 font-medium tabular-nums">
+                    {formatCurrency(result.acv)}
+                  </div>
+                ) : (
+                  <InlineEditCurrency
+                    value={notesData.maValueNum}
+                    onChange={(val) => setNotes('maValueNum', val)}
+                  />
+                )}
+              </div>
             </div>
 
-            {/* Type selector */}
+            {/* Type selector — single row of 6 chips, compact */}
             <div>
               <label className={labelCls}>Assignment Type</label>
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+              <div className="grid grid-cols-3 md:grid-cols-6 gap-1.5">
                 {([
                   ['acv', 'ACV'],
                   ['dv', 'DV'],
-                  ['estimate', 'Estimate Dispute'],
-                  ['acv-umpire', 'ACV → Umpire'],
-                  ['dv-umpire', 'DV → Umpire'],
-                  ['estimate-umpire', 'Estimate → Umpire'],
+                  ['estimate', 'Est Dispute'],
+                  ['acv-umpire', 'ACV→Umpire'],
+                  ['dv-umpire', 'DV→Umpire'],
+                  ['estimate-umpire', 'Est→Umpire'],
                 ] as const).map(([value, label]) => (
                   <button
                     key={value}
                     onClick={() => setNotesType(value)}
                     className={cn(
-                      'px-3 py-2 text-sm font-semibold rounded-lg border transition-all',
+                      'px-2.5 py-1.5 text-[12.5px] font-semibold rounded-md border transition-all',
                       notesType === value
                         ? 'bg-blue-600 text-white border-blue-600'
                         : 'bg-white text-gray-700 border-gray-200 hover:border-blue-300'
@@ -2642,46 +2707,23 @@ function ReportsStep({
               </div>
             </div>
 
-            {/* Our Value */}
-            <div className="border-t border-gray-100 pt-4">
-              <div className="w-64">
-                <label className={labelCls}>
-                  {notesType === 'acv' || notesType === 'acv-umpire' ? 'Our Appraised Value (ACV)' : 'Our Appraised DV'}
-                </label>
-                {(notesType === 'acv' || notesType === 'acv-umpire') && result.acv > 0 ? (
-                  <div className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-md text-sm text-gray-900 font-medium">
-                    {formatCurrency(result.acv)}
-                    <span className="text-xs text-gray-400 ml-2">(from report)</span>
-                  </div>
-                ) : (
-                  <CurrencyInput
-                    className={inputCls}
-                    value={notesData.maValueNum}
-                    onChange={(val) => setNotes('maValueNum', val)}
-                  />
-                )}
-              </div>
-            </div>
-
-            <div className="border-t border-gray-100 pt-4">
-              <h4 className="text-xs font-medium text-gray-500 mb-3 uppercase tracking-wider">Opposing Appraiser</h4>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
+            <div className="border-t border-gray-100 pt-2">
+              <h4 className="text-xs font-medium text-gray-500 mb-2 uppercase tracking-wider">Opposing Appraiser</h4>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-w-3xl">
+                <div className="max-w-xs">
                   <label className={labelCls}>Full Name</label>
-                  <input
-                    className={inputCls}
+                  <InlineEditText
                     placeholder="John Smith"
                     value={notesData.appraiserName}
-                    onChange={(e) => setNotes('appraiserName', e.target.value)}
+                    onChange={(v) => setNotes('appraiserName', v)}
                   />
                 </div>
-                <div>
+                <div className="max-w-xs">
                   <label className={labelCls}>Company</label>
-                  <input
-                    className={inputCls}
+                  <InlineEditText
                     placeholder="National Appraisers"
                     value={notesData.appraiserCompany}
-                    onChange={(e) => setNotes('appraiserCompany', e.target.value)}
+                    onChange={(v) => setNotes('appraiserCompany', v)}
                   />
                 </div>
                 <div className="w-24">
@@ -2696,10 +2738,9 @@ function ReportsStep({
                     <option value="Mrs.">Mrs.</option>
                   </select>
                 </div>
-                <div>
+                <div className="max-w-[180px]">
                   <label className={labelCls}>Their Appraised Value</label>
-                  <CurrencyInput
-                    className={inputCls}
+                  <InlineEditCurrency
                     value={notesData.appraiserValueNum}
                     onChange={(val) => setNotes('appraiserValueNum', val)}
                   />
@@ -2709,12 +2750,11 @@ function ReportsStep({
 
             {/* Repair Shop Estimate (Estimate Dispute only) */}
             {isEstimate && (
-              <div className="border-t border-gray-100 pt-4">
-                <h4 className="text-xs font-medium text-gray-500 mb-3 uppercase tracking-wider">Repair Shop</h4>
-                <div className="w-64">
+              <div className="border-t border-gray-100 pt-2">
+                <h4 className="text-xs font-medium text-gray-500 mb-2 uppercase tracking-wider">Repair Shop</h4>
+                <div className="max-w-[180px]">
                   <label className={labelCls}>Repair Shop Estimate</label>
-                  <CurrencyInput
-                    className={inputCls}
+                  <InlineEditCurrency
                     value={notesData.repairShopAmountNum ?? 0}
                     onChange={(val) => setNotes('repairShopAmountNum', val)}
                   />
@@ -2723,14 +2763,13 @@ function ReportsStep({
             )}
 
             {/* Agreement or Umpire fields */}
-            <div className="border-t border-gray-100 pt-4">
+            <div className="border-t border-gray-100 pt-2">
               {!isUmpire ? (
                 <div>
-                  <h4 className="text-xs font-medium text-gray-500 mb-3 uppercase tracking-wider">Agreement</h4>
-                  <div className="w-64">
+                  <h4 className="text-xs font-medium text-gray-500 mb-2 uppercase tracking-wider">Agreement</h4>
+                  <div className="max-w-[180px]">
                     <label className={labelCls}>Award Amount</label>
-                    <CurrencyInput
-                      className={inputCls}
+                    <InlineEditCurrency
                       value={notesData.agreementAmountNum}
                       onChange={(val) => setNotes('agreementAmountNum', val)}
                     />
@@ -2738,21 +2777,19 @@ function ReportsStep({
                 </div>
               ) : (
                 <div>
-                  <h4 className="text-xs font-medium text-gray-500 mb-3 uppercase tracking-wider">Umpire</h4>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <h4 className="text-xs font-medium text-gray-500 mb-2 uppercase tracking-wider">Umpire</h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-w-md">
                     <div>
                       <label className={labelCls}>Umpire Name</label>
-                      <input
-                        className={inputCls}
+                      <InlineEditText
                         placeholder="Darren DiMaria"
                         value={notesData.umpireName}
-                        onChange={(e) => setNotes('umpireName', e.target.value)}
+                        onChange={(v) => setNotes('umpireName', v)}
                       />
                     </div>
                     <div>
                       <label className={labelCls}>Umpire Ruling Amount</label>
-                      <CurrencyInput
-                        className={inputCls}
+                      <InlineEditCurrency
                         value={notesData.umpireAmountNum}
                         onChange={(val) => setNotes('umpireAmountNum', val)}
                       />
@@ -2763,9 +2800,9 @@ function ReportsStep({
             </div>
 
             {/* Preview */}
-            <div className="border-t border-gray-100 pt-4">
+            <div className="border-t border-gray-100 pt-2">
               <h4 className="text-xs font-medium text-gray-500 mb-2 uppercase tracking-wider">Preview</h4>
-              <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">
+              <div className="bg-gray-50 border border-gray-200 rounded-md p-3 text-[13px] text-gray-700 whitespace-pre-wrap leading-relaxed">
                 {notesPreview}
               </div>
             </div>
@@ -2961,7 +2998,9 @@ const CLAIM_TABS = [
   { id: 'documents', label: 'Documents', step: 10 },
   { id: 'messages', label: 'Messages', step: 13 },
   { id: 'guidelines', label: 'Guidelines', step: 14 },
+  { id: 'forms', label: 'Forms', step: 17 },
   { id: 'reports-hub', label: 'Reports', step: 15 },
+  { id: 'activity', label: 'Activity', step: 18 },
 ] as const
 
 const TOOL_TABS = [
@@ -2987,6 +3026,8 @@ function tabForStep(step: number): string {
   if (step === 13) return 'messages'
   if (step === 14) return 'guidelines'
   if (step === 15) return 'reports-hub'
+  if (step === 17) return 'forms'
+  if (step === 18) return 'activity'
   return 'acv' // 2-4 stepper + 6 (Loss Search lives inside the ACV tab)
 }
 
@@ -2998,14 +3039,202 @@ function stepForTab(tab: string | null): number | null {
   return null
 }
 
+// Section card with a navy title bar + white content area. Used across the
+// Claim Info read-mode layout to give each group (Owner / Vehicle / etc.) a
+// clear visual boundary without inflating height. Content body passes through
+// as children so callers can render rows, grids, or free-form content.
+function SectionCard({ title, action, children, className }: { title: string; action?: React.ReactNode; children: React.ReactNode; className?: string }) {
+  return (
+    <div className={cn('rounded-md border border-slate-200 overflow-hidden', className)}>
+      <div className="bg-slate-500 text-white px-3 py-1.5 text-[13px] font-bold tracking-tight flex items-center justify-between">
+        <span>{title}</span>
+        {action}
+      </div>
+      <div className="bg-white">{children}</div>
+    </div>
+  )
+}
+
+// Label/value row for use inside a SectionCard. Thin dividers between
+// sibling rows (via parent divide-y). Narrow label column, value flexes.
+function SectionRow({ label, value }: { label: string; value: React.ReactNode }) {
+  const empty = value === null || value === undefined || value === '' || value === 0
+  return (
+    <div className="flex items-baseline gap-3 px-3 py-1.5">
+      <span className="text-[11.5px] font-medium text-slate-500 w-28 shrink-0">{label}</span>
+      <span className="text-[13px] text-slate-900 flex-1 min-w-0 break-words">
+        {empty ? <span className="text-slate-400">—</span> : value}
+      </span>
+    </div>
+  )
+}
+
 // Claim workspace header — MA #/CL #/Vehicle/Client/Owner shown as equally-
 // weighted stats rather than one big title + small subtitle.
 function ClaimHeaderStat({ label, value }: { label: string; value: string }) {
   return (
     <div className="min-w-0">
-      <div className="text-xs font-semibold uppercase tracking-wide text-gray-400 mb-0.5">{label}</div>
-      <div className="text-base font-bold text-gray-900 break-words">{value || '—'}</div>
+      <div className="text-[11.5px] font-semibold uppercase tracking-[0.08em] text-slate-500 mb-0.5">{label}</div>
+      <div className="text-[15px] font-semibold text-slate-900 leading-snug break-words">{value || '—'}</div>
     </div>
+  )
+}
+
+// Click-to-edit text field. Displays as a persistent subtle box (same visual
+// as a normal input, no hover-only reveal). Clicking swaps in a focused edit
+// input with a blue border. Blur / Enter commits back to the display box.
+function InlineEditText({
+  value,
+  onChange,
+  placeholder,
+}: {
+  value: string
+  onChange: (next: string) => void
+  placeholder?: string
+}) {
+  const [editing, setEditing] = useState(false)
+  const inputRef = useRef<HTMLInputElement>(null)
+  useEffect(() => {
+    // Focus only — don't auto-select the whole value. Matches the behavior
+    // of regular inputs on ACV / Valuations so clicking a field drops the
+    // cursor where you clicked instead of highlighting everything.
+    if (editing && inputRef.current) {
+      inputRef.current.focus()
+    }
+  }, [editing])
+  if (editing) {
+    return (
+      <input
+        ref={inputRef}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        onBlur={() => setEditing(false)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === 'Escape') {
+            e.preventDefault()
+            setEditing(false)
+          }
+        }}
+        placeholder={placeholder}
+        className="w-full bg-white border border-blue-500 rounded-md px-2.5 py-1.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+      />
+    )
+  }
+  return (
+    <button
+      type="button"
+      onClick={() => setEditing(true)}
+      className="w-full text-left bg-white border border-gray-200 rounded-md px-2.5 py-1.5 text-sm text-slate-900 cursor-text"
+    >
+      {value || <span className="text-slate-400">{placeholder || '—'}</span>}
+    </button>
+  )
+}
+
+// Click-to-edit multi-line text. Same persistent-box visual as the other
+// InlineEdit components; line breaks preserved when displayed.
+function InlineEditTextarea({
+  value,
+  onChange,
+  placeholder,
+  rows = 2,
+}: {
+  value: string
+  onChange: (next: string) => void
+  placeholder?: string
+  rows?: number
+}) {
+  const [editing, setEditing] = useState(false)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
+  useEffect(() => {
+    if (editing && textareaRef.current) {
+      textareaRef.current.focus()
+    }
+  }, [editing])
+  if (editing) {
+    return (
+      <textarea
+        ref={textareaRef}
+        rows={rows}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        onBlur={() => setEditing(false)}
+        onKeyDown={(e) => {
+          if (e.key === 'Escape') {
+            e.preventDefault()
+            setEditing(false)
+          }
+        }}
+        placeholder={placeholder}
+        className="w-full bg-white border border-blue-500 rounded-md px-2.5 py-1.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-y"
+      />
+    )
+  }
+  return (
+    <button
+      type="button"
+      onClick={() => setEditing(true)}
+      className="w-full text-left bg-white border border-gray-200 rounded-md px-2.5 py-1.5 text-sm text-slate-900 cursor-text whitespace-pre-wrap"
+      style={{ minHeight: `${rows * 20 + 12}px` }}
+    >
+      {value || <span className="text-slate-400">{placeholder || '—'}</span>}
+    </button>
+  )
+}
+
+// Click-to-edit currency field. Same visual pattern as InlineEditText —
+// persistent box, click to edit, displays formatted currency when idle.
+function InlineEditCurrency({
+  value,
+  onChange,
+  placeholder = '$0',
+}: {
+  value: number
+  onChange: (val: number) => void
+  placeholder?: string
+}) {
+  const [editing, setEditing] = useState(false)
+  const [raw, setRaw] = useState('')
+  const inputRef = useRef<HTMLInputElement>(null)
+  useEffect(() => {
+    if (editing && inputRef.current) {
+      setRaw(value ? String(value) : '')
+      inputRef.current.focus()
+    }
+  }, [editing, value])
+  if (editing) {
+    return (
+      <input
+        ref={inputRef}
+        type="text"
+        inputMode="decimal"
+        value={raw}
+        onChange={(e) => setRaw(e.target.value)}
+        onBlur={() => {
+          setEditing(false)
+          onChange(parseFloat(raw) || 0)
+        }}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault()
+            setEditing(false)
+            onChange(parseFloat(raw) || 0)
+          } else if (e.key === 'Escape') {
+            setEditing(false)
+          }
+        }}
+        className="w-full bg-white border border-blue-500 rounded-md px-2.5 py-1.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 tabular-nums"
+      />
+    )
+  }
+  return (
+    <button
+      type="button"
+      onClick={() => setEditing(true)}
+      className="w-full text-left bg-white border border-gray-200 rounded-md px-2.5 py-1.5 text-sm text-slate-900 cursor-text tabular-nums"
+    >
+      {value ? formatCurrency(value) : <span className="text-slate-400">{placeholder}</span>}
+    </button>
   )
 }
 
@@ -3133,6 +3362,10 @@ function ClaimWorkspaceInner({ claimId }: { claimId: string }) {
   // Preserve a legacy row's mode ('auto-acv' / 'auction') on save so nothing churns.
   const modeRef = useRef<string>('comp-finder')
   const [loadingClaim, setLoadingClaim] = useState(!isNew)
+  // Edit lock state for Claim Info — lifted here so the toggle button can
+  // live in the Card header next to the title. New claims always start
+  // unlocked (nothing to protect yet).
+  const [claimInfoEditMode, setClaimInfoEditMode] = useState<boolean>(isNew)
   const [claimNotFound, setClaimNotFound] = useState(false)
   // Set when a /claims/new session is promoted to a real row: the URL swap to
   // /claims/{id} must not trigger a refetch that clobbers in-memory search results.
@@ -3195,6 +3428,13 @@ function ClaimWorkspaceInner({ claimId }: { claimId: string }) {
       setCompAdjs(adjs)
       setStep(stepForTab(initialTab.current) ?? (comps.length > 0 ? 4 : 1))
       initialTab.current = null
+      // Reset the auto-save gate — the batched state updates below will fire
+      // the auto-save effect, and we want it to skip that first run so a
+      // freshly-loaded claim doesn't flash "Unsaved changes". Also stamp a
+      // 3-second grace window to also skip any downstream sync effects
+      // (Award ↔ Notes mirrors, variant auto-pick) that fire after the load.
+      initialLoadDone.current = false
+      autoSaveGraceUntilRef.current = Date.now() + 3000
       setLoadingClaim(false)
     })
     return () => { cancelled = true }
@@ -3227,6 +3467,14 @@ function ClaimWorkspaceInner({ claimId }: { claimId: string }) {
   // Closing Notes / Summary edits survive leaving the claim without a manual
   // "Save Claim" click.
   const initialLoadDone = useRef(false)
+  // Grace window after any load during which auto-save firings are ignored.
+  // Several sync effects (Award ↔ Notes field mirrors, award-type auto-pick,
+  // etc.) run AFTER the loader completes and mutate reportsState, which would
+  // otherwise flash "Unsaved changes" on every claim open / refresh even
+  // though no user edit happened. The loader stamps this ref to now()+3s so
+  // the auto-save effect skips those sync-driven state updates and only
+  // fires on real post-load user edits.
+  const autoSaveGraceUntilRef = useRef(0)
   const editingIdRef = useRef(editingId)
   useEffect(() => { editingIdRef.current = editingId }, [editingId])
   const autoSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -3238,6 +3486,9 @@ function ClaimWorkspaceInner({ claimId }: { claimId: string }) {
       initialLoadDone.current = true
       return
     }
+    // Within the post-load grace window → ignore. Sync effects after loader
+    // completes are not user edits and shouldn't trigger "Unsaved changes".
+    if (Date.now() < autoSaveGraceUntilRef.current) return
     // Nothing identifiable to save yet — don't create junk history entries.
     if (!claim.maNumber && !claim.insuredName) return
     // Don't fire while a claim is still loading from Supabase.
@@ -3667,6 +3918,52 @@ function ClaimWorkspaceInner({ claimId }: { claimId: string }) {
     confirmLabel: 'Submit',
     variant: 'primary',
   })
+
+  // Report-complete handoff — appraiser doing the report work (comps/
+  // adjustments/DV) hands the claim to the Handling Appraiser on the file,
+  // who negotiates and then submits for QC. Only shown when the current
+  // assignee is NOT the handling appraiser; otherwise Submit does both.
+  const handlingAppraiserName = (claim.handlingAppraiser ?? '').trim()
+  const handlingAppraiserProfile = handlingAppraiserName
+    ? allProfiles.find(p => {
+        const n = (p.name ?? '').trim().toLowerCase()
+        const e = (p.email ?? '').trim().toLowerCase()
+        const needle = handlingAppraiserName.toLowerCase()
+        return n === needle || e === needle
+      })
+    : null
+  const needsReportHandoff = Boolean(
+    workflowStage === 'main' &&
+    !isSubmitted &&
+    !isClosed &&
+    handlingAppraiserProfile &&
+    assignedTo &&
+    handlingAppraiserProfile.id !== assignedTo &&
+    // Appraisers with can_submit_without_handoff bypass the handoff and
+    // submit straight to QC (Henry Aleksanyan + George Aleksanyan today).
+    profile?.canSubmitWithoutHandoff !== true
+  )
+  const handleCompleteReport = async () => {
+    if (!editingId) return
+    const name = handlingAppraiserProfile?.name || handlingAppraiserProfile?.email || 'the handling appraiser'
+    if (!window.confirm(`Complete the report and hand this claim to ${name}?`)) return
+    setWorkflowBusy(true)
+    const res = await fetch(`/api/claims/${editingId}/complete-report`, { method: 'POST' })
+    setWorkflowBusy(false)
+    if (!res.ok) {
+      const b = await res.json().catch(() => ({} as { error?: string }))
+      alert((b as { error?: string }).error ?? 'Complete-report failed')
+      return
+    }
+    const fresh = await fetchACVEntry(editingId)
+    if (fresh) {
+      setStatus(fresh.status ?? 'open')
+      setAssignedTo(fresh.assignedTo ?? null)
+      setSubmittedAt(fresh.submittedAt ?? null)
+      setSubmittedBy(fresh.submittedBy ?? null)
+      setWorkflowStage(fresh.workflowStage ?? 'main')
+    }
+  }
   const handleComplete = () => setPendingWorkflow({
     path: 'approve',
     title: 'Mark this claim as Complete?',
@@ -3719,6 +4016,33 @@ function ClaimWorkspaceInner({ claimId }: { claimId: string }) {
     }
     // On Payment → Close, kick to dashboard; otherwise refresh in place.
     if (workflowStage === 'payment') { router.push('/'); return }
+    const fresh = await fetchACVEntry(editingId)
+    if (fresh) {
+      setStatus(fresh.status ?? 'open')
+      setAssignedTo(fresh.assignedTo ?? null)
+      setSubmittedAt(fresh.submittedAt ?? null)
+      setSubmittedBy(fresh.submittedBy ?? null)
+      setWorkflowStage(fresh.workflowStage ?? 'main')
+    }
+  }
+
+  // Admin sends a claim back to Main. Clears submission + reassigns to the
+  // appraiser who originally submitted it (falls back to current assignee).
+  const handleSendBackToMain = async () => {
+    if (!editingId) return
+    if (!window.confirm('Send this claim back to the appraiser?')) return
+    setWorkflowBusy(true)
+    const res = await fetch(`/api/claims/${editingId}/advance-workflow`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'send_back', toStage: 'main' }),
+    })
+    setWorkflowBusy(false)
+    if (!res.ok) {
+      const b = await res.json().catch(() => ({} as { error?: string }))
+      alert((b as { error?: string }).error ?? 'Send-back failed')
+      return
+    }
     const fresh = await fetchACVEntry(editingId)
     if (fresh) {
       setStatus(fresh.status ?? 'open')
@@ -3875,7 +4199,7 @@ function ClaimWorkspaceInner({ claimId }: { claimId: string }) {
     return (
       <div className="min-h-screen bg-gray-50 text-gray-900">
         <AppHeader />
-        <main className="max-w-6xl mx-auto px-6 py-16 text-center">
+        <main className="max-w-[1920px] mx-auto px-6 py-16 text-center">
           <p className="text-gray-500 mb-4">Claim not found. It may have been deleted.</p>
           <Link href="/" className="text-blue-600 hover:underline text-sm font-medium">Back to Dashboard</Link>
         </main>
@@ -3887,7 +4211,7 @@ function ClaimWorkspaceInner({ claimId }: { claimId: string }) {
     return (
       <div className="min-h-screen bg-gray-50 text-gray-900">
         <AppHeader />
-        <main className="max-w-6xl mx-auto px-6 py-16 flex items-center justify-center gap-2 text-gray-400">
+        <main className="max-w-[1920px] mx-auto px-6 py-16 flex items-center justify-center gap-2 text-gray-400">
           <Loader2 className="w-5 h-5 animate-spin" />
           Loading claim...
         </main>
@@ -3899,36 +4223,40 @@ function ClaimWorkspaceInner({ claimId }: { claimId: string }) {
     <div className="min-h-screen bg-gray-50 text-gray-900">
       <AppHeader />
 
-      <main className="max-w-6xl mx-auto px-6 py-8">
-        <div className="flex items-center gap-4 mb-4">
+      <main className="max-w-[1400px] mx-auto px-6 pt-4 pb-6">
+        <div className="relative flex items-center gap-2 mb-3">
           <Link
             href="/"
-            className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-600 hover:text-gray-900 text-sm font-medium transition-colors"
+            className="hp-btn hp-btn-sm hp-btn-ghost"
           >
-            <ArrowLeft className="w-4 h-4" />
+            <ArrowLeft className="w-3.5 h-3.5" />
             Dashboard
           </Link>
           {!isNew && editingId && (
             <button
               type="button"
               onClick={() => triggerAssignmentSheetPrint(`${claim.maNumber || 'claim'}-assignment-sheet.pdf`)}
-              className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-600 hover:text-gray-900 text-sm font-medium transition-colors"
+              className="hp-btn hp-btn-sm hp-btn-ghost"
               title="Print the assignment sheet"
             >
-              <Printer className="w-4 h-4" />
+              <Printer className="w-3.5 h-3.5" />
               Print
             </button>
           )}
-          {/* Centered slot between left controls and the right-side workflow buttons.
-              Flex-1 pushes the right group to the far right; justify-center
-              centers the badge within the remaining horizontal space. */}
+          {/* Pushes the right group to the far right; the licensing badge is
+              absolute-positioned below so it sits in the true page center
+              regardless of how wide the left/right button groups are. */}
+          <div className="flex-1" />
           {!isNew && editingId && (
-            <div className="flex-1 flex justify-center">
-              <StateLicensingTopBadge
-                claim={claim}
-                assignedTo={assignedTo}
-                profile={profile ?? null}
-              />
+            <div className="absolute left-1/2 -translate-x-1/2 top-1/2 -translate-y-1/2 pointer-events-none">
+              <div className="pointer-events-auto">
+                <StateLicensingTopBadge
+                  claim={claim}
+                  assignedTo={assignedTo}
+                  profile={profile ?? null}
+                  allProfiles={allProfiles}
+                />
+              </div>
             </div>
           )}
           {!readOnly && hasUnsavedChanges && (
@@ -3949,13 +4277,37 @@ function ClaimWorkspaceInner({ claimId }: { claimId: string }) {
           {!isNew && editingId && (
             <div className="flex items-center gap-2">
               {!isAdmin && !isSubmitted && !isClosed && isAssignee && (
+                needsReportHandoff ? (
+                  <Button
+                    onClick={handleCompleteReport}
+                    disabled={workflowBusy}
+                    size="sm"
+                    className="bg-blue-600 hover:bg-blue-500 text-white"
+                    title={`Hand off to ${handlingAppraiserProfile?.name || handlingAppraiserProfile?.email}`}
+                  >
+                    Complete Report
+                  </Button>
+                ) : (
+                  <Button
+                    onClick={handleSubmit}
+                    disabled={workflowBusy}
+                    size="sm"
+                    className="bg-emerald-600 hover:bg-emerald-500 text-white"
+                  >
+                    Submit for QC
+                  </Button>
+                )
+              )}
+              {isAdmin && !isClosed && workflowStage !== 'main' && (
                 <Button
-                  onClick={handleSubmit}
+                  onClick={handleSendBackToMain}
                   disabled={workflowBusy}
                   size="sm"
-                  className="bg-emerald-600 hover:bg-emerald-500 text-white"
+                  variant="outline"
+                  className="border-amber-300 text-amber-700 hover:bg-amber-50 hover:text-amber-800"
                 >
-                  Submit
+                  <ArrowLeft className="w-3.5 h-3.5 mr-1" />
+                  Send Back
                 </Button>
               )}
               {isAdmin && !isClosed && (
@@ -4111,48 +4463,91 @@ function ClaimWorkspaceInner({ claimId }: { claimId: string }) {
         />
 
         {isNew ? (
-          <h1 className="text-3xl font-extrabold text-gray-900 tracking-tight mb-6">New Claim</h1>
+          <h1 className="hp-display mb-5">New Claim</h1>
         ) : (
-          <div className="mb-6 bg-white rounded-xl shadow-sm px-6 py-4">
-            {/* Responsive grid: 2 cols on small screens, 3 on medium, 5 on wide.
-                Long values (Vehicle, Client, Owner) wrap within their cell
-                instead of being truncated with an ellipsis. */}
-            <div className="grid gap-x-8 gap-y-4 grid-cols-2 md:grid-cols-3 xl:grid-cols-5">
-              {[
-                { label: wsFileLabel, value: claim.maNumber },
-                { label: 'CL #', value: claim.claimNumber },
-                { label: 'Vehicle', value: claimVehicle },
-                { label: 'Client', value: claim.clientName },
-                { label: 'Owner', value: claim.insuredName },
-              ].map((stat) => (
-                <ClaimHeaderStat key={stat.label} label={stat.label} value={stat.value} />
-              ))}
+          <div className="mb-5 grid grid-cols-[1fr_auto_1fr] items-start gap-4">
+            {/* Left spacer so the stats card sits centered within the full width */}
+            <div />
+            {/* Claim stats chip card — centered */}
+            <div className="hp-card px-6 py-3 max-w-full">
+              <div className="flex flex-wrap items-start justify-center gap-x-8 gap-y-2">
+                {[
+                  { label: wsFileLabel, value: claim.maNumber },
+                  { label: 'CL #', value: claim.claimNumber },
+                  { label: 'Vehicle', value: claimVehicle },
+                  { label: 'Client', value: claim.clientName },
+                  { label: 'Owner', value: claim.insuredName },
+                ].map((stat) => (
+                  <ClaimHeaderStat key={stat.label} label={stat.label} value={stat.value || ''} />
+                ))}
+              </div>
+            </div>
+            {/* Handling Appraiser mini-card — right-aligned to the workspace edge */}
+            <div className="hp-card px-4 py-2.5 min-w-[220px] justify-self-end">
+              <div className="text-[11.5px] font-semibold uppercase tracking-[0.08em] text-slate-500 mb-1">Handling Appraiser</div>
+              {isAdmin ? (
+                <select
+                  value={claim.handlingAppraiser ?? ''}
+                  onChange={(e) => setClaim({ ...claim, handlingAppraiser: e.target.value })}
+                  className="w-full bg-white border border-gray-200 rounded-md px-2.5 py-1.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                >
+                  <option value="">— Select appraiser —</option>
+                  {(() => {
+                    const visible = allProfiles.filter(p =>
+                      p.isActive &&
+                      p.showInHandlingAppraiserList !== false &&
+                      (wsMemberIds === null || wsMemberIds.has(p.id))
+                    )
+                    const current = claim.handlingAppraiser ?? ''
+                    const currentInVisible = current && visible.some(p => (p.name || p.email) === current)
+                    return (
+                      <>
+                        {current && !currentInVisible && (
+                          <option value={current} disabled>{current} (not in list)</option>
+                        )}
+                        {visible.map(p => {
+                          const name = p.name || p.email
+                          return <option key={p.id} value={name}>{name}</option>
+                        })}
+                      </>
+                    )
+                  })()}
+                </select>
+              ) : (
+                <div className="text-[14px] font-semibold text-slate-900">
+                  {claim.handlingAppraiser || <span className="text-slate-400">—</span>}
+                </div>
+              )}
+              <HandlingAppraiserLicenseSummary
+                claim={claim}
+                handlingAppraiserName={claim.handlingAppraiser ?? ''}
+                allProfiles={allProfiles}
+              />
             </div>
           </div>
         )}
 
-        {/* Submitted informational banner for non-admins. The claim stays
-            editable until the admin closes it (Complete or Cancelled) —
-            appraisers may need to attach late documents or fix a detail
-            after submitting. */}
         {isSubmitted && !isAdmin && submittedAt && (
-          <div className="mb-4 p-3 rounded-lg bg-blue-50 border border-blue-200 text-blue-700 text-sm">
-            Submitted on {new Date(submittedAt).toLocaleString()}. Waiting on admin review — you can still edit or attach documents until the claim is closed.
+          <div className="mb-4 p-3 rounded-lg bg-blue-50 border border-blue-200 text-blue-700 text-[13px]">
+            Submitted on {new Date(submittedAt).toLocaleString()}. Admin review in progress — you can still edit or attach documents.
           </div>
         )}
 
-        {/* Duplicate banner — visible on any saved claim whose VIN or Claim #
-            matches another claim in the system. */}
         {!isNew && (duplicates.vinCount > 0 || duplicates.claimNumberCount > 0 || duplicates.maNumberCount > 0) && (
           <DuplicateBanner duplicates={duplicates} />
         )}
 
-        {/* Tabs — hidden until the claim exists. Two rows: claim information
-            (Claim Info / Documents) on top, the tools below. */}
+        {/* Workspace tabs — two tiers: claim information (top), tools (bottom).
+            Visually unified with the dashboard's segmented control style. */}
         {!isNew && (
-        <div className="mb-6">
-          <div className="flex items-center justify-center gap-12 mb-5 border-b border-gray-200">
-            {CLAIM_TABS.filter(tab => tab.id !== 'reports-hub' || isAdmin).map((tab) => {
+        <div className="mb-4 space-y-2.5">
+          <div className="flex items-center justify-center gap-6 border-b border-slate-200">
+            {CLAIM_TABS.filter(tab => {
+              // Reports + Activity are admin-only; Forms and the rest are
+              // visible to everyone.
+              if ((tab.id === 'reports-hub' || tab.id === 'activity') && !isAdmin) return false
+              return true
+            }).map((tab) => {
               const active = tabForStep(step) === tab.id
               return (
                 <button
@@ -4160,18 +4555,21 @@ function ClaimWorkspaceInner({ claimId }: { claimId: string }) {
                   type="button"
                   onClick={() => setStep(tab.step)}
                   className={cn(
-                    'pb-3 text-lg font-bold whitespace-nowrap border-b-2 -mb-px transition-colors',
+                    'relative pb-3 pt-1 text-[16px] font-semibold tracking-tight whitespace-nowrap transition-colors',
                     active
-                      ? 'border-blue-600 text-blue-600'
-                      : 'border-transparent text-gray-500 hover:text-gray-900 hover:border-gray-300'
+                      ? 'text-slate-900'
+                      : 'text-slate-500 hover:text-slate-900'
                   )}
                 >
                   {tab.label}
+                  {active && (
+                    <span className="absolute left-0 right-0 -bottom-px h-0.5 bg-slate-900 rounded-full" aria-hidden />
+                  )}
                 </button>
               )
             })}
           </div>
-          <div className="flex items-center justify-center flex-wrap gap-x-8 gap-y-1 border-b border-gray-200">
+          <div className="flex items-center flex-wrap gap-1 bg-slate-200/70 p-1 rounded-xl w-fit max-w-full overflow-x-auto mx-auto">
             {visibleToolTabs.map((tab) => {
               const active = tabForStep(step) === tab.id
               return (
@@ -4180,10 +4578,10 @@ function ClaimWorkspaceInner({ claimId }: { claimId: string }) {
                   type="button"
                   onClick={() => setStep(tab.step)}
                   className={cn(
-                    'pb-3 text-base font-bold whitespace-nowrap border-b-2 -mb-px transition-colors',
+                    'inline-flex items-center h-9 px-4 rounded-lg text-[14px] font-semibold transition-colors whitespace-nowrap',
                     active
-                      ? 'border-blue-600 text-blue-600'
-                      : 'border-transparent text-gray-500 hover:text-gray-900 hover:border-gray-300'
+                      ? 'bg-white text-slate-900 shadow-[0_1px_2px_rgba(15,23,42,0.1),0_2px_6px_rgba(15,23,42,0.08)] ring-1 ring-slate-900/10'
+                      : 'text-slate-500 hover:text-slate-900 hover:bg-white/50'
                   )}
                 >
                   {tab.label}
@@ -4192,32 +4590,6 @@ function ClaimWorkspaceInner({ claimId }: { claimId: string }) {
             })}
           </div>
         </div>
-        )}
-
-        {/* ACV tab: Comp Finder vs Loss Search selector */}
-        {tabForStep(step) === 'acv' && !isNew && (
-          <div className="flex items-center gap-2 mb-5">
-            <button
-              type="button"
-              onClick={() => setStep(6 === step ? 2 : step >= 2 && step <= 4 ? step : 2)}
-              className={cn(
-                'px-4 py-1.5 rounded-full text-xs font-semibold border transition-colors',
-                step !== 6 ? 'bg-blue-600 border-blue-600 text-white' : 'bg-white border-gray-200 text-gray-600 hover:border-gray-300'
-              )}
-            >
-              Comp Finder
-            </button>
-            <button
-              type="button"
-              onClick={() => setStep(6)}
-              className={cn(
-                'px-4 py-1.5 rounded-full text-xs font-semibold border transition-colors',
-                step === 6 ? 'bg-blue-600 border-blue-600 text-white' : 'bg-white border-gray-200 text-gray-600 hover:border-gray-300'
-              )}
-            >
-              Loss Search
-            </button>
-          </div>
         )}
 
         {/* ACV Report internal stepper (Select Comps → Adjustments → Review) */}
@@ -4257,14 +4629,154 @@ function ClaimWorkspaceInner({ claimId }: { claimId: string }) {
             or assigned to someone else. The tab bar above stays clickable so
             the user can still navigate around and view. */}
         <fieldset disabled={readOnly} className="border-0 p-0 m-0 min-w-0">
-        {/* Step 1: Claim Info + Opposing Appraiser */}
-        {step === 1 && (
+        {/* Step 1: Claim Info — single Card holding the new 2-column form.
+            Opposing Appraiser + Valuations are built here (they need parent
+            reportsState) and injected as props into ClaimInfoForm's Row 4. */}
+        {step === 1 && (() => {
+          const vInputCls = 'w-full bg-white border border-gray-200 rounded-md px-2.5 py-1.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent'
+          const vLabelCls = 'block text-[12px] font-medium text-slate-500 tracking-tight mb-1'
+          const vHeaderCls = 'text-[15px] font-bold text-black tracking-tight mb-2'
+          const types = claim.claimTypes ?? []
+          const showAll = types.length === 0 || types.includes('other')
+          const showAcv = showAll || types.includes('acv')
+          const showDv = showAll || types.includes('dv')
+          const showStorage = showAll || types.includes('storage')
+          const dvAmount = dv ? finalDvFor(dv, claim.mileage) : 0
+          const storageAmount = storage ? computeStorageTotals(storage).total : 0
+          const opposingAppraiserSection = (
+            <>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-w-2xl">
+                <div>
+                  <label className={vLabelCls}>Opposing Appraiser Name</label>
+                  <InlineEditText
+                    value={reportsState.notesData.appraiserName}
+                    placeholder="First Last"
+                    onChange={(value) => {
+                      const parts = value.trim().split(/\s+/)
+                      const lastName = parts.length > 1 ? parts[parts.length - 1] : value.trim()
+                      setReportsState(prev => ({
+                        ...prev,
+                        notesData: { ...prev.notesData, appraiserName: value, appraiserLastName: lastName },
+                        awardData: { ...prev.awardData, signatureBlock2: [value, prev.notesData.appraiserCompany].filter(Boolean).join('\n') },
+                      }))
+                    }}
+                  />
+                </div>
+                <div>
+                  <label className={vLabelCls}>Opposing Appraiser Company</label>
+                  <InlineEditText
+                    value={reportsState.notesData.appraiserCompany}
+                    placeholder="Firm / appraisal company"
+                    onChange={(company) => {
+                      setReportsState(prev => ({
+                        ...prev,
+                        notesData: { ...prev.notesData, appraiserCompany: company },
+                        awardData: { ...prev.awardData, signatureBlock2: [prev.notesData.appraiserName, company].filter(Boolean).join('\n') },
+                      }))
+                    }}
+                  />
+                </div>
+              </div>
+            </>
+          )
+          const valuationsSection = (
+            <>
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 max-w-4xl">
+                {showAcv && (
+                  <div>
+                    <label className={vLabelCls}>MA Value (ACV)</label>
+                    <InlineEditCurrency
+                      value={result.acv > 0 ? result.acv : (reportsState.notesData.maValueNum ?? 0)}
+                      onChange={(val) => setReportsState(prev => ({
+                        ...prev,
+                        notesData: { ...prev.notesData, maValueNum: val },
+                      }))}
+                    />
+                  </div>
+                )}
+                {showDv && (
+                  <div>
+                    <label className={vLabelCls}>MA Value (DV)</label>
+                    <InlineEditCurrency
+                      value={dvAmount > 0 ? dvAmount : (reportsState.notesData.dvValueNum ?? 0)}
+                      onChange={(val) => setReportsState(prev => ({
+                        ...prev,
+                        notesData: { ...prev.notesData, dvValueNum: val },
+                      }))}
+                    />
+                  </div>
+                )}
+                {showStorage && (
+                  <div>
+                    <label className={vLabelCls}>MA Value (Storage)</label>
+                    <InlineEditCurrency
+                      value={storageAmount > 0 ? storageAmount : (reportsState.notesData.storageValueNum ?? 0)}
+                      onChange={(val) => setReportsState(prev => ({
+                        ...prev,
+                        notesData: { ...prev.notesData, storageValueNum: val },
+                      }))}
+                    />
+                  </div>
+                )}
+                <div>
+                  <label className={vLabelCls}>Ins. Co. Offer</label>
+                  <InlineEditCurrency
+                    value={reportsState.notesData.insuranceOfferNum ?? 0}
+                    onChange={(val) => setReportsState(prev => ({
+                      ...prev,
+                      notesData: { ...prev.notesData, insuranceOfferNum: val },
+                    }))}
+                  />
+                </div>
+                <div>
+                  <label className={vLabelCls}>OA Value</label>
+                  <InlineEditCurrency
+                    value={reportsState.notesData.appraiserValueNum}
+                    onChange={(val) => setReportsState(prev => ({
+                      ...prev,
+                      notesData: { ...prev.notesData, appraiserValueNum: val },
+                    }))}
+                  />
+                </div>
+                <div>
+                  <label className={vLabelCls}>Award Amount</label>
+                  <InlineEditCurrency
+                    value={reportsState.notesData.agreementAmountNum}
+                    onChange={(val) => setReportsState(prev => ({
+                      ...prev,
+                      notesData: { ...prev.notesData, agreementAmountNum: val },
+                    }))}
+                  />
+                </div>
+              </div>
+            </>
+          )
+          const claimInfoLocked = !claimInfoEditMode && !isNew
+          return (
           <div>
-            <Card className="bg-white border-gray-200 shadow-sm">
-              <CardHeader>
-                <CardTitle className="text-gray-900">Claim Information</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-8">
+            <Card className={cn(
+              'bg-white border-gray-200 shadow-sm',
+              // In read mode the SectionCards inside render their own borders,
+              // so drop the outer Card chrome entirely for a clean, nested-free
+              // look. In edit mode we keep the Card so the title + Done button
+              // sit nicely at the top of the form.
+              claimInfoLocked && 'border-0 shadow-none bg-transparent',
+            )}>
+              {!claimInfoLocked && (
+                <CardHeader className="py-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <CardTitle className="text-black text-lg font-bold tracking-tight">
+                      Claim Information
+                    </CardTitle>
+                    {!isNew && (isAdmin || profile?.canEditClaimInfo === true) && (
+                      <Button size="sm" variant="outline" onClick={() => setClaimInfoEditMode(false)}>
+                        <Lock className="w-3.5 h-3.5 mr-1" /> Done
+                      </Button>
+                    )}
+                  </div>
+                </CardHeader>
+              )}
+              <CardContent className={cn(claimInfoLocked ? 'p-0' : 'space-y-5 pt-0')}>
                 <ClaimInfoForm
                   claim={claim}
                   onChange={setClaim}
@@ -4277,160 +4789,11 @@ function ClaimWorkspaceInner({ claimId }: { claimId: string }) {
                   isAdmin={isAdmin}
                   onParsedNotes={(notes) => { pendingAutoNoteRef.current = notes }}
                   allProfiles={allProfiles}
+                  opposingAppraiserSection={opposingAppraiserSection}
+                  valuationsSection={valuationsSection}
+                  editMode={claimInfoEditMode}
+                  onEditModeChange={setClaimInfoEditMode}
                 />
-                <div className="border-t border-gray-100 pt-8">
-                  <h3 className="text-sm font-bold text-gray-900 mb-4">Opposing Appraiser</h3>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Opposing Appraiser Name</label>
-                      <input
-                        className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                        value={reportsState.notesData.appraiserName}
-                        onChange={(e) => {
-                          const value = e.target.value
-                          const parts = value.trim().split(/\s+/)
-                          const lastName = parts.length > 1 ? parts[parts.length - 1] : value.trim()
-                          setReportsState(prev => ({
-                            ...prev,
-                            notesData: { ...prev.notesData, appraiserName: value, appraiserLastName: lastName },
-                            awardData: { ...prev.awardData, signatureBlock2: [value, prev.notesData.appraiserCompany].filter(Boolean).join('\n') },
-                          }))
-                        }}
-                        placeholder="First Last"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Opposing Appraiser Company</label>
-                      <input
-                        className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                        value={reportsState.notesData.appraiserCompany}
-                        onChange={(e) => {
-                          const company = e.target.value
-                          setReportsState(prev => ({
-                            ...prev,
-                            notesData: { ...prev.notesData, appraiserCompany: company },
-                            awardData: { ...prev.awardData, signatureBlock2: [prev.notesData.appraiserName, company].filter(Boolean).join('\n') },
-                          }))
-                        }}
-                        placeholder="Firm / appraisal company"
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                {/* Valuations — mirrors what's on the printed assignment sheet.
-                    One MA Value field per selected loss type (ACV / DV /
-                    Storage), each auto-filled from its own tool tab. Estimate
-                    Dispute is intentionally excluded. Empty claimTypes (legacy
-                    rows) + 'other' both fall back to showing all three.
-                    Award auto-fills from Closing Notes agreementAmountNum, OA
-                    value two-way binds to the same notesData field Closing
-                    Notes uses, Ins. Co. Offer is a stand-alone manual field. */}
-                <div className="border-t border-gray-100 pt-8">
-                  <h3 className="text-sm font-bold text-gray-900 mb-4">Valuations</h3>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {(() => {
-                      const types = claim.claimTypes ?? []
-                      const showAll = types.length === 0 || types.includes('other')
-                      const showAcv = showAll || types.includes('acv')
-                      const showDv = showAll || types.includes('dv')
-                      const showStorage = showAll || types.includes('storage')
-                      const dvAmount = dv ? finalDvFor(dv, claim.mileage) : 0
-                      const storageAmount = storage ? computeStorageTotals(storage).total : 0
-                      return (
-                        <>
-                          {showAcv && (
-                            <div>
-                              <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">
-                                MA Value (ACV)
-                                {result.acv > 0 && <span className="ml-1 text-[10px] font-normal text-gray-400 normal-case">(auto from ACV Report)</span>}
-                              </label>
-                              <CurrencyInput
-                                className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent tabular-nums"
-                                value={result.acv > 0 ? result.acv : (reportsState.notesData.maValueNum ?? 0)}
-                                onChange={(val) => setReportsState(prev => ({
-                                  ...prev,
-                                  notesData: { ...prev.notesData, maValueNum: val },
-                                }))}
-                              />
-                            </div>
-                          )}
-                          {showDv && (
-                            <div>
-                              <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">
-                                MA Value (DV)
-                                {dvAmount > 0 && <span className="ml-1 text-[10px] font-normal text-gray-400 normal-case">(auto from DV Report)</span>}
-                              </label>
-                              <CurrencyInput
-                                className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent tabular-nums"
-                                value={dvAmount > 0 ? dvAmount : (reportsState.notesData.dvValueNum ?? 0)}
-                                onChange={(val) => setReportsState(prev => ({
-                                  ...prev,
-                                  notesData: { ...prev.notesData, dvValueNum: val },
-                                }))}
-                              />
-                            </div>
-                          )}
-                          {showStorage && (
-                            <div>
-                              <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">
-                                MA Value (Storage)
-                                {storageAmount > 0 && <span className="ml-1 text-[10px] font-normal text-gray-400 normal-case">(auto from Storage Charges)</span>}
-                              </label>
-                              <CurrencyInput
-                                className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent tabular-nums"
-                                value={storageAmount > 0 ? storageAmount : (reportsState.notesData.storageValueNum ?? 0)}
-                                onChange={(val) => setReportsState(prev => ({
-                                  ...prev,
-                                  notesData: { ...prev.notesData, storageValueNum: val },
-                                }))}
-                              />
-                            </div>
-                          )}
-                        </>
-                      )
-                    })()}
-                    <div>
-                      <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Ins. Co. Offer</label>
-                      <CurrencyInput
-                        className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent tabular-nums"
-                        value={reportsState.notesData.insuranceOfferNum ?? 0}
-                        onChange={(val) => setReportsState(prev => ({
-                          ...prev,
-                          notesData: { ...prev.notesData, insuranceOfferNum: val },
-                        }))}
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">
-                        OA Value
-                        <span className="ml-1 text-[10px] font-normal text-gray-400 normal-case">(also on Closing Notes)</span>
-                      </label>
-                      <CurrencyInput
-                        className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent tabular-nums"
-                        value={reportsState.notesData.appraiserValueNum}
-                        onChange={(val) => setReportsState(prev => ({
-                          ...prev,
-                          notesData: { ...prev.notesData, appraiserValueNum: val },
-                        }))}
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">
-                        Award Amount
-                        <span className="ml-1 text-[10px] font-normal text-gray-400 normal-case">(also on Closing Notes)</span>
-                      </label>
-                      <CurrencyInput
-                        className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent tabular-nums"
-                        value={reportsState.notesData.agreementAmountNum}
-                        onChange={(val) => setReportsState(prev => ({
-                          ...prev,
-                          notesData: { ...prev.notesData, agreementAmountNum: val },
-                        }))}
-                      />
-                    </div>
-                  </div>
-                </div>
               </CardContent>
             </Card>
             {isNew && (
@@ -4446,7 +4809,8 @@ function ClaimWorkspaceInner({ claimId }: { claimId: string }) {
               </div>
             )}
           </div>
-        )}
+          )
+        })()}
 
         {/* Step 2: Search & Select Comps */}
         {step === 2 && (
@@ -4615,7 +4979,7 @@ function ClaimWorkspaceInner({ claimId }: { claimId: string }) {
                     Selected Comps <span className="text-blue-600">{selectedComps.length}/3</span>
                   </p>
                 </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
                   {selectedComps.map((comp, i) => (
                     <CompCard
                       key={comp.id}
@@ -4797,7 +5161,7 @@ function ClaimWorkspaceInner({ claimId }: { claimId: string }) {
               const pageComps = unselectedListings.slice((compsPage - 1) * COMPS_PER_PAGE, compsPage * COMPS_PER_PAGE)
               return (
                 <>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
                     {pageComps.map((comp) => (
                       <CompCard
                         key={comp.id}
@@ -4842,14 +5206,6 @@ function ClaimWorkspaceInner({ claimId }: { claimId: string }) {
             })()}
 
             <div className="flex items-center gap-3 pt-2">
-              <Button
-                onClick={() => setStep(1)}
-                variant="outline"
-                className="border-gray-200 text-gray-600 hover:bg-gray-50 rounded-lg font-semibold"
-              >
-                <ChevronLeft className="w-4 h-4 mr-1" />
-                Back
-              </Button>
               <Button
                 onClick={() => setStep(3)}
                 disabled={selectedIds.length < 1}
@@ -5027,6 +5383,19 @@ function ClaimWorkspaceInner({ claimId }: { claimId: string }) {
             to ?tab=reports-hub for non-admins fall through to a hidden render. */}
         {step === 15 && isAdmin && (
           <ReportsHubTab claimId={editingId ?? claimId} onOpenInvoice={() => setStep(12)} />
+        )}
+
+        {/* Step 17: Forms — placeholder for client-specific intake / release
+            forms. Visible to everyone. Content gets populated by the admin
+            later. */}
+        {step === 17 && editingId && (
+          <FormsTab claimId={editingId} clientName={claim.clientName} />
+        )}
+
+        {/* Step 18: Activity timeline — chronological event log of stage
+            transitions, reassignments, and messages for this claim. Admin-only. */}
+        {step === 18 && isAdmin && editingId && (
+          <ActivityTab claimId={editingId} allProfiles={allProfiles} />
         )}
       </main>
 

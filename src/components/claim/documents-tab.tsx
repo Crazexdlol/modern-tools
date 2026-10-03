@@ -247,7 +247,7 @@ export function DocumentsTab({
     setUploading(false)
   }, [claimId, documents, onDocumentsChange])
 
-  const { getRootProps, getInputProps, isDragActive } = useDropzone({ onDrop: handleDrop })
+  const { getRootProps, getInputProps } = useDropzone({ onDrop: handleDrop, noDrag: true })
 
   // Open in-app preview by default, unless (a) the file type isn't previewable
   // in-browser (docx, xlsx, etc.), in which case fall back to opening a signed
@@ -361,60 +361,56 @@ export function DocumentsTab({
 
   return (
     <div className="space-y-6">
-      <div
-        {...getRootProps()}
-        className={`border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-all ${
-          isDragActive ? 'border-blue-500 bg-blue-50' : 'border-gray-300 bg-white hover:border-gray-400'
-        }`}
-      >
-        <input {...getInputProps()} />
-        {uploading
-          ? <Loader2 className="w-7 h-7 text-blue-500 mx-auto mb-2 animate-spin" />
-          : <Upload className="w-7 h-7 text-gray-400 mx-auto mb-2" />}
-        <p className="text-sm text-gray-500">
-          {uploading
-            ? (uploadStatus ?? 'Uploading…')
-            : isDragActive ? 'Drop files here…' : 'Drop files here, or click to browse. Zips are extracted automatically.'}
-        </p>
-      </div>
-
       {error && (
         <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm">{error}</div>
       )}
 
-      {/* Bulk download toolbar. Selected zipped when any doc is checked;
-          Download all is always available (if there's at least one doc). */}
-      {sorted.length > 0 && (
-        <div className="flex items-center gap-3">
-          {selectedCount > 0 && (
-            <span className="text-sm text-gray-600">{selectedCount} selected</span>
+      {/* Toolbar — Upload, then Download Selected, Download All. */}
+      <div className="flex items-center gap-3">
+        <label
+          {...getRootProps()}
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded border border-gray-300 bg-white text-gray-700 text-sm font-medium hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer"
+          aria-disabled={uploading}
+        >
+          <input {...getInputProps()} />
+          {uploading ? (
+            <><Loader2 className="w-4 h-4 animate-spin" /> {uploadStatus ?? 'Uploading…'}</>
+          ) : (
+            <><Upload className="w-4 h-4" /> Upload</>
           )}
-          <button
-            type="button"
-            onClick={handleDownloadSelected}
-            disabled={selectedCount === 0 || zipping !== null}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded border border-gray-300 bg-white text-gray-700 text-sm font-medium hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-          >
-            {zipping === 'selected' ? (
-              <><Loader2 className="w-4 h-4 animate-spin" /> Zipping…</>
-            ) : (
-              <><Download className="w-4 h-4" /> Download selected</>
+        </label>
+        {sorted.length > 0 && (
+          <>
+            {selectedCount > 0 && (
+              <span className="text-sm text-gray-600">{selectedCount} selected</span>
             )}
-          </button>
-          <button
-            type="button"
-            onClick={handleDownloadAll}
-            disabled={zipping !== null}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded border border-gray-300 bg-white text-gray-700 text-sm font-medium hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-          >
-            {zipping === 'all' ? (
-              <><Loader2 className="w-4 h-4 animate-spin" /> Zipping…</>
-            ) : (
-              <><Download className="w-4 h-4" /> Download all ({sorted.length})</>
-            )}
-          </button>
-        </div>
-      )}
+            <button
+              type="button"
+              onClick={handleDownloadSelected}
+              disabled={selectedCount === 0 || zipping !== null}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded border border-gray-300 bg-white text-gray-700 text-sm font-medium hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            >
+              {zipping === 'selected' ? (
+                <><Loader2 className="w-4 h-4 animate-spin" /> Zipping…</>
+              ) : (
+                <><Download className="w-4 h-4" /> Download selected</>
+              )}
+            </button>
+            <button
+              type="button"
+              onClick={handleDownloadAll}
+              disabled={zipping !== null}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded border border-gray-300 bg-white text-gray-700 text-sm font-medium hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            >
+              {zipping === 'all' ? (
+                <><Loader2 className="w-4 h-4 animate-spin" /> Zipping…</>
+              ) : (
+                <><Download className="w-4 h-4" /> Download all ({sorted.length})</>
+              )}
+            </button>
+          </>
+        )}
+      </div>
 
       <div className="bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden">
         <table className="w-full text-sm">
@@ -443,7 +439,7 @@ export function DocumentsTab({
             {sorted.length === 0 ? (
               <tr>
                 <td colSpan={6} className="text-center py-16 text-gray-400">
-                  No documents yet. Download or print a report, or drop files above.
+                  No documents yet. Download or print a report, or click Upload above.
                 </td>
               </tr>
             ) : (

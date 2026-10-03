@@ -144,6 +144,14 @@ export function parseModernAppraisers(text: string): ParsedClaim {
   const zip = grabZip(text, ownerSection)
 
   const na = (val: string) => val || 'N/A'
+  const resolvedInsuredName = insuredName || `${firstName} ${lastName}`.trim()
+
+  // When clientType is 'Insured', the insured IS the claimant (first-party
+  // claim) — mirror the insured fields into the claimant fields so the UI
+  // reflects that without manual re-entry. For 'Claimant' (third-party),
+  // keep claimant fields empty since they're a distinct person.
+  const sameAsInsured = clientType === 'Insured'
+  const copyIf = (v: string) => (sameAsInsured && v ? v : '')
 
   return {
     format: 'modern-appraisers',
@@ -153,14 +161,14 @@ export function parseModernAppraisers(text: string): ParsedClaim {
     dateReceived,
     clientType,
     clientName: na(clientName),
-    insuredName: na(insuredName || `${firstName} ${lastName}`.trim()),
+    insuredName: na(resolvedInsuredName),
     ownerPhone: na(ownerPhone),
     ownerEmail: na(ownerEmail),
     ownerAddress: na(ownerAddress),
-    claimantName: '',
-    claimantPhone: '',
-    claimantEmail: '',
-    claimantAddress: '',
+    claimantName: copyIf(resolvedInsuredName),
+    claimantPhone: copyIf(ownerPhone),
+    claimantEmail: copyIf(ownerEmail),
+    claimantAddress: copyIf(ownerAddress),
     insuranceCompany: na(insuranceCompany),
     adjuster: na(adjuster),
     adjusterPhone: na(adjusterPhone),
