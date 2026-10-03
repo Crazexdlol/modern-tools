@@ -625,31 +625,34 @@ export function ClaimsTable({
 
   return (
     <div>
-      {/* Bulk action toolbar (admin only, visible when selection is non-empty) */}
-      {adminView && selectedCount > 0 && (
-        <div className="mb-4 flex flex-wrap items-center gap-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-          <div className="text-sm font-semibold text-blue-900">
-            {selectedCount} claim{selectedCount === 1 ? '' : 's'} selected
-          </div>
-          <div className="flex flex-wrap items-center gap-2 ml-auto">
-            {/* Advance only makes sense inside a workflow-dashboard tab (Main/QC/
-                Billing/Delivery/Payment). On /claims (All Claims — mixed stages
-                + closed rows) the semantic doesn't fit, so hide it there. */}
+      {bulkError && (
+        <div className="mb-4 p-3 rounded bg-red-50 border border-red-200 text-red-700 text-sm">
+          {bulkError}
+        </div>
+      )}
+
+      {/* Toolbar row — bulk actions (when selection non-empty) on the left,
+          search box on the right. No blue bubble; buttons sit flat in the
+          toolbar for a consistent look across every dashboard that mounts
+          this table. */}
+      <div className="flex items-center flex-wrap gap-x-3 gap-y-2 mb-4">
+        {adminView && selectedCount > 0 && (
+          <div className="flex items-center flex-wrap gap-2">
+            <span className="text-sm font-medium text-gray-700">
+              {selectedCount} selected
+            </span>
             {workflowStage && (
-              <>
-                <Button
-                  onClick={() => setSubmitConfirmOpen(true)}
-                  disabled={bulkBusy}
-                  className="bg-emerald-600 hover:bg-emerald-500 text-white text-sm"
-                >
-                  {bulkBusy ? 'Working…' : 'Advance'}
-                </Button>
-                <span className="mx-2 h-6 w-px bg-blue-200" aria-hidden />
-              </>
+              <Button
+                onClick={() => setSubmitConfirmOpen(true)}
+                disabled={bulkBusy}
+                className="bg-emerald-600 hover:bg-emerald-500 text-white text-sm"
+              >
+                {bulkBusy ? 'Working…' : 'Advance'}
+              </Button>
             )}
             {workflowStage === 'qc' ? (
               <>
-                <span className="text-sm text-blue-900">Send back to:</span>
+                <span className="text-sm text-gray-600">Send back to:</span>
                 <select
                   value={bulkSendBackAssignee}
                   onChange={(e) => setBulkSendBackAssignee(e.target.value)}
@@ -673,7 +676,7 @@ export function ClaimsTable({
               </>
             ) : (
               <>
-                <span className="text-sm text-blue-900">Reassign to:</span>
+                <span className="text-sm text-gray-600">Reassign to:</span>
                 <select
                   value={bulkAssignee}
                   onChange={(e) => setBulkAssignee(e.target.value)}
@@ -697,7 +700,6 @@ export function ClaimsTable({
                 </Button>
               </>
             )}
-            <span className="mx-2 h-6 w-px bg-blue-200" aria-hidden />
             <div className="relative">
               <Button
                 onClick={() => setActionsMenuOpen(o => !o)}
@@ -726,7 +728,6 @@ export function ClaimsTable({
                 </>
               )}
             </div>
-            <span className="mx-2 h-6 w-px bg-blue-200" aria-hidden />
             <Button
               onClick={() => setBulkCloseConfirmOpen(true)}
               disabled={bulkBusy}
@@ -753,22 +754,14 @@ export function ClaimsTable({
             <button
               onClick={clearSelection}
               disabled={bulkBusy}
-              className="text-blue-700 hover:text-blue-900 p-1"
+              className="text-gray-400 hover:text-gray-700 p-1"
               title="Clear selection"
             >
               <X className="w-4 h-4" />
             </button>
           </div>
-        </div>
-      )}
-      {bulkError && (
-        <div className="mb-4 p-3 rounded bg-red-50 border border-red-200 text-red-700 text-sm">
-          {bulkError}
-        </div>
-      )}
-
-      <div className="flex items-center justify-end gap-3 mb-4">
-        <div className="relative w-72">
+        )}
+        <div className="relative w-72 ml-auto">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
           <input
             type="text"
