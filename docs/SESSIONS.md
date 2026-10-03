@@ -18,6 +18,45 @@ Read `CLAUDE.md` first if you haven't. Then read the top entry here before touch
 
 ---
 
+## 2026-10-03 — State tax: rate column, 51-state seed, admin editor, server rate-mismatch finding
+
+**Worked on:** Extended the state tax rule infrastructure with per-state base sales tax rates, automated rate-mismatch flagging on Estimate Reviews, and a new admin settings page to view/edit all 51 rows.
+
+**Changed:**
+- `supabase/migration-state-tax-rules-rates.sql` — adds `rate numeric(5,3)` column + seeds all 50 states + DC with 2024/2025 verified base rates; coalesce-on-conflict preserves any manually-entered rate. Verification query included. Henry must run manually.
+- `supabase/migration-state-tax-rules-rates-rollback.sql` — drops the `rate` column only (preserves rows).
+- `src/lib/supabase/state-tax-rules.ts` — added `rate: number | null` to `StateTaxRule` interface and `Row`; updated `rowToRule` to pass through `rate`; added `upsertStateTaxRuleWithRate` helper.
+- `src/lib/estimate-review/types.ts` — added `rate_mismatch` to `TaxIssueType`; added optional `billedRate`, `ruleRate`, `deltaRate` to `TaxFinding`; added optional `estimateTaxRate: number | null` to `EstimateReview`.
+- `src/lib/estimate-review/prompt.ts` — `buildReview` now derives `estimateTaxRate` from the tax breakdown and attaches it to the returned review object.
+- `src/app/api/acv/review-estimate/route.ts` — after `buildReview`, compares `review.estimateTaxRate` vs `stateRule.rate`; inserts a `rate_mismatch` TaxFinding (severity 'low') when they differ by >= 0.1 percentage points.
+- `src/app/api/admin/state-tax-rules/route.ts` — GET all rows, admin-only.
+- `src/app/api/admin/state-tax-rules/[state]/route.ts` — PATCH one row by state code, admin-only.
+- `src/app/admin/settings/state-tax-rules/page.tsx` — server wrapper for the admin settings page.
+- `src/app/admin/settings/state-tax-rules/state-tax-rules-client.tsx` — inline-edit table (51 rows, rate + rule + notes editable per row, save via PATCH).
+- `src/app/admin/settings/_settings-nav.tsx` — added State Tax Rules nav entry (Percent icon) between Licensed States and Guidelines.
+
+**Deploy status:** Not deployed. Migration `migration-state-tax-rules-rates.sql` needs to be run by Henry before the rate column is live.
+
+**In progress / broken / unknowns:** Until the migration runs, `stateRule.rate` will be null on all rows and the rate-mismatch check will silently skip (safe). The `no_state_rule` finding still surfaces if a state has no row at all.
+
+**Next:** Henry runs the migration; verify the admin page shows 51 rows with correct rates; consider surfacing `rate_mismatch` findings distinctly in the Estimate Review UI.
+
+## 2026-10-03 — Estimate Dispute: document picker replaces file drop-zones
+
+**Worked on:** UX rewrite of the Estimate Dispute tab — replaced all three file drop-zones with document pickers that select from the claim's existing Documents tab. Auto-detect labor-rate / invoice / photo classification by filename on the server.
+
+**Changed:**
+- `src/components/claim/estimate-review-tab.tsx` — deleted `MultiDropZone` + `react-dropzone` import; added inline `DocumentPicker` component with modal list, chip display, and keyboard/backdrop close; replaced `estimates/photos/invoices` File[] state with `estimateDocId`/`supportingDocIds`; updated `handleRun` to send JSON body; removed labor-rate hint text.
+- `src/components/claim/estimate-tab.tsx` — added `documents: ClaimDocument[]` prop and forwarded to `EstimateReviewTab`.
+- `src/components/claim/ClaimWorkspace.tsx` — passed `documents={documents}` to `<EstimateTab>` mount at step 7.
+- `src/app/api/acv/review-estimate/route.ts` — switched from multipart FormData to JSON body (`estimateDocId`, `supportingDocIds`, `claimId`, `claimState`, `nextReviewNumber`); downloads docs from `claim-documents` bucket via service client; classifies supporting docs by filename regex (labor-rate, invoice, photo); removed `source === 'labor-rates'` tag query.
+
+**Deploy status:** Not deployed.
+
+**In progress / broken / unknowns:** None known.
+
+**Next:** Deploy when ready.
+
 ## 2026-10-03 — Opposing Appraisers registry (admin CRUD + claim-side picker)
 
 **Worked on:** Built the full Opposing Appraisers feature: DB migration, admin settings page, server API routes (GET/POST/PATCH/soft-DELETE), client-side helper, and a claim-side fuzzy picker that replaces the OA Name InlineEditText in ClaimWorkspace.
