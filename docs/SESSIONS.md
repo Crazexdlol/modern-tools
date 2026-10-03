@@ -18,6 +18,28 @@ Read `CLAUDE.md` first if you haven't. Then read the top entry here before touch
 
 ---
 
+## 2026-10-03 — Ticket system: Henry launcher submit-ticket tab + super-admin admin page
+
+**Worked on:** Built a lightweight ticket system end-to-end — Supabase table + RLS, API routes, submit-ticket tab in the Henry floating launcher, and a super-admin-only settings page to view and triage tickets.
+
+**Changed:**
+- `supabase/migration-tickets.sql` — creates `public.tickets` table with RLS (users insert/read own; super-admin all). Henry must run manually.
+- `supabase/migration-tickets-rollback.sql` — drops table, indexes, and policies.
+- `src/lib/supabase/tickets.ts` — shared types (`Ticket`, `TicketWithSubmitter`, `TICKET_SUBJECTS`, `TICKET_STATUS_LABELS`), row mappers, and `submitTicketViaApi` browser helper.
+- `src/app/api/tickets/route.ts` — `POST /api/tickets`: any authenticated user; validates subject + description; inserts with user's id; 42P01 safe.
+- `src/app/api/admin/tickets/route.ts` — `GET /api/admin/tickets`: super-admin only; returns all tickets joined with profiles (name, email).
+- `src/app/api/admin/tickets/[id]/route.ts` — `PATCH /api/admin/tickets/[id]`: super-admin only; updates status and/or resolution_note; auto-sets resolved_at.
+- `src/components/henry-floating-launcher.tsx` — added `LauncherTab` type; tab bar (Ask / Submit ticket) below header; Submit ticket form with subject dropdown, description textarea, submitting state, success confirmation, and reset; existing Ask tab unchanged.
+- `src/app/admin/settings/tickets/page.tsx` — server wrapper; gates with `SuperAdminGuard`.
+- `src/app/admin/settings/tickets/tickets-client.tsx` — table of tickets with status filter buttons, status dropdown per row, expandable description, inline resolution-note editor, relative timestamps.
+- `src/app/admin/settings/_settings-nav.tsx` — added Tickets nav entry (Ticket icon, superAdminOnly) below Activity.
+
+**Deploy status:** Not deployed. Migration must be run by Henry before the feature works in production.
+
+**In progress / broken / unknowns:** Until the migration runs, the API routes return 503 with `{ error: 'migration pending' }` on insert and `{ tickets: [] }` on GET — safe degrades. tsc clean (zero errors).
+
+**Next:** Henry runs `migration-tickets.sql`; verify the submit form in prod; optionally add email notification on ticket creation.
+
 ## 2026-10-03 — State tax: rate column, 51-state seed, admin editor, server rate-mismatch finding
 
 **Worked on:** Extended the state tax rule infrastructure with per-state base sales tax rates, automated rate-mismatch flagging on Estimate Reviews, and a new admin settings page to view/edit all 51 rows.
