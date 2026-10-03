@@ -10,11 +10,13 @@ import { useCurrentProfile } from '@/lib/supabase/profiles'
 import { fetchDueForRemarketingCount } from '@/lib/supabase/clients'
 import { useActiveCompany } from '@/hooks/use-active-company'
 import { CompanySwitcher } from '@/components/company-switcher'
+import { RemindersHeaderButton } from '@/components/reminders/reminders-header-button'
 
 interface NavItem {
   label: string
   href: string
   marketingOnly?: boolean
+  negotiationsOnly?: boolean
   adminOnly?: boolean
 }
 
@@ -24,6 +26,7 @@ const NAV_ITEMS: NavItem[] = [
   { label: 'Reports', href: '/reports' },
   { label: 'Rules / Laws', href: '/rules-laws' },
   { label: 'Marketing', href: '/marketing', marketingOnly: true },
+  { label: 'Negotiations', href: '/negotiations', negotiationsOnly: true },
   { label: 'Help', href: '/help' },
 ]
 
@@ -61,30 +64,23 @@ export function AppHeader() {
   const headerCompanyName = activeCompany?.name ?? ''
 
   return (
-    <header className="no-print border-b border-gray-800 bg-gray-950 shadow-sm sticky top-0 z-10">
-      <div className="max-w-7xl mx-auto px-6 py-4 flex items-center gap-8">
+    <header className="no-print bg-slate-950 sticky top-0 z-30">
+      <div className="mx-auto px-6 h-16 max-w-[1920px] flex items-center gap-10">
         {/* Reserve the logo slot's space while /api/companies resolves so the
             layout doesn't shift AND the previously-visible MA logo doesn't
             flash on refresh for an EV user. */}
         {companyLoading || !headerLogoPath ? (
-          <div className="h-9 w-40" aria-hidden />
+          <div className="h-10 w-40" aria-hidden />
         ) : (
-          <Link href="/"><Image src={headerLogoPath} alt={headerCompanyName} width={160} height={48} className="h-9 w-auto" priority /></Link>
+          <Link href="/" className="shrink-0" aria-label={`${headerCompanyName} home`}>
+            <Image src={headerLogoPath} alt={headerCompanyName} width={200} height={56} className="h-10 w-auto" priority />
+          </Link>
         )}
-        <nav className="flex items-center gap-6">
+        <nav className="flex items-center gap-1">
           {NAV_ITEMS.map(item => {
-            // Marketing tab is flag-only — admin role does NOT grant implicit
-            // access. Enforced server-side by RLS + the /marketing page guard;
-            // this just hides the link when the flag is off.
-            if (item.marketingOnly && profile?.marketingAccess !== true) {
-              return null
-            }
-            // All Claims is admin-only — appraisers only see their assigned
-            // claims via the Dashboard. Route also self-redirects (see
-            // src/app/claims/page.tsx) as a defence-in-depth.
-            if (item.adminOnly && profile?.role !== 'admin') {
-              return null
-            }
+            if (item.marketingOnly && profile?.marketingAccess !== true) return null
+            if (item.negotiationsOnly && profile?.negotiationsAccess !== true) return null
+            if (item.adminOnly && profile?.role !== 'admin') return null
             const active = item.href === '/'
               ? pathname === '/' || pathname.startsWith('/claims/')
               : item.href === '/claims'
@@ -94,47 +90,61 @@ export function AppHeader() {
               <Link
                 key={item.href}
                 href={item.href}
-                className={`inline-flex items-center gap-1.5 text-sm font-medium transition-colors ${active ? 'text-white' : 'text-gray-400 hover:text-white'}`}
+                className={`relative inline-flex items-center gap-1.5 h-16 px-3.5 text-[14.5px] font-medium transition-colors ${
+                  active
+                    ? 'text-white'
+                    : 'text-slate-400 hover:text-white'
+                }`}
               >
                 {item.label}
                 {item.marketingOnly && dueCount > 0 && (
-                  <span className="inline-flex items-center justify-center min-w-[18px] h-4 px-1 rounded-full bg-red-600 text-white text-[10px] font-bold" title={`${dueCount} client${dueCount === 1 ? '' : 's'} due for remarketing`}>
+                  <span className="inline-flex items-center justify-center min-w-[18px] h-4 px-1 rounded-full bg-red-500 text-white text-[10px] font-semibold tabular-nums" title={`${dueCount} client${dueCount === 1 ? '' : 's'} due for remarketing`}>
                     {dueCount > 99 ? '99+' : dueCount}
                   </span>
+                )}
+                {active && (
+                  <span className="absolute inset-x-3 bottom-0 h-0.5 bg-white rounded-full" aria-hidden />
                 )}
               </Link>
             )
           })}
         </nav>
-        <div className="ml-auto flex items-center gap-2">
+        <div className="ml-auto flex items-center gap-3">
           <CompanySwitcher />
+          <RemindersHeaderButton />
           {displayLabel && (
             <div className="relative" ref={menuRef}>
               <button
                 onClick={() => setMenuOpen(o => !o)}
-                className="flex items-center gap-1 text-xs text-gray-400 hover:text-white px-2 py-1 rounded transition-colors"
+                className="group inline-flex items-center gap-2 h-9 px-3 rounded-md text-[13.5px] font-medium text-slate-300 hover:text-white hover:bg-white/5 transition-colors"
               >
-                {displayLabel}
-                <ChevronDown className="w-3 h-3" />
+                <span className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-slate-800 text-slate-200 text-[12px] font-semibold">
+                  {(profile?.name || profile?.email || '?').trim().split(/\s+/).map(w => w.charAt(0).toUpperCase()).slice(0, 2).join('') || '?'}
+                </span>
+                <span className="hidden sm:inline">{displayLabel}</span>
+                <ChevronDown className="w-3.5 h-3.5 text-slate-500 group-hover:text-slate-300" />
               </button>
               {menuOpen && (
-                <div className="absolute right-0 top-full mt-1 w-48 bg-white border border-gray-200 rounded-lg shadow-lg py-1 z-20">
+                <div
+                  className="absolute right-0 top-full mt-2 w-56 bg-white rounded-xl py-1.5 z-20 ring-1 ring-slate-200"
+                  style={{ boxShadow: 'var(--hp-elev-pop)' }}
+                >
                   <Link href="/my-profile" onClick={() => setMenuOpen(false)}
-                        className="flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-100">
-                    <UserIcon className="w-4 h-4" /> My Profile
+                        className="flex items-center gap-2.5 px-3 py-2 text-[13px] text-slate-700 hover:bg-slate-50">
+                    <UserIcon className="w-4 h-4 text-slate-500" /> My Profile
                   </Link>
                   <Link href="/profile" onClick={() => setMenuOpen(false)}
-                        className="flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-100">
-                    <Settings className="w-4 h-4" /> Account &amp; Password
+                        className="flex items-center gap-2.5 px-3 py-2 text-[13px] text-slate-700 hover:bg-slate-50">
+                    <Settings className="w-4 h-4 text-slate-500" /> Account &amp; Password
                   </Link>
                   {profile?.role === 'admin' && (
                     <Link href="/admin/settings" onClick={() => setMenuOpen(false)}
-                          className="flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-100">
-                      <Settings className="w-4 h-4" /> Settings
+                          className="flex items-center gap-2.5 px-3 py-2 text-[13px] text-slate-700 hover:bg-slate-50">
+                      <Settings className="w-4 h-4 text-slate-500" /> Settings
                     </Link>
                   )}
-                  <div className="border-t border-gray-100 my-1" />
-                  <div className="px-3 py-1">
+                  <div className="border-t border-slate-100 my-1.5" />
+                  <div className="px-2 pb-1">
                     <LogoutButton />
                   </div>
                 </div>

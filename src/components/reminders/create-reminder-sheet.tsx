@@ -247,14 +247,7 @@ export function CreateReminderSheet({ open, onClose, onCreated }: Props) {
             />
             Browser push
           </label>
-          <label className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              checked={channels.email}
-              onChange={(e) => setChannels({ ...channels, email: e.target.checked })}
-            />
-            Email
-          </label>
+          {/* Email channel intentionally hidden — pending Resend setup. */}
         </div>
 
         {error && <div className="text-sm text-red-600 mb-2">{error}</div>}

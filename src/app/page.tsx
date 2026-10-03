@@ -16,7 +16,6 @@ import { fetchAllLicenses, fetchUserLicenses, type AppraiserLicense } from '@/li
 import { fetchStatusPhaseConfigs, phaseColorClasses, type StatusPhaseConfig } from '@/lib/supabase/status-phase-configs'
 import { DashboardTabs } from '@/components/dashboard-tabs'
 import { useUserDashboards, type DashboardCode } from '@/hooks/use-user-dashboards'
-import { RemindersSidebar } from '@/components/reminders/reminders-sidebar'
 
 export default function DashboardPage() {
   const router = useRouter()
@@ -214,44 +213,39 @@ export default function DashboardPage() {
           />
         )}
 
-        <div className="flex flex-col lg:flex-row gap-6 items-start">
-          <div className="flex-1 min-w-0 w-full">
-            {claimsLoading ? (
-              <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-8 flex items-center justify-center gap-3 text-gray-500">
-                <span className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
-                <span className="text-sm font-medium">Loading claims…</span>
-              </div>
-            ) : (
-              <ClaimsTable
-                entries={claimsForActiveTab}
-                emptyText={isAdmin ? 'No claims in this stage.' : 'No claims assigned to you in this stage.'}
-                adminView={isAdmin}
-                profiles={profiles}
-                workflowStage={
-                  // ClaimsTable only cares about real stages (QC-column swap +
-                  // bulk-action gating). Virtual tabs map accordingly:
-                  //   new_assignments → 'main' (same stage, dispatcher subset)
-                  //   all → undefined (hides Advance / Send-Back bulk actions)
-                  activeTab === 'new_assignments' ? 'main'
-                    : activeTab === 'all' ? undefined
-                    : activeTab
-                }
-                onAssignmentChanged={load}
-                licensedStates={licensedStates}
-                licensesByUser={licensesByUser}
-                statusPhaseConfigs={statusPhaseConfigs}
-                phaseFilter={phaseFilter}
-                onPhaseChanged={(id, phase, setAt) => setEntries(prev =>
-                  prev.map(e => e.id === id ? { ...e, statusPhase: phase, statusPhaseSetAt: setAt } : e)
-                )}
-                onStarChanged={(id, starred) => setEntries(prev =>
-                  prev.map(e => e.id === id ? { ...e, starred } : e)
-                )}
-              />
-            )}
+        {claimsLoading ? (
+          <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-8 flex items-center justify-center gap-3 text-gray-500">
+            <span className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+            <span className="text-sm font-medium">Loading claims…</span>
           </div>
-          <RemindersSidebar />
-        </div>
+        ) : (
+          <ClaimsTable
+            entries={claimsForActiveTab}
+            emptyText={isAdmin ? 'No claims in this stage.' : 'No claims assigned to you in this stage.'}
+            adminView={isAdmin}
+            profiles={profiles}
+            workflowStage={
+              // ClaimsTable only cares about real stages (QC-column swap +
+              // bulk-action gating). Virtual tabs map accordingly:
+              //   new_assignments → 'main' (same stage, dispatcher subset)
+              //   all → undefined (hides Advance / Send-Back bulk actions)
+              activeTab === 'new_assignments' ? 'main'
+                : activeTab === 'all' ? undefined
+                : activeTab
+            }
+            onAssignmentChanged={load}
+            licensedStates={licensedStates}
+            licensesByUser={licensesByUser}
+            statusPhaseConfigs={statusPhaseConfigs}
+            phaseFilter={phaseFilter}
+            onPhaseChanged={(id, phase, setAt) => setEntries(prev =>
+              prev.map(e => e.id === id ? { ...e, statusPhase: phase, statusPhaseSetAt: setAt } : e)
+            )}
+            onStarChanged={(id, starred) => setEntries(prev =>
+              prev.map(e => e.id === id ? { ...e, starred } : e)
+            )}
+          />
+        )}
       </main>
     </div>
   )
