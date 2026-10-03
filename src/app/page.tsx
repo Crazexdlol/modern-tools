@@ -16,6 +16,7 @@ import { fetchAllLicenses, fetchUserLicenses, type AppraiserLicense } from '@/li
 import { fetchStatusPhaseConfigs, phaseColorClasses, type StatusPhaseConfig } from '@/lib/supabase/status-phase-configs'
 import { DashboardTabs } from '@/components/dashboard-tabs'
 import { useUserDashboards, type DashboardCode } from '@/hooks/use-user-dashboards'
+import { RemindersSidebar } from '@/components/reminders/reminders-sidebar'
 
 export default function DashboardPage() {
   const router = useRouter()
@@ -83,14 +84,30 @@ export default function DashboardPage() {
   // Billing / Delivery / Payment). The status_phase chip row inside each
   // tab is a secondary orthogonal filter (Rush / Umpire / Hold / DV Response).
   const openClaims = entries.filter(e => e.status !== 'closed')
-  // Per-tab counts — shown in the dashboard tab badges.
-  const countsByCode: Record<DashboardCode, number> = { main: 0, qc: 0, billing: 0, delivery: 0, payment: 0 }
+  // Per-tab counts. 'new_assignments' = main-stage + unassigned; 'main'
+  // ("Appraiser") = main-stage + assigned; 'all' = every open claim. The
+  // other stages count claims matching their workflow_stage straight up.
+  const countsByCode: Record<DashboardCode, number> = {
+    new_assignments: 0, main: 0, qc: 0, billing: 0, delivery: 0, payment: 0, all: 0,
+  }
   for (const e of openClaims) {
-    const code = (e.workflowStage ?? 'main') as DashboardCode
-    if (code in countsByCode) countsByCode[code]++
+    const stage = (e.workflowStage ?? 'main') as 'main' | 'qc' | 'billing' | 'delivery' | 'payment'
+    countsByCode.all += 1
+    if (stage === 'main') {
+      if (e.assignedTo) countsByCode.main += 1
+      else countsByCode.new_assignments += 1
+    } else {
+      countsByCode[stage] += 1
+    }
   }
   // Claims rendered in the ClaimsTable are scoped to the active tab.
-  const claimsForActiveTab = openClaims.filter(e => (e.workflowStage ?? 'main') === activeTab)
+  const claimsForActiveTab = openClaims.filter(e => {
+    const stage = (e.workflowStage ?? 'main') as string
+    if (activeTab === 'all') return true
+    if (activeTab === 'new_assignments') return stage === 'main' && !e.assignedTo
+    if (activeTab === 'main') return stage === 'main' && !!e.assignedTo
+    return stage === activeTab
+  })
   // Chip row: admins see every configured non-archived phase; non-admins only
   // see chips that actually appear in their queue (within the active tab).
   const visiblePhaseConfigs = isAdmin
@@ -118,61 +135,58 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 text-gray-900">
+    <div className="min-h-screen bg-slate-50 text-slate-900">
       <MigrateData />
       <AppHeader />
-      <main className="max-w-[1920px] mx-auto px-6 py-8 space-y-8">
+      <main className="max-w-[1920px] mx-auto px-6 py-7 space-y-6">
         <LicenseExpirationBanner profile={profile ?? null} allProfiles={profiles} />
         <div className="flex items-start justify-between gap-4">
           <div className="space-y-3">
-            <h2 className="text-2xl font-bold text-gray-900">Dashboard</h2>
-            <div className="space-y-2">
-              <div className="flex items-center gap-2">
-                <span className="inline-flex items-center gap-1.5 bg-blue-600 text-white text-sm font-bold px-3 py-1.5 rounded-full shadow-sm">
-                  <span className="text-base leading-none">{openClaims.length}</span>
-                  <span className="text-xs uppercase tracking-wide opacity-90">open</span>
-                </span>
-                <Link
-                  href="/messages"
-                  className="flex items-center gap-2 bg-white border border-gray-200 hover:border-gray-300 text-gray-700 text-sm font-bold px-4 py-2 rounded-lg transition-colors shadow-sm"
-                >
-                  <MessageSquare className="w-4 h-4" />
-                  Messages
-                  {unreadMessages > 0 && (
-                    <span className="inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full bg-blue-600 text-white text-xs font-bold">
-                      {unreadMessages}
-                    </span>
-                  )}
-                </Link>
-              </div>
+            <div className="flex items-baseline gap-3">
+              <h1 className="hp-display">Dashboard</h1>
+              <span className="inline-flex items-baseline gap-1.5 text-slate-500 text-[13px] font-medium tabular-nums">
+                <span className="text-slate-900 font-semibold">{openClaims.length}</span>
+                open
+              </span>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <Link href="/messages" className="hp-btn hp-btn-secondary">
+                <MessageSquare className="w-4 h-4 text-slate-500" />
+                Messages
+                {unreadMessages > 0 && (
+                  <span className="inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full bg-slate-900 text-white text-[11px] font-semibold tabular-nums">
+                    {unreadMessages}
+                  </span>
+                )}
+              </Link>
               {visiblePhaseConfigs.length > 0 && (
-                <div className="flex items-center gap-1.5 flex-wrap">
-                  {visiblePhaseConfigs.map(cfg => {
-                    const active = phaseFilter === cfg.code
-                    return (
-                      <button
-                        key={cfg.code}
-                        type="button"
-                        onClick={() => setPhaseFilter(active ? null : cfg.code)}
-                        className={`inline-flex items-center gap-1 text-xs font-bold px-2.5 py-1.5 rounded-md border transition-colors text-gray-900 ${phaseColorClasses(cfg.color)}${
-                          active ? ' ring-2 ring-offset-1 ring-current/40' : ''
-                        }`}
-                        title={active ? `Clear ${cfg.label} filter` : `Show only ${cfg.label}`}
-                      >
-                        {cfg.label}
-                      </button>
-                    )
-                  })}
-                </div>
+                <>
+                  <span className="h-6 w-px bg-slate-200 mx-1" aria-hidden />
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    {visiblePhaseConfigs.map(cfg => {
+                      const active = phaseFilter === cfg.code
+                      return (
+                        <button
+                          key={cfg.code}
+                          type="button"
+                          onClick={() => setPhaseFilter(active ? null : cfg.code)}
+                          className={`inline-flex items-center gap-1.5 h-9 px-3 rounded-md border text-[13px] font-semibold transition-colors ${phaseColorClasses(cfg.color)} ${
+                            active ? 'ring-2 ring-offset-1 ring-current/40' : 'hover:brightness-95'
+                          }`}
+                          title={active ? `Clear ${cfg.label} filter` : `Show only ${cfg.label}`}
+                        >
+                          {cfg.label}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </>
               )}
             </div>
           </div>
           <div className="flex items-center gap-2">
             {canCreate && (
-              <button
-                onClick={startNewClaim}
-                className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white text-sm font-bold px-5 py-2.5 rounded-lg transition-colors shadow-sm"
-              >
+              <button onClick={startNewClaim} className="hp-btn hp-btn-primary">
                 <Plus className="w-4 h-4" />
                 New Claim
               </button>
@@ -200,30 +214,44 @@ export default function DashboardPage() {
           />
         )}
 
-        {claimsLoading ? (
-          <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-8 flex items-center justify-center gap-3 text-gray-500">
-            <span className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
-            <span className="text-sm font-medium">Loading claims…</span>
+        <div className="flex flex-col lg:flex-row gap-6 items-start">
+          <div className="flex-1 min-w-0 w-full">
+            {claimsLoading ? (
+              <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-8 flex items-center justify-center gap-3 text-gray-500">
+                <span className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+                <span className="text-sm font-medium">Loading claims…</span>
+              </div>
+            ) : (
+              <ClaimsTable
+                entries={claimsForActiveTab}
+                emptyText={isAdmin ? 'No claims in this stage.' : 'No claims assigned to you in this stage.'}
+                adminView={isAdmin}
+                profiles={profiles}
+                workflowStage={
+                  // ClaimsTable only cares about real stages (QC-column swap +
+                  // bulk-action gating). Virtual tabs map accordingly:
+                  //   new_assignments → 'main' (same stage, dispatcher subset)
+                  //   all → undefined (hides Advance / Send-Back bulk actions)
+                  activeTab === 'new_assignments' ? 'main'
+                    : activeTab === 'all' ? undefined
+                    : activeTab
+                }
+                onAssignmentChanged={load}
+                licensedStates={licensedStates}
+                licensesByUser={licensesByUser}
+                statusPhaseConfigs={statusPhaseConfigs}
+                phaseFilter={phaseFilter}
+                onPhaseChanged={(id, phase, setAt) => setEntries(prev =>
+                  prev.map(e => e.id === id ? { ...e, statusPhase: phase, statusPhaseSetAt: setAt } : e)
+                )}
+                onStarChanged={(id, starred) => setEntries(prev =>
+                  prev.map(e => e.id === id ? { ...e, starred } : e)
+                )}
+              />
+            )}
           </div>
-        ) : (
-          <ClaimsTable
-            entries={claimsForActiveTab}
-            emptyText={isAdmin ? 'No claims in this stage.' : 'No claims assigned to you in this stage.'}
-            adminView={isAdmin}
-            profiles={profiles}
-            onAssignmentChanged={load}
-            licensedStates={licensedStates}
-            licensesByUser={licensesByUser}
-            statusPhaseConfigs={statusPhaseConfigs}
-            phaseFilter={phaseFilter}
-            onPhaseChanged={(id, phase, setAt) => setEntries(prev =>
-              prev.map(e => e.id === id ? { ...e, statusPhase: phase, statusPhaseSetAt: setAt } : e)
-            )}
-            onStarChanged={(id, starred) => setEntries(prev =>
-              prev.map(e => e.id === id ? { ...e, starred } : e)
-            )}
-          />
-        )}
+          <RemindersSidebar />
+        </div>
       </main>
     </div>
   )
