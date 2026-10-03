@@ -1358,20 +1358,6 @@ function AdjustmentsForm({
 
   return (
     <div className="space-y-6">
-      {dolFlag && (
-        <div className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
-          <span aria-hidden>⏱</span>
-          <div>
-            <div className="font-medium">Date-of-loss adjustment likely needed</div>
-            <div className="text-xs text-amber-800/80">
-              This claim was received more than 3 months after the date of loss
-              ({claim.dateOfLoss} → {claim.dateReceived}). The vehicle has aged since
-              the loss — consider an adjustment in the Additions / Deductions field below.
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Per-comp adjustments */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {selectedComps.map((comp, i) => {
@@ -1434,16 +1420,27 @@ function AdjustmentsForm({
           <CardTitle className="text-gray-900 text-sm">Report Adjustments</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          {/* Mileage Adjustment Rate — sits above Vehicle History. Narrow
-              input since values are typically "0.XX" (cents per mile). */}
-          <div className="flex items-center gap-3">
-            <span className="w-28 shrink-0 text-xs font-medium text-gray-500">Mileage Rate</span>
-            <MileageRateInput
-              className={`${inputCls} text-right w-20`}
-              value={mileageRate}
-              onChange={(val) => onMileageRateChange(val)}
-            />
-            <span className="text-xs text-gray-500">cents / mile</span>
+          {/* Row above Vehicle History: DOL alert on the left (red text, no
+              bubble, only when the lenient DOL rule trips), Mileage
+              Adjustment Rate on the right (styled like the Vehicle History
+              inputs, narrow — values are typically "0.XX"). */}
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0 flex-1">
+              {dolFlag && claim.dateOfLoss && (
+                <span className="text-sm font-medium text-red-600">
+                  DOL was on {claim.dateOfLoss}
+                </span>
+              )}
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <span className="text-xs font-medium text-gray-500">Mileage Rate</span>
+              <MileageRateInput
+                className={`${inputCls} text-right w-20`}
+                value={mileageRate}
+                onChange={(val) => onMileageRateChange(val)}
+              />
+              <span className="text-xs text-gray-500">¢/mi</span>
+            </div>
           </div>
           <div className="space-y-3">
             {[
