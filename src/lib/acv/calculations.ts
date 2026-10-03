@@ -119,6 +119,28 @@ export function formatCurrency(val: number): string {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(val)
 }
 
+// Threshold (in days) for the "DOL adjustment needed" flag. If more than
+// this many days passed between the date of loss and the date we received
+// the claim, the vehicle has aged on the lot (or in storage, or in the
+// claimant's garage) and the ACV should reflect that depreciation.
+export const DOL_ADJUSTMENT_THRESHOLD_DAYS = 90
+
+// Returns true when the gap between dateOfLoss and dateReceived exceeds
+// DOL_ADJUSTMENT_THRESHOLD_DAYS. Uses the receipt date (NOT today's date)
+// so a claim we've held a long time isn't retroactively flagged — the
+// adjustment only matters if the vehicle aged BEFORE we got the file.
+export function needsDolAdjustment(
+  dateOfLoss: string | undefined | null,
+  dateReceived: string | undefined | null,
+): boolean {
+  if (!dateOfLoss || !dateReceived) return false
+  const dol = Date.parse(dateOfLoss)
+  const recv = Date.parse(dateReceived)
+  if (Number.isNaN(dol) || Number.isNaN(recv)) return false
+  const gapDays = (recv - dol) / (1000 * 60 * 60 * 24)
+  return gapDays > DOL_ADJUSTMENT_THRESHOLD_DAYS
+}
+
 export function defaultAdjustments(): ACVAdjustments {
   return {
     vehicleHistory: 0,

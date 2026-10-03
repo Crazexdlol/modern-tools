@@ -41,6 +41,7 @@ import {
   calculateCompValue,
   defaultAdjustments,
   formatCurrency,
+  needsDolAdjustment,
 } from '@/lib/acv/calculations'
 import { saveACVHistory, fetchACVEntry, deleteACVHistory, type ClaimStatus } from '@/lib/supabase/history'
 import { useCurrentProfile, fetchAllProfilesBrowser, type Profile } from '@/lib/supabase/profiles'
@@ -1349,9 +1350,24 @@ function AdjustmentsForm({
 
   const [pctMode, setPctMode] = useState<Record<string, boolean>>({})
   const [pctInputs, setPctInputs] = useState<Record<string, { base: number; pct: number }>>({})
+  const dolFlag = needsDolAdjustment(claim.dateOfLoss, claim.dateReceived)
 
   return (
     <div className="space-y-6">
+      {dolFlag && (
+        <div className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+          <span aria-hidden>⏱</span>
+          <div>
+            <div className="font-medium">Date-of-loss adjustment likely needed</div>
+            <div className="text-xs text-amber-800/80">
+              This claim was received more than 3 months after the date of loss
+              ({claim.dateOfLoss} → {claim.dateReceived}). The vehicle has aged since
+              the loss — consider an adjustment in the Additions / Deductions field below.
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Mileage rate input */}
       <Card className="bg-white border-gray-200 shadow-sm">
         <CardHeader className="pb-3">

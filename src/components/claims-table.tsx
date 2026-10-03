@@ -2,7 +2,8 @@
 
 import { useState, useMemo, useCallback, useEffect } from 'react'
 import Link from 'next/link'
-import { Search, X, Ban, ArrowUpDown, ArrowUp, ArrowDown, Star, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Search, X, Ban, ArrowUpDown, ArrowUp, ArrowDown, Star, ChevronLeft, ChevronRight, Clock } from 'lucide-react'
+import { needsDolAdjustment } from '@/lib/acv/calculations'
 import { type ACVHistoryEntry, deleteACVHistory } from '@/lib/supabase/history'
 import type { ClaimType } from '@/lib/acv/types'
 import { type Profile, useCurrentProfile } from '@/lib/supabase/profiles'
@@ -931,7 +932,19 @@ export function ClaimsTable({
                         )}
                       </td>
                     )}
-                    <td className="px-4 py-2.5 text-gray-900 align-middle truncate" title={entry.claim?.insuredName || undefined}>{entry.claim?.insuredName || <span className="text-gray-400">—</span>}</td>
+                    <td className="px-4 py-2.5 text-gray-900 align-middle truncate" title={entry.claim?.insuredName || undefined}>
+                      <span className="inline-flex items-center gap-1">
+                        {needsDolAdjustment(entry.claim?.dateOfLoss, entry.claim?.dateReceived) && (
+                          <Clock
+                            className="w-3 h-3 text-amber-500 shrink-0"
+                            aria-label="DOL adjustment likely needed"
+                          >
+                            <title>DOL adjustment likely needed — claim received &gt; 3 months after date of loss</title>
+                          </Clock>
+                        )}
+                        <span className="truncate">{entry.claim?.insuredName || <span className="text-gray-400">—</span>}</span>
+                      </span>
+                    </td>
                     <td className="px-4 py-2.5 text-gray-900 align-middle truncate" title={entry.claim?.clientName || undefined}>{entry.claim?.clientName || <span className="text-gray-400">—</span>}</td>
                     <td className="px-4 py-2.5 text-gray-900 align-middle truncate" title={entry.vehicle || undefined}>{entry.vehicle || <span className="text-gray-400">—</span>}</td>
                     <td className="px-4 py-2.5 text-gray-900 align-middle truncate">
