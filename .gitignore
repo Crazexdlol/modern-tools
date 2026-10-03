@@ -48,3 +48,8 @@ next-env.d.ts
 
 .vercel
 backups/
+
+# Local PDF samples used by scripts/verify-parsers.mjs — never commit (real
+# customer data: names, VINs, addresses).
+scripts/_samples/
+
