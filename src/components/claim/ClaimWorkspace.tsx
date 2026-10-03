@@ -1420,27 +1420,26 @@ function AdjustmentsForm({
           <CardTitle className="text-gray-900 text-sm">Report Adjustments</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          {/* Row above Vehicle History: DOL alert on the left (red text, no
-              bubble, only when the lenient DOL rule trips), Mileage
-              Adjustment Rate on the right (styled like the Vehicle History
-              inputs, narrow — values are typically "0.XX"). */}
-          <div className="flex items-center justify-between gap-3">
-            <div className="min-w-0 flex-1">
-              {dolFlag && claim.dateOfLoss && (
-                <span className="text-sm font-medium text-red-600">
-                  DOL was on {claim.dateOfLoss}
-                </span>
-              )}
-            </div>
-            <div className="flex items-center gap-2 shrink-0">
-              <span className="text-xs font-medium text-gray-500">Mileage Rate</span>
-              <MileageRateInput
-                className={`${inputCls} text-right w-20`}
-                value={mileageRate}
-                onChange={(val) => onMileageRateChange(val)}
-              />
-              <span className="text-xs text-gray-500">¢/mi</span>
-            </div>
+          {/* Row above Vehicle History: DOL text on the left (bold red, only
+              when the lenient DOL rule trips), Mileage Adjustment Rate input
+              on the right — same size + styling as the Vehicle History /
+              Prior Damages note inputs below (flex-1 width, inputCls). */}
+          <div className="flex items-center gap-3">
+            <span className="shrink-0 text-sm font-bold text-red-600 whitespace-nowrap">
+              {dolFlag && claim.dateOfLoss
+                ? (() => {
+                    const m = claim.dateOfLoss.match(/^(\d{4})-(\d{2})-(\d{2})/)
+                    const formatted = m ? `${m[2]}/${m[3]}/${m[1]}` : claim.dateOfLoss
+                    return `DOL was on ${formatted}`
+                  })()
+                : ''}
+            </span>
+            <MileageRateInput
+              className={`${inputCls} flex-1 text-right`}
+              value={mileageRate}
+              onChange={(val) => onMileageRateChange(val)}
+            />
+            <span className="text-xs text-gray-500 shrink-0">¢/mi</span>
           </div>
           <div className="space-y-3">
             {[
