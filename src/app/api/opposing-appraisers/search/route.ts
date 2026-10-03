@@ -15,9 +15,10 @@ export async function GET(request: NextRequest) {
 
   const { searchParams } = new URL(request.url)
   const q = searchParams.get('q')?.trim() ?? ''
-  const limit = Math.min(parseInt(searchParams.get('limit') ?? '10', 10) || 10, 50)
+  const all = searchParams.get('all') === '1'
+  const limit = Math.min(parseInt(searchParams.get('limit') ?? '10', 10) || 10, 500)
 
-  if (q.length < 2) {
+  if (!all && q.length < 2) {
     return NextResponse.json({ opposingAppraisers: [] })
   }
 
@@ -26,13 +27,14 @@ export async function GET(request: NextRequest) {
   // Use ilike substring match against both name and company. Fast against the
   // trigram GIN indexes and returns results in under 150 ms for typical queries.
   // We match name OR company so typing a company name surfaces all its appraisers.
-  const { data, error } = await service
+  let query = service
     .from('opposing_appraisers')
     .select('*')
     .is('archived_at', null)
-    .or(`name.ilike.%${q}%,company.ilike.%${q}%`)
     .order('name', { ascending: true })
-    .limit(limit)
+    .limit(all ? 500 : limit)
+  if (!all) query = query.or(`name.ilike.%${q}%,company.ilike.%${q}%`)
+  const { data, error } = await query
 
   if (error) {
     // 42P01 = table not yet created — return empty rather than crashing the picker.

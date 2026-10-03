@@ -70,3 +70,17 @@ export async function fetchAllOpposingAppraisers(): Promise<OpposingAppraiser[]>
     return []
   }
 }
+
+// All active OAs for the claim-side picker. Open to any authenticated user —
+// hits the search endpoint with `all=1` so the picker can do instant local
+// name-match without a round-trip per keystroke.
+export async function listAllOpposingAppraisers(): Promise<OpposingAppraiser[]> {
+  try {
+    const res = await fetch('/api/opposing-appraisers/search?all=1')
+    if (!res.ok) return []
+    const json = await res.json()
+    return ((json.opposingAppraisers ?? []) as OARow[]).map(rowToOA)
+  } catch {
+    return []
+  }
+}

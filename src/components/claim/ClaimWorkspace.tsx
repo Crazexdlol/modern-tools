@@ -4461,6 +4461,7 @@ function ClaimWorkspaceInner({ claimId }: { claimId: string }) {
                   <label className={vLabelCls}>Opposing Appraiser Name</label>
                   <OpposingAppraiserPicker
                     value={reportsState.notesData.appraiserName}
+                    currentCompany={reportsState.notesData.appraiserCompany}
                     placeholder="First Last"
                     onChange={(value) => {
                       const parts = value.trim().split(/\s+/)
