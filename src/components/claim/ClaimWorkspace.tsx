@@ -2924,6 +2924,11 @@ function InlineEditText({
     <button
       type="button"
       onClick={() => setEditing(true)}
+      // Entering via keyboard (Tab) should drop you into the editable input
+      // without a second keystroke — matches the behavior of plain inputs on
+      // every other claim form. Mouse click triggers onFocus too, which is
+      // fine — the resulting setEditing(true) call is idempotent.
+      onFocus={() => setEditing(true)}
       className="w-full text-left bg-white border border-gray-200 rounded-md px-2.5 py-1.5 text-sm text-slate-900 cursor-text"
     >
       {value || <span className="text-slate-400">{placeholder || '—'}</span>}
@@ -2974,6 +2979,7 @@ function InlineEditTextarea({
     <button
       type="button"
       onClick={() => setEditing(true)}
+      onFocus={() => setEditing(true)}
       className="w-full text-left bg-white border border-gray-200 rounded-md px-2.5 py-1.5 text-sm text-slate-900 cursor-text whitespace-pre-wrap"
       style={{ minHeight: `${rows * 20 + 12}px` }}
     >
@@ -3031,6 +3037,7 @@ function InlineEditCurrency({
     <button
       type="button"
       onClick={() => setEditing(true)}
+      onFocus={() => setEditing(true)}
       className="w-full text-left bg-white border border-gray-200 rounded-md px-2.5 py-1.5 text-sm text-slate-900 cursor-text tabular-nums"
     >
       {value ? formatCurrency(value) : <span className="text-slate-400">{placeholder}</span>}

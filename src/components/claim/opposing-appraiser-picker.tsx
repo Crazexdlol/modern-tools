@@ -56,13 +56,28 @@ export function OpposingAppraiserPicker({ value, onChange, onSelect, placeholder
     onSelect(oa)
   }
 
+  // If what the user typed exactly matches a saved OA (name, case-insensitive,
+  // whitespace-tolerant), return that OA so we can auto-fill the company
+  // instead of leaving it to the user to click the dropdown.
+  const findExactMatch = (text: string): OpposingAppraiser | null => {
+    const norm = text.trim().toLowerCase().replace(/\s+/g, ' ')
+    if (!norm) return null
+    return results.find(oa => oa.name.trim().toLowerCase().replace(/\s+/g, ' ') === norm) ?? null
+  }
+
+  const commitTextOrPick = (text: string) => {
+    const exact = findExactMatch(text)
+    if (exact) { pick(exact); return }
+    if (text.trim()) onChange(text.trim())
+    setOpen(false)
+    setQuery('')
+  }
+
   const handleBlur = () => {
     // Small delay so onMouseDown on a result fires before blur.
     setTimeout(() => {
       if (!wrapRef.current?.contains(document.activeElement)) {
-        if (query.trim()) onChange(query.trim())
-        setOpen(false)
-        setQuery('')
+        commitTextOrPick(query)
       }
     }, 150)
   }
@@ -81,7 +96,7 @@ export function OpposingAppraiserPicker({ value, onChange, onSelect, placeholder
         onBlur={handleBlur}
         onKeyDown={e => {
           if (e.key === 'Escape') { setOpen(false); setQuery('') }
-          if (e.key === 'Enter' && query.trim()) { e.preventDefault(); onChange(query.trim()); setOpen(false); setQuery('') }
+          if (e.key === 'Enter' && query.trim()) { e.preventDefault(); commitTextOrPick(query) }
         }}
       />
 
