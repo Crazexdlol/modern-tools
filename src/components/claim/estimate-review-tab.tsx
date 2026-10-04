@@ -1162,6 +1162,8 @@ export function EstimateReviewTab({
   const [estimatedTotalSec, setEstimatedTotalSec] = useState(0);
   const [pendingDeleteReviewId, setPendingDeleteReviewId] = useState<string | null>(null);
   const [printingReviewId, setPrintingReviewId] = useState<string | null>(null);
+  const [printing, setPrinting] = useState(false);
+  const [printError, setPrintError] = useState<string | null>(null);
   const cardRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const printRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
@@ -1283,13 +1285,17 @@ export function EstimateReviewTab({
 
   const handlePrint = async (review: EstimateReview) => {
     setPrintingReviewId(review.id);
-    // Defer one tick so React renders the hidden PrintableReview element.
+    setPrintError(null);
+    // Defer one tick so React has committed any pending renders.
     await new Promise((r) => setTimeout(r, 150));
     try {
       const el = printRefs.current[review.id];
-      if (!el) return;
-      const checkedKeys = getChecked(review);
-      // Temporarily make element visible off-screen for capture
+      if (!el) {
+        setPrintError("Print element not ready — try again.");
+        return;
+      }
+      // Temporarily make element visible off-screen for capture.
+      // visibility:hidden prevents html2canvas from rendering content.
       el.style.visibility = 'visible';
       el.style.position = 'fixed';
       el.style.left = '-9999px';
@@ -1301,31 +1307,129 @@ export function EstimateReviewTab({
       el.style.left = '-9999px';
       el.style.top = '-9999px';
       el.style.zIndex = '-1';
-      if (!blob) return;
+      if (!blob) {
+        setPrintError("PDF capture returned empty — please try again.");
+        return;
+      }
       const fileName = reviewPdfFileName(review.reviewNumber, review.fileName);
       await savePdfWithPicker(blob, fileName);
       if (onDocumentSaved) {
         onDocumentSaved(blob, fileName, "estimate-review");
       }
-      // Suppress unused-var lint: checkedKeys is passed to PrintableReview via state
-      void checkedKeys;
     } catch (err) {
       console.error("Failed to print review PDF:", err);
+      setPrintError(err instanceof Error ? err.message : String(err));
     } finally {
       setPrintingReviewId(null);
+    }
+  };
+
+  // Print ALL reviews in one combined PDF — one branded header per review body.
+  const handlePrintAll = async () => {
+    setPrinting(true);
+    setPrintError(null);
+    await new Promise((r) => setTimeout(r, 150));
+    try {
+      const { jsPDF } = await import("jspdf");
+      const html2canvas = (await import("html2canvas-pro")).default;
+
+      const pdf = new jsPDF({ unit: "pt", format: "letter" });
+      const pageWidthPt = 612;
+      const pageHeightPt = 792;
+      let firstPage = true;
+
+      for (const review of reviews) {
+        if (review.error) continue;
+        const el = printRefs.current[review.id];
+        if (!el) continue;
+
+        el.style.visibility = 'visible';
+        el.style.position = 'fixed';
+        el.style.left = '-9999px';
+        el.style.top = '0';
+        el.style.zIndex = '9999';
+
+        const canvas = await html2canvas(el, {
+          scale: 2,
+          backgroundColor: "#ffffff",
+          windowWidth: 816,
+          useCORS: true,
+          logging: false,
+        });
+
+        el.style.visibility = 'hidden';
+        el.style.position = 'absolute';
+        el.style.left = '-9999px';
+        el.style.top = '-9999px';
+        el.style.zIndex = '-1';
+
+        const pxPerPt = canvas.width / pageWidthPt;
+        const pageHeightPx = Math.floor(pageHeightPt * pxPerPt);
+        let offset = 0;
+        while (offset < canvas.height) {
+          const sliceHeight = Math.min(pageHeightPx, canvas.height - offset);
+          const slice = document.createElement("canvas");
+          slice.width = canvas.width;
+          slice.height = sliceHeight;
+          const ctx = slice.getContext("2d");
+          if (!ctx) break;
+          ctx.fillStyle = "#ffffff";
+          ctx.fillRect(0, 0, slice.width, slice.height);
+          ctx.drawImage(canvas, 0, offset, canvas.width, sliceHeight, 0, 0, canvas.width, sliceHeight);
+          const img = slice.toDataURL("image/jpeg", 0.92);
+          if (!firstPage) pdf.addPage();
+          pdf.addImage(img, "JPEG", 0, 0, pageWidthPt, sliceHeight / pxPerPt);
+          firstPage = false;
+          offset += sliceHeight;
+        }
+      }
+
+      if (firstPage) {
+        // Nothing was captured (all reviews had errors).
+        setPrintError("No reviews to print.");
+        return;
+      }
+
+      const blob = pdf.output("blob");
+      const fileName = `estimate-dispute-all-${new Date().toISOString().slice(0, 10)}.pdf`;
+      await savePdfWithPicker(blob, fileName);
+      if (onDocumentSaved) {
+        onDocumentSaved(blob, fileName, "estimate-review");
+      }
+    } catch (err) {
+      console.error("Failed to print all reviews:", err);
+      setPrintError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setPrinting(false);
     }
   };
 
   return (
     <div className="space-y-5">
       {!showUpload && reviews.length > 0 && (
-        <div className="flex justify-end">
-          <Button
-            onClick={() => setShowUpload(true)}
-            className="bg-blue-600 hover:bg-blue-500 text-white font-bold"
-          >
-            + Review Another Estimate
-          </Button>
+        <div className="flex flex-col gap-2">
+          <div className="flex justify-end gap-2">
+            <Button
+              onClick={handlePrintAll}
+              disabled={reviews.length === 0 || printing}
+              className="bg-blue-600 hover:bg-blue-500 text-white font-bold"
+            >
+              {printing ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Printer className="w-4 h-4 mr-2" />}
+              Print
+            </Button>
+            <Button
+              onClick={() => setShowUpload(true)}
+              className="bg-blue-600 hover:bg-blue-500 text-white font-bold"
+            >
+              + Review Another Estimate
+            </Button>
+          </div>
+          {printError && (
+            <div className="flex items-start gap-2 p-3 rounded-lg bg-red-50 border border-red-200 text-red-600 text-sm self-end max-w-md">
+              <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
+              <span>Print failed: {printError}</span>
+            </div>
+          )}
         </div>
       )}
 
@@ -1399,7 +1503,6 @@ export function EstimateReviewTab({
           {reviews.map((review) => {
             const checkedKeys = getChecked(review);
             const toggle = (key: string) => handleToggle(review.id, key);
-            const isPrinting = printingReviewId === review.id;
             const vinMismatches = (review.vinFindings ?? []).filter((f) => !f.matches).length;
             return (
               <Fragment key={review.id}>
@@ -1420,18 +1523,6 @@ export function EstimateReviewTab({
                       </div>
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
-                      {!review.error && (
-                        <button
-                          type="button"
-                          onClick={() => handlePrint(review)}
-                          disabled={isPrinting}
-                          className="text-gray-400 hover:text-blue-600 disabled:opacity-40"
-                          aria-label="Print review"
-                          title="Print selected findings to PDF"
-                        >
-                          {isPrinting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Printer className="w-4 h-4" />}
-                        </button>
-                      )}
                       <button
                         type="button"
                         onClick={() => setPendingDeleteReviewId(review.id)}

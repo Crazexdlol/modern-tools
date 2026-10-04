@@ -2,7 +2,9 @@
 // Client-side helper: capture a rendered Estimate Review card as a paginated
 // Letter-size PDF blob (auto-filed into the claim's Documents tab).
 // Slicing/pagination pattern matches src/lib/summary-pdf.ts.
-import html2canvas from "html2canvas";
+// Uses html2canvas-pro (drop-in fork) — the original html2canvas doesn't
+// understand modern CSS color functions (oklch, lab) that Tailwind v4 generates.
+import html2canvas from "html2canvas-pro";
 import { jsPDF } from "jspdf";
 
 export async function captureReviewPdf(el: HTMLElement): Promise<Blob | null> {
@@ -10,6 +12,8 @@ export async function captureReviewPdf(el: HTMLElement): Promise<Blob | null> {
     scale: 2,
     backgroundColor: "#ffffff",
     windowWidth: 816, // 8.5in at 96dpi
+    useCORS: true,
+    logging: false,
   });
 
   const pageWidthPt = 612; // Letter, points

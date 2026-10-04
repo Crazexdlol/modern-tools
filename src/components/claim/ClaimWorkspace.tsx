@@ -1713,6 +1713,7 @@ interface ReportsState {
     // for legacy row compat.
     dvValueNum?: number
     storageValueNum?: number
+    estValueNum?: number
   }
   awardData: {
     insuranceCompany: string
@@ -1760,6 +1761,7 @@ function defaultReportsState(claim: ClaimInfo): ReportsState {
       umpireAmountNum: 0,
       repairShopAmountNum: 0,
       insuranceOfferNum: 0,
+      estValueNum: 0,
     },
     awardData: {
       insuranceCompany: claim.insuranceCompany || '',
@@ -4451,6 +4453,7 @@ function ClaimWorkspaceInner({ claimId }: { claimId: string }) {
           const showAll = types.length === 0 || types.includes('other')
           const showAcv = showAll || types.includes('acv')
           const showDv = showAll || types.includes('dv')
+          const showEst = showAll || types.includes('estimate')
           const showStorage = showAll || types.includes('storage')
           const dvAmount = dv ? finalDvFor(dv, claim.mileage) : 0
           const storageAmount = storage ? computeStorageTotals(storage).total : 0
@@ -4529,6 +4532,18 @@ function ClaimWorkspaceInner({ claimId }: { claimId: string }) {
                       onChange={(val) => setReportsState(prev => ({
                         ...prev,
                         notesData: { ...prev.notesData, dvValueNum: val },
+                      }))}
+                    />
+                  </div>
+                )}
+                {showEst && (
+                  <div>
+                    <label className={vLabelCls}>MA Value (Est)</label>
+                    <InlineEditCurrency
+                      value={reportsState.notesData.estValueNum ?? 0}
+                      onChange={(val) => setReportsState(prev => ({
+                        ...prev,
+                        notesData: { ...prev.notesData, estValueNum: val },
                       }))}
                     />
                   </div>
@@ -5261,6 +5276,9 @@ function ClaimWorkspaceInner({ claimId }: { claimId: string }) {
             umpireAmount: reportsState.notesData.umpireAmountNum,
             ourAcv: result.acv,
             dv: dv ?? null,
+            claimTypes: claim.claimTypes ?? [],
+            maEstValue: reportsState.notesData.estValueNum ?? 0,
+            maStorageValue: reportsState.notesData.storageValueNum ?? 0,
           }}
         />
       )}

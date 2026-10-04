@@ -12,7 +12,7 @@ import { createPortal } from 'react-dom'
 // generates, and throws "unsupported color function" on capture.
 import html2canvas from 'html2canvas-pro'
 import { jsPDF } from 'jspdf'
-import type { ClaimInfo } from '@/lib/acv/types'
+import type { ClaimInfo, ClaimType } from '@/lib/acv/types'
 import { formatCurrency } from '@/lib/acv/calculations'
 import { mileageModifierFor, type DVState } from '@/components/claim/dv-tab'
 import { savePdfWithPicker } from '@/lib/save-pdf'
@@ -28,12 +28,19 @@ export interface AssignmentSheetData {
   opposingAppraiserName: string
   opposingAppraiserCompany: string
   opposingAppraiserValue: number
+  insuranceOfferValue: number
   agreementAmount: number
   umpireAmount: number
   // Our ACV (0 if not computed yet).
   ourAcv: number
   // DV state (null if the DV tab has never been opened for this claim).
   dv: DVState | null
+  // Claim types drive which Valuations sub-sections appear.
+  claimTypes: ClaimType[]
+  // MA override values for Est and Storage (populated from notesData when
+  // the computed tab value is 0).
+  maEstValue: number
+  maStorageValue: number
 }
 
 function fmtDate(dateStr: string | null | undefined): string {
@@ -62,9 +69,10 @@ function labelFor(notesType: string): string {
 
 export function AssignmentSheet({ data }: { data: AssignmentSheetData }) {
   const {
-    claim, status, submittedAt, assignedToName,
+    claim, assignedToName,
     notesType, opposingAppraiserName, opposingAppraiserCompany, opposingAppraiserValue,
-    agreementAmount, umpireAmount, ourAcv, dv,
+    insuranceOfferValue, agreementAmount, umpireAmount, ourAcv, dv,
+    claimTypes, maEstValue, maStorageValue,
   } = data
 
   // Mount into <body> via a portal so print CSS can hide every OTHER body
@@ -76,30 +84,47 @@ export function AssignmentSheet({ data }: { data: AssignmentSheetData }) {
   }, [])
   if (!mounted) return null
 
-  const printedOn = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
   const vehicle = [claim.year || '', claim.make, claim.model, claim.trim].filter(Boolean).join(' ')
+  const mileageStr = claim.mileage ? claim.mileage.toLocaleString() : '0'
+  const vehicleLine = [vehicle || '—', claim.vin || '—', mileageStr].join(' · ')
   const handling = claim.handlingAppraiser || assignedToName || 'Unassigned'
   const opposing = opposingAppraiserName
     ? `${opposingAppraiserName}${opposingAppraiserCompany ? ` · ${opposingAppraiserCompany}` : ''}`
     : '—'
   const ourDv = computeFinalDv(dv, claim.mileage)
-  const submittedLabel = submittedAt
-    ? new Date(submittedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-    : '—'
+
+  // Determine which claim type rows to show. Fall back to ACV-only.
+  const types = claimTypes ?? []
+  const showAcv  = types.length === 0 || types.includes('acv')
+  const showDv   = types.includes('dv')
+  const showEst  = types.includes('estimate')
+  const showStor = types.includes('storage')
+
+  const maValues: Record<string, number> = {
+    acv: ourAcv,
+    dv: ourDv,
+    estimate: maEstValue,
+    storage: maStorageValue,
+  }
+  const typeLabels: Record<string, string> = {
+    acv: 'ACV',
+    dv: 'DV',
+    estimate: 'Est',
+    storage: 'Storage',
+  }
+  const activeTypes: string[] = []
+  if (showAcv)  activeTypes.push('acv')
+  if (showDv)   activeTypes.push('dv')
+  if (showEst)  activeTypes.push('estimate')
+  if (showStor) activeTypes.push('storage')
 
   return createPortal(
     <div className="assignment-print-portal">
       <div className="assignment-sheet">
-        {/* Header */}
+        {/* Header — centered logo, no title, no date */}
         <div className="header">
-          <div className="header-left">
-            {/* eslint-disable-next-line @next/next/no-img-element -- plain <img> renders more reliably than next/image in a print portal */}
-            <img src="/companies/modern-appraisers/logo.png" alt="Modern Appraisers" className="logo" />
-          </div>
-          <div className="header-right">
-            <div className="title">Assignment Sheet</div>
-            <div className="printed">{printedOn}</div>
-          </div>
+          {/* eslint-disable-next-line @next/next/no-img-element -- plain <img> renders more reliably than next/image in a print portal */}
+          <img src="/companies/modern-appraisers/logo.png" alt="Modern Appraisers" className="logo" />
         </div>
 
         {/* CLAIM */}
@@ -127,13 +152,11 @@ export function AssignmentSheet({ data }: { data: AssignmentSheetData }) {
           </div>
         </section>
 
-        {/* VEHICLE */}
+        {/* VEHICLE — compressed to one line */}
         <section className="section">
           <h3>Vehicle</h3>
           <div className="grid-2">
-            <Row label="Year / Make / Model / Trim" value={vehicle || '—'} colSpan={2} />
-            <Row label="VIN" value={claim.vin || '—'} />
-            <Row label="Mileage" value={claim.mileage ? claim.mileage.toLocaleString() : '0'} />
+            <Row label="Year / Make / Model / Trim · VIN · Mileage" value={vehicleLine} colSpan={2} />
           </div>
         </section>
 
@@ -157,25 +180,25 @@ export function AssignmentSheet({ data }: { data: AssignmentSheetData }) {
           </div>
         </section>
 
-        {/* VALUATIONS */}
+        {/* VALUATIONS — per claim-type grouped sections */}
         <section className="section">
           <h3>Valuations</h3>
-          <div className="grid-money">
-            <MoneyRow label="Our ACV" value={ourAcv} />
-            <MoneyRow label="Our DV" value={ourDv} />
-            <MoneyRow label="Opposing (IA) Value" value={opposingAppraiserValue} />
-            <MoneyRow label="Agreed Amount" value={agreementAmount} />
-            <MoneyRow label="Umpire Amount" value={umpireAmount} />
-          </div>
-        </section>
-
-        {/* STATUS */}
-        <section className="section">
-          <h3>Status</h3>
-          <div className="grid-2">
-            <Row label="Claim Status" value={status === 'closed' ? 'Closed' : 'Open'} />
-            <Row label="Submitted" value={submittedLabel} />
-          </div>
+          {activeTypes.map((type) => (
+            <div key={type} style={{ marginBottom: 8 }}>
+              <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: '#666', marginBottom: 3 }}>{typeLabels[type]}</div>
+              <div className="grid-money">
+                <MoneyRow label={`MA ${typeLabels[type]}`} value={maValues[type] ?? 0} />
+                <MoneyRow label="OA Value" value={opposingAppraiserValue} />
+                <MoneyRow label="Ins. Co. Value" value={insuranceOfferValue} />
+              </div>
+            </div>
+          ))}
+          {(agreementAmount > 0 || umpireAmount > 0) && (
+            <div style={{ marginTop: 6 }} className="grid-money">
+              {agreementAmount > 0 && <MoneyRow label="Agreed Amount" value={agreementAmount} />}
+              {umpireAmount > 0 && <MoneyRow label="Umpire Amount" value={umpireAmount} />}
+            </div>
+          )}
         </section>
       </div>
 
@@ -202,7 +225,7 @@ export function AssignmentSheet({ data }: { data: AssignmentSheetData }) {
         }
         .header {
           display: flex;
-          justify-content: space-between;
+          justify-content: center;
           align-items: center;
           border-bottom: 2px solid #000;
           padding-bottom: 8px;
@@ -210,10 +233,7 @@ export function AssignmentSheet({ data }: { data: AssignmentSheetData }) {
         }
         /* filter: brightness(0) forces the white/light logo image to render
            as solid black on the printed page (preserves transparency). */
-        .header-left .logo { height: 44px; width: auto; display: block; filter: brightness(0); }
-        .header-right { text-align: right; }
-        .title { font-size: 20px; font-weight: 700; letter-spacing: 0.02em; line-height: 1.1; }
-        .printed { font-size: 11px; color: #444; margin-top: 2px; }
+        .header .logo { height: 44px; width: auto; display: block; filter: brightness(0); }
         .section {
           margin-bottom: 8px;
           padding-bottom: 6px;
