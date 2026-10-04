@@ -667,32 +667,6 @@ export function DocumentsTab({
             {selectedCount > 0 && (
               <span className="text-sm text-gray-600">{selectedCount} selected</span>
             )}
-            {/* Bulk Admin Only toggle — admin-only, only when something is
-                selected. Flips every selected doc's adminOnly flag between
-                true and false based on whether any selected doc is public. */}
-            {isAdmin && selectedCount > 0 && (() => {
-              const chosen = sorted.filter(d => selected.has(d.path))
-              const anyPublic = chosen.some(d => !d.adminOnly)
-              const next = anyPublic // if any are public, set all to adminOnly=true; else flip all back to public
-              return (
-                <button
-                  type="button"
-                  onClick={() => {
-                    onDocumentsChange(documents.map(d =>
-                      selected.has(d.path) ? { ...d, adminOnly: next } : d
-                    ))
-                  }}
-                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded border text-sm font-medium transition-colors ${
-                    next
-                      ? 'border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100'
-                      : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'
-                  }`}
-                  title={next ? 'Mark selected documents admin-only' : 'Make selected documents visible to everyone'}
-                >
-                  {next ? 'Mark admin only' : 'Make public'}
-                </button>
-              )
-            })()}
             <button
               type="button"
               onClick={handleDownloadSelected}
@@ -717,6 +691,28 @@ export function DocumentsTab({
                 <><Download className="w-4 h-4" /> Download all ({sorted.length})</>
               )}
             </button>
+            {/* Bulk Admin Only toggle — right of Download all. Admin-only,
+                only when a selection exists. Flips every selected doc's
+                adminOnly flag based on whether any selected doc is public. */}
+            {isAdmin && selectedCount > 0 && (() => {
+              const chosen = sorted.filter(d => selected.has(d.path))
+              const anyPublic = chosen.some(d => !d.adminOnly)
+              const next = anyPublic
+              return (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onDocumentsChange(documents.map(d =>
+                      selected.has(d.path) ? { ...d, adminOnly: next } : d
+                    ))
+                  }}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded border border-blue-800 bg-blue-800 text-white text-sm font-medium hover:bg-blue-900 hover:border-blue-900 transition-colors"
+                  title={next ? 'Mark selected documents admin-only' : 'Make selected documents visible to everyone'}
+                >
+                  {next ? 'Mark admin only' : 'Make public'}
+                </button>
+              )
+            })()}
           </>
         )}
       </div>
