@@ -1,18 +1,26 @@
 "use client"
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useDropzone } from 'react-dropzone'
 import JSZip from 'jszip'
-import { Check, Download, ExternalLink, FileText, Loader2, Pencil, Trash2, Upload, X } from 'lucide-react'
+import {
+  ArrowDown, ArrowUp, ArrowUpDown,
+  Check, Download, ExternalLink, FileText, Image, Loader2, Minus, Pencil, Plus,
+  ChevronLeft, ChevronRight, Trash2, Upload, X,
+} from 'lucide-react'
 import {
   uploadClaimDocument,
   getClaimDocumentUrl,
   deleteClaimDocument,
   type ClaimDocument,
 } from '@/lib/supabase/documents'
+import { useCurrentProfile } from '@/lib/supabase/profiles'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 
-const SOURCE_LABELS: Record<ClaimDocument['source'], string> = {
+// ── Source labels ─────────────────────────────────────────────────────────────
+// 'upload' and 'labor-rates' are legacy values kept for backward-compat
+// rendering — new uploads never produce them.
+const SOURCE_LABELS: Record<string, string> = {
   'acv-report': 'ACV Report',
   'award': 'Award',
   'closing-notes': 'Closing Notes',
@@ -22,11 +30,23 @@ const SOURCE_LABELS: Record<ClaimDocument['source'], string> = {
   'estimate-review': 'Estimate Review',
   'invoice': 'Invoice',
   'storage': 'Storage Charges',
-  'upload': 'Uploaded',
-  'labor-rates': 'Labor Rates',
+  'document': 'Document',
+  'photo': 'Photo',
+  // legacy — treat as 'document' at render time but keep in labels map to avoid fallthrough
+  'upload': 'Document',
+  'labor-rates': 'Document',
 }
 
-const USER_TAGGABLE = new Set<ClaimDocument['source']>(['upload', 'labor-rates'])
+// User-taggable source values shown in the Type dropdown (upload-sourced docs only).
+const USER_TAGGABLE_OPTIONS: Array<{ value: ClaimDocument['source']; label: string }> = [
+  { value: 'document', label: 'Document' },
+  { value: 'photo',    label: 'Photo' },
+  { value: 'invoice',  label: 'Invoice' },
+  { value: 'estimate', label: 'Estimate' },
+]
+
+// Sources that came from user uploads (editable type tag).
+const USER_UPLOADABLE_SOURCES = new Set<string>(['upload', 'labor-rates', 'document', 'photo', 'invoice', 'estimate'])
 
 // Extension → MIME map for zip-extracted entries. The zip's inner files don't
 // carry a MIME type on their own, so we infer from the extension to satisfy
@@ -53,17 +73,39 @@ function extOf(name: string): string {
   return name.toLowerCase().split('.').pop() ?? ''
 }
 
+function isImageExt(name: string): boolean {
+  const e = extOf(name)
+  return ['jpg', 'jpeg', 'png', 'gif', 'webp', 'heic', 'heif', 'tif', 'tiff'].includes(e)
+}
+
+// Auto-pick source by MIME + filename heuristics.
+function autoPickSource(file: File): ClaimDocument['source'] {
+  if (file.type.startsWith('image/')) return 'photo'
+  if (/\binvoice\b/i.test(file.name)) return 'invoice'
+  if (/\bestimate\b/i.test(file.name)) return 'estimate'
+  return 'document'
+}
+
+// Auto-pick source for a zip entry (no File object, just name + mime).
+function autoPickSourceFromMimeName(mime: string, name: string): ClaimDocument['source'] {
+  if (mime.startsWith('image/')) return 'photo'
+  if (/\binvoice\b/i.test(name)) return 'invoice'
+  if (/\bestimate\b/i.test(name)) return 'estimate'
+  return 'document'
+}
+
 // The in-app preview modal only handles types the browser can render natively.
 // Everything else (docx / xlsx / etc.) falls back to opening in a new browser
 // tab, which delegates to the OS's default handler for those formats.
 function canPreviewInline(name: string): boolean {
   const e = extOf(name)
-  return e === 'pdf' || e === 'jpg' || e === 'jpeg' || e === 'png' || e === 'gif' || e === 'webp'
+  return e === 'pdf' || isImageExt(name)
 }
 
-function fmtSize(bytes: number): string {
-  if (bytes >= 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`
-  return `${Math.max(1, Math.round(bytes / 1024))} KB`
+// Normalise a legacy source for display purposes only — never written back.
+function displaySource(source: string): string {
+  if (source === 'upload' || source === 'labor-rates') return 'Document'
+  return SOURCE_LABELS[source] ?? source
 }
 
 function fmtDate(iso: string): string {
@@ -91,9 +133,6 @@ function pickerAvailable(): boolean {
   return typeof window !== 'undefined' && 'showSaveFilePicker' in window
 }
 
-// Actually save a blob to disk — File System Access API when available
-// (Chromium: opens the native Save-As dialog, user picks folder), anchor
-// fallback everywhere else (goes to the browser's default Downloads folder).
 async function saveBlob(blob: Blob, suggestedName: string): Promise<void> {
   if (pickerAvailable()) {
     try {
@@ -104,10 +143,7 @@ async function saveBlob(blob: Blob, suggestedName: string): Promise<void> {
       await writable.close()
       return
     } catch (err) {
-      // AbortError = user cancelled the picker; don't fall back.
       if ((err as { name?: string })?.name === 'AbortError') return
-      // Any other failure (permission denied, non-secure origin, etc) — fall
-      // through to the anchor-download path so the user still gets their file.
     }
   }
   const objectUrl = URL.createObjectURL(blob)
@@ -117,12 +153,9 @@ async function saveBlob(blob: Blob, suggestedName: string): Promise<void> {
   document.body.appendChild(a)
   a.click()
   document.body.removeChild(a)
-  // The URL has to outlive the click but not the tab — revoke on next tick.
   setTimeout(() => URL.revokeObjectURL(objectUrl), 1_000)
 }
 
-// Fetch the signed URL for a doc, download the blob, hand it to the OS
-// via saveBlob. Filename passed here is what the user sees on disk.
 async function downloadOne(doc: ClaimDocument): Promise<{ ok: boolean; error?: string }> {
   const url = await getClaimDocumentUrl(doc.path, doc.name)
   if (!url) return { ok: false, error: `Could not fetch ${doc.name}` }
@@ -137,8 +170,6 @@ async function downloadOne(doc: ClaimDocument): Promise<{ ok: boolean; error?: s
   }
 }
 
-// Zip up the given docs and prompt to save the zip. Sequence duplicate names
-// so multiple "Invoice.pdf" entries land as "Invoice.pdf", "Invoice (2).pdf", ...
 async function downloadZip(docs: ClaimDocument[], zipName: string): Promise<{ ok: boolean; errors: string[] }> {
   const zip = new JSZip()
   const seen = new Map<string, number>()
@@ -150,7 +181,6 @@ async function downloadZip(docs: ClaimDocument[], zipName: string): Promise<{ ok
       const response = await fetch(url)
       if (!response.ok) { errors.push(doc.name); continue }
       const blob = await response.blob()
-      // Dedup filenames inside the zip.
       const seq = (seen.get(doc.name) ?? 0) + 1
       seen.set(doc.name, seq)
       const inZipName = seq === 1
@@ -170,6 +200,208 @@ async function downloadZip(docs: ClaimDocument[], zipName: string): Promise<{ ok
   return { ok: errors.length === 0, errors }
 }
 
+// ── Sort types ────────────────────────────────────────────────────────────────
+type SortCol = 'name' | 'type' | 'date'
+type SortDir = 'asc' | 'desc'
+
+function SortableTh({
+  label,
+  col,
+  sortBy,
+  onClick,
+}: {
+  label: string
+  col: SortCol
+  sortBy: { col: SortCol; dir: SortDir }
+  onClick: (col: SortCol) => void
+}) {
+  const active = sortBy.col === col
+  const Icon = !active ? ArrowUpDown : sortBy.dir === 'asc' ? ArrowUp : ArrowDown
+  return (
+    <th className="text-left px-4 py-3">
+      <button
+        type="button"
+        onClick={() => onClick(col)}
+        className="inline-flex items-center gap-1 text-xs font-semibold text-gray-500 uppercase tracking-wider hover:text-blue-700"
+      >
+        {label}
+        <Icon className={`w-3 h-3 ${active ? 'text-blue-600' : 'text-gray-400'}`} />
+      </button>
+    </th>
+  )
+}
+
+// ── Thumbnail for photo docs ──────────────────────────────────────────────────
+function DocThumbnail({ doc }: { doc: ClaimDocument }) {
+  const [url, setUrl] = useState<string | null>(null)
+  useEffect(() => {
+    let cancelled = false
+    getClaimDocumentUrl(doc.path).then(u => { if (!cancelled) setUrl(u) })
+    return () => { cancelled = true }
+  }, [doc.path])
+  if (!url) return <Image className="w-5 h-5 text-blue-400 shrink-0" />
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={url}
+      alt=""
+      loading="lazy"
+      className="w-10 h-10 object-cover rounded border border-gray-200 shrink-0"
+    />
+  )
+}
+
+// ── Photo zoom / pan modal content ───────────────────────────────────────────
+const ZOOM_MIN = 0.5
+const ZOOM_MAX = 10
+
+interface ZoomState {
+  scale: number
+  tx: number
+  ty: number
+}
+
+function ImageViewer({ url, name }: { url: string; name: string }) {
+  const [zoom, setZoom] = useState<ZoomState>({ scale: 1, tx: 0, ty: 0 })
+  const [animating, setAnimating] = useState(false)
+  const [dragging, setDragging] = useState(false)
+  const dragStart = useRef<{ mx: number; my: number; tx: number; ty: number } | null>(null)
+  const animFrameRef = useRef<number | null>(null)
+  const animStartRef = useRef<number | null>(null)
+
+  const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v))
+
+  const adjustZoom = (factor: number) => {
+    setZoom(prev => {
+      const next = clamp(prev.scale * factor, ZOOM_MIN, ZOOM_MAX)
+      return { ...prev, scale: next }
+    })
+    setAnimating(false)
+  }
+
+  const handleDblClick = (e: React.MouseEvent<HTMLImageElement>) => {
+    if (animating) {
+      // Cancel ongoing animation
+      if (animFrameRef.current !== null) cancelAnimationFrame(animFrameRef.current)
+      setAnimating(false)
+      setZoom({ scale: 1, tx: 0, ty: 0 })
+      return
+    }
+    // Start zoom animation from click point, transform origin = click point relative to image
+    const rect = e.currentTarget.getBoundingClientRect()
+    const ox = e.clientX - rect.left - rect.width / 2
+    const oy = e.clientY - rect.top - rect.height / 2
+    const startScale = zoom.scale
+    const targetScale = 3
+    animStartRef.current = null
+    setAnimating(true)
+
+    const step = (ts: number) => {
+      if (animStartRef.current === null) animStartRef.current = ts
+      const elapsed = ts - animStartRef.current
+      const duration = 2000
+      const t = Math.min(elapsed / duration, 1)
+      // ease-in-out cubic
+      const eased = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2
+      const s = startScale + (targetScale - startScale) * eased
+      const clamped = clamp(s, ZOOM_MIN, ZOOM_MAX)
+      setZoom({ scale: clamped, tx: -ox * (clamped - 1), ty: -oy * (clamped - 1) })
+      if (t < 1) {
+        animFrameRef.current = requestAnimationFrame(step)
+      } else {
+        setAnimating(false)
+      }
+    }
+    animFrameRef.current = requestAnimationFrame(step)
+  }
+
+  const handleMouseDown = (e: React.MouseEvent<HTMLImageElement>) => {
+    if (zoom.scale <= 1) return
+    e.preventDefault()
+    dragStart.current = { mx: e.clientX, my: e.clientY, tx: zoom.tx, ty: zoom.ty }
+    setDragging(true)
+  }
+  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!dragging || !dragStart.current) return
+    const dx = e.clientX - dragStart.current.mx
+    const dy = e.clientY - dragStart.current.my
+    setZoom(prev => ({ ...prev, tx: dragStart.current!.tx + dx, ty: dragStart.current!.ty + dy }))
+  }
+  const handleMouseUp = () => {
+    setDragging(false)
+    dragStart.current = null
+  }
+
+  useEffect(() => {
+    return () => {
+      if (animFrameRef.current !== null) cancelAnimationFrame(animFrameRef.current)
+    }
+  }, [])
+
+  return (
+    <div
+      className="w-full h-full flex flex-col"
+      onMouseMove={handleMouseMove}
+      onMouseUp={handleMouseUp}
+      onMouseLeave={handleMouseUp}
+    >
+      <div className="flex-1 overflow-hidden flex items-center justify-center bg-gray-900 select-none"
+           style={{ cursor: zoom.scale > 1 ? (dragging ? 'grabbing' : 'grab') : 'default' }}>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={url}
+          alt={name}
+          draggable={false}
+          onDoubleClick={handleDblClick}
+          onMouseDown={handleMouseDown}
+          style={{
+            transform: `scale(${zoom.scale}) translate(${zoom.tx / zoom.scale}px, ${zoom.ty / zoom.scale}px)`,
+            transition: animating ? 'none' : 'transform 0.15s ease',
+            transformOrigin: 'center center',
+            maxWidth: '100%',
+            maxHeight: '100%',
+            objectFit: 'contain',
+            userSelect: 'none',
+          }}
+        />
+      </div>
+      {/* Zoom controls */}
+      <div className="flex items-center justify-center gap-3 px-4 py-2 bg-gray-800 border-t border-gray-700">
+        <button
+          type="button"
+          onClick={() => adjustZoom(0.8)}
+          className="p-1.5 rounded text-gray-300 hover:text-white hover:bg-gray-700 transition-colors"
+          title="Zoom out"
+        >
+          <Minus className="w-4 h-4" />
+        </button>
+        <span className="text-xs text-gray-400 min-w-[48px] text-center tabular-nums">
+          {Math.round(zoom.scale * 100)}%
+        </span>
+        <button
+          type="button"
+          onClick={() => adjustZoom(1.25)}
+          className="p-1.5 rounded text-gray-300 hover:text-white hover:bg-gray-700 transition-colors"
+          title="Zoom in"
+        >
+          <Plus className="w-4 h-4" />
+        </button>
+        {zoom.scale !== 1 && (
+          <button
+            type="button"
+            onClick={() => setZoom({ scale: 1, tx: 0, ty: 0 })}
+            className="text-xs text-gray-400 hover:text-white px-2 py-1 rounded hover:bg-gray-700 transition-colors"
+          >
+            Reset
+          </button>
+        )}
+        <span className="text-[10px] text-gray-500 ml-2">Double-click to zoom · Drag to pan</span>
+      </div>
+    </div>
+  )
+}
+
+// ── Main component ────────────────────────────────────────────────────────────
 export function DocumentsTab({
   claimId,
   documents,
@@ -179,6 +411,9 @@ export function DocumentsTab({
   documents: ClaimDocument[]
   onDocumentsChange: (next: ClaimDocument[]) => void
 }) {
+  const { profile } = useCurrentProfile()
+  const isAdmin = profile?.role === 'admin'
+
   const [uploading, setUploading] = useState(false)
   const [uploadStatus, setUploadStatus] = useState<string | null>(null)
   const [busyPath, setBusyPath] = useState<string | null>(null)
@@ -191,6 +426,37 @@ export function DocumentsTab({
   const [previewDoc, setPreviewDoc] = useState<ClaimDocument | null>(null)
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
   const [previewLoading, setPreviewLoading] = useState(false)
+  const [sortBy, setSortBy] = useState<{ col: SortCol; dir: SortDir }>({ col: 'date', dir: 'desc' })
+
+  // Visible docs: non-admins see only !adminOnly docs.
+  const visibleDocs = useMemo(
+    () => documents.filter(d => !d.adminOnly || isAdmin),
+    [documents, isAdmin],
+  )
+
+  const sorted = useMemo(() => {
+    const list = [...visibleDocs]
+    list.sort((a, b) => {
+      let cmp = 0
+      if (sortBy.col === 'name') {
+        cmp = a.name.localeCompare(b.name)
+      } else if (sortBy.col === 'type') {
+        cmp = displaySource(a.source).localeCompare(displaySource(b.source))
+      } else {
+        cmp = a.createdAt.localeCompare(b.createdAt)
+      }
+      return sortBy.dir === 'asc' ? cmp : -cmp
+    })
+    return list
+  }, [visibleDocs, sortBy])
+
+  const toggleSort = (col: SortCol) => {
+    setSortBy(prev =>
+      prev.col === col
+        ? { col, dir: prev.dir === 'asc' ? 'desc' : 'asc' }
+        : { col, dir: col === 'date' ? 'desc' : 'asc' }
+    )
+  }
 
   const handleDrop = useCallback(async (accepted: File[]) => {
     if (accepted.length === 0) return
@@ -204,10 +470,6 @@ export function DocumentsTab({
       const isZip = /\.zip$/i.test(file.name) || file.type === 'application/zip' || file.type === 'application/x-zip-compressed'
 
       if (isZip) {
-        // Extract every non-directory entry, infer MIME by extension, upload
-        // each as its own document. Entries with unsupported extensions are
-        // silently skipped so a bag of ".DS_Store" / ".txt~" doesn't spam
-        // the failures list.
         setUploadStatus(`Extracting ${file.name}…`)
         try {
           const zip = await JSZip.loadAsync(file)
@@ -218,11 +480,12 @@ export function DocumentsTab({
             const filename = entry.name.split('/').pop() ?? entry.name
             if (!filename || filename.startsWith('.')) continue
             const mime = inferMimeFromName(filename)
-            if (!mime) continue // unsupported extension — skip silently
+            if (!mime) continue
             setUploadStatus(`Extracting ${file.name} (${done}/${entries.length}): ${filename}`)
             const blob = await entry.async('blob')
             const asFile = new File([blob], filename, { type: mime })
-            const doc = await uploadClaimDocument(claimId, asFile, filename, 'upload')
+            const src = autoPickSourceFromMimeName(mime, filename)
+            const doc = await uploadClaimDocument(claimId, asFile, filename, src)
             if (doc) added.push(doc)
             else failures.push(filename)
           }
@@ -234,7 +497,8 @@ export function DocumentsTab({
       }
 
       setUploadStatus(`Uploading ${file.name}…`)
-      const doc = await uploadClaimDocument(claimId, file, file.name, 'upload')
+      const src = autoPickSource(file)
+      const doc = await uploadClaimDocument(claimId, file, file.name, src)
       if (doc) added.push(doc)
       else failures.push(file.name)
     }
@@ -249,10 +513,6 @@ export function DocumentsTab({
 
   const { getRootProps, getInputProps } = useDropzone({ onDrop: handleDrop, noDrag: true })
 
-  // Open in-app preview by default, unless (a) the file type isn't previewable
-  // in-browser (docx, xlsx, etc.), in which case fall back to opening a signed
-  // URL in a new tab; or (b) the user held Ctrl (or Cmd on Mac), which forces
-  // the new-tab behavior regardless.
   const handleOpen = async (doc: ClaimDocument, e?: React.MouseEvent) => {
     setError(null)
     if (e?.ctrlKey || e?.metaKey || !canPreviewInline(doc.name)) {
@@ -267,7 +527,6 @@ export function DocumentsTab({
   }
 
   // Signed URL for the modal preview — refetched whenever previewDoc changes.
-  // We don't cache across previews because the URL expires in 5 min anyway.
   useEffect(() => {
     if (!previewDoc) { setPreviewUrl(null); return }
     let cancelled = false
@@ -279,6 +538,30 @@ export function DocumentsTab({
     })
     return () => { cancelled = true }
   }, [previewDoc])
+
+  // Navigate to adjacent doc in the sorted list.
+  const previewIdx = previewDoc ? sorted.findIndex(d => d.path === previewDoc.path) : -1
+  const previewableSorted = sorted.filter(d => canPreviewInline(d.name))
+  const previewInlineIdx = previewDoc ? previewableSorted.findIndex(d => d.path === previewDoc.path) : -1
+  const goPreviewPrev = () => {
+    if (previewInlineIdx > 0) setPreviewDoc(previewableSorted[previewInlineIdx - 1])
+  }
+  const goPreviewNext = () => {
+    if (previewInlineIdx < previewableSorted.length - 1) setPreviewDoc(previewableSorted[previewInlineIdx + 1])
+  }
+
+  // Keyboard handlers for modal.
+  useEffect(() => {
+    if (!previewDoc) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setPreviewDoc(null)
+      if (e.key === 'ArrowLeft') goPreviewPrev()
+      if (e.key === 'ArrowRight') goPreviewNext()
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [previewDoc, previewInlineIdx, previewableSorted])
 
   const confirmDelete = async () => {
     if (!pendingDelete) return
@@ -310,11 +593,6 @@ export function DocumentsTab({
     onDocumentsChange(documents.map(d => d.path === editingPath ? { ...d, name: trimmed } : d))
     cancelRename()
   }
-
-  const sorted = useMemo(
-    () => [...documents].sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
-    [documents],
-  )
 
   const toggleOne = (path: string) => {
     setSelected(prev => {
@@ -365,7 +643,7 @@ export function DocumentsTab({
         <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm">{error}</div>
       )}
 
-      {/* Toolbar — Upload, then Download Selected, Download All. */}
+      {/* Toolbar */}
       <div className="flex items-center gap-3">
         <label
           {...getRootProps()}
@@ -428,17 +706,16 @@ export function DocumentsTab({
                   />
                 )}
               </th>
-              <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Document</th>
-              <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Type</th>
-              <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Added</th>
-              <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Size</th>
+              <SortableTh label="Document" col="name" sortBy={sortBy} onClick={toggleSort} />
+              <SortableTh label="Type"     col="type" sortBy={sortBy} onClick={toggleSort} />
+              <SortableTh label="Added"    col="date" sortBy={sortBy} onClick={toggleSort} />
               <th className="text-right px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Actions</th>
             </tr>
           </thead>
           <tbody>
             {sorted.length === 0 ? (
               <tr>
-                <td colSpan={6} className="text-center py-16 text-gray-400">
+                <td colSpan={5} className="text-center py-16 text-gray-400">
                   No documents yet. Download or print a report, or click Upload above.
                 </td>
               </tr>
@@ -446,101 +723,126 @@ export function DocumentsTab({
               sorted.map((doc) => {
                 const isEditing = editingPath === doc.path
                 const isChecked = selected.has(doc.path)
+                const isPhoto = doc.source === 'photo' || isImageExt(doc.name)
+                const isUserTaggable = USER_UPLOADABLE_SOURCES.has(doc.source)
+                // Normalise legacy sources to 'document' for the dropdown value.
+                const editableSource: ClaimDocument['source'] =
+                  (doc.source === 'upload' || doc.source === 'labor-rates') ? 'document' : doc.source
+
                 return (
-                <tr key={doc.path} className={`border-b border-gray-100 transition-colors ${isChecked ? 'bg-blue-50/40' : 'hover:bg-gray-50'}`}>
-                  <td className="px-3 py-3">
-                    <input
-                      type="checkbox"
-                      aria-label={`Select ${doc.name}`}
-                      checked={isChecked}
-                      onChange={() => toggleOne(doc.path)}
-                      className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
-                    />
-                  </td>
-                  <td className="px-4 py-3">
-                    {isEditing ? (
-                      <div className="flex items-center gap-2">
-                        <FileText className="w-4 h-4 text-blue-500 shrink-0" />
-                        <input
-                          type="text"
-                          value={editValue}
-                          onChange={(e) => setEditValue(e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') saveRename()
-                            if (e.key === 'Escape') cancelRename()
-                          }}
-                          autoFocus
-                          className="flex-1 bg-white border border-blue-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        />
-                        <button onClick={saveRename} className="text-emerald-600 hover:text-emerald-700 p-1" title="Save">
-                          <Check className="w-4 h-4" />
-                        </button>
-                        <button onClick={cancelRename} className="text-gray-400 hover:text-gray-700 p-1" title="Cancel">
-                          <X className="w-4 h-4" />
-                        </button>
-                      </div>
-                    ) : (
-                      <button
-                        onClick={(e) => handleOpen(doc, e)}
-                        className="flex items-center gap-2 text-gray-900 hover:text-blue-600 font-medium text-left"
-                        title="Click to preview here · Ctrl-click (⌘-click on Mac) to open in a new tab"
-                      >
-                        <FileText className="w-4 h-4 text-blue-500 shrink-0" />
-                        {doc.name}
-                      </button>
-                    )}
-                  </td>
-                  <td className="px-4 py-3">
-                    {USER_TAGGABLE.has(doc.source) ? (
-                      <select
-                        value={doc.source}
-                        onChange={(e) => {
-                          const nextSource = e.target.value as ClaimDocument['source']
-                          onDocumentsChange(documents.map(d =>
-                            d.path === doc.path ? { ...d, source: nextSource } : d
-                          ))
-                        }}
-                        className={`text-xs font-semibold px-2 py-0.5 rounded-full border cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-                          doc.source === 'labor-rates'
-                            ? 'bg-teal-50 border-teal-200 text-teal-800'
-                            : 'bg-gray-100 border-gray-200 text-gray-600'
-                        }`}
-                        title="Change the type tag on this document"
-                      >
-                        <option value="upload">Uploaded</option>
-                        <option value="labor-rates">Labor Rates</option>
-                      </select>
-                    ) : (
-                      <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-gray-100 border border-gray-200 text-gray-600">
-                        {SOURCE_LABELS[doc.source] ?? doc.source}
-                      </span>
-                    )}
-                  </td>
-                  <td className="px-4 py-3 text-gray-500">{fmtDate(doc.createdAt)}</td>
-                  <td className="px-4 py-3 text-gray-500">{fmtSize(doc.size)}</td>
-                  <td className="px-4 py-3 text-right">
-                    <div className="flex items-center justify-end gap-1">
-                      {busyPath === doc.path ? (
-                        <Loader2 className="w-4 h-4 animate-spin text-gray-400" />
+                  <tr key={doc.path} className={`border-b border-gray-100 transition-colors ${isChecked ? 'bg-blue-50/40' : 'hover:bg-gray-50'}`}>
+                    <td className="px-3 py-3">
+                      <input
+                        type="checkbox"
+                        aria-label={`Select ${doc.name}`}
+                        checked={isChecked}
+                        onChange={() => toggleOne(doc.path)}
+                        className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                      />
+                    </td>
+                    <td className="px-4 py-3">
+                      {isEditing ? (
+                        <div className="flex items-center gap-2">
+                          <FileText className="w-4 h-4 text-blue-500 shrink-0" />
+                          <input
+                            type="text"
+                            value={editValue}
+                            onChange={(e) => setEditValue(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') saveRename()
+                              if (e.key === 'Escape') cancelRename()
+                            }}
+                            autoFocus
+                            className="flex-1 bg-white border border-blue-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          />
+                          <button onClick={saveRename} className="text-emerald-600 hover:text-emerald-700 p-1" title="Save">
+                            <Check className="w-4 h-4" />
+                          </button>
+                          <button onClick={cancelRename} className="text-gray-400 hover:text-gray-700 p-1" title="Cancel">
+                            <X className="w-4 h-4" />
+                          </button>
+                        </div>
                       ) : (
-                        <>
-                          {!isEditing && (
-                            <button onClick={() => startRename(doc)} className="text-gray-400 hover:text-blue-600 transition-colors p-1" title="Rename">
-                              <Pencil className="w-4 h-4" />
-                            </button>
+                        <button
+                          onClick={(e) => handleOpen(doc, e)}
+                          className="flex items-center gap-2 text-gray-900 hover:text-blue-600 font-medium text-left"
+                          title="Click to preview here · Ctrl-click (⌘-click on Mac) to open in a new tab"
+                        >
+                          {isPhoto ? (
+                            <DocThumbnail doc={doc} />
+                          ) : (
+                            <FileText className="w-4 h-4 text-blue-500 shrink-0" />
                           )}
-                          <button onClick={() => handleDownloadOne(doc)} className="text-gray-400 hover:text-blue-600 transition-colors p-1" title="Download">
-                            <Download className="w-4 h-4" />
-                          </button>
-                          <button onClick={() => setPendingDelete(doc)} className="text-gray-300 hover:text-red-500 transition-colors p-1" title="Delete">
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </>
+                          {doc.name}
+                        </button>
                       )}
-                    </div>
-                  </td>
-                </tr>
-              )})
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2">
+                        {isUserTaggable ? (
+                          <select
+                            value={editableSource}
+                            onChange={(e) => {
+                              const nextSource = e.target.value as ClaimDocument['source']
+                              onDocumentsChange(documents.map(d =>
+                                d.path === doc.path ? { ...d, source: nextSource } : d
+                              ))
+                            }}
+                            className="text-xs font-semibold px-2 py-0.5 rounded-full border border-gray-200 bg-gray-100 text-gray-600 cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            title="Change the type tag on this document"
+                          >
+                            {USER_TAGGABLE_OPTIONS.map(opt => (
+                              <option key={opt.value} value={opt.value}>{opt.label}</option>
+                            ))}
+                          </select>
+                        ) : (
+                          <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-gray-100 border border-gray-200 text-gray-600">
+                            {displaySource(doc.source)}
+                          </span>
+                        )}
+                        {/* Admin-only toggle — only visible to admins */}
+                        {isAdmin && (
+                          <label className="inline-flex items-center gap-1 cursor-pointer select-none">
+                            <input
+                              type="checkbox"
+                              checked={!!doc.adminOnly}
+                              onChange={(e) => {
+                                onDocumentsChange(documents.map(d =>
+                                  d.path === doc.path ? { ...d, adminOnly: e.target.checked } : d
+                                ))
+                              }}
+                              className="w-3.5 h-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                            />
+                            <span className="text-xs text-gray-500 whitespace-nowrap">Admin only</span>
+                          </label>
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 text-gray-500 whitespace-nowrap">{fmtDate(doc.createdAt)}</td>
+                    <td className="px-4 py-3 text-right">
+                      <div className="flex items-center justify-end gap-1">
+                        {busyPath === doc.path ? (
+                          <Loader2 className="w-4 h-4 animate-spin text-gray-400" />
+                        ) : (
+                          <>
+                            {!isEditing && (
+                              <button onClick={() => startRename(doc)} className="text-gray-400 hover:text-blue-600 transition-colors p-1" title="Rename">
+                                <Pencil className="w-4 h-4" />
+                              </button>
+                            )}
+                            <button onClick={() => handleDownloadOne(doc)} className="text-gray-400 hover:text-blue-600 transition-colors p-1" title="Download">
+                              <Download className="w-4 h-4" />
+                            </button>
+                            <button onClick={() => setPendingDelete(doc)} className="text-gray-300 hover:text-red-500 transition-colors p-1" title="Delete">
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                )
+              })
             )}
           </tbody>
         </table>
@@ -560,23 +862,50 @@ export function DocumentsTab({
         onCancel={() => setPendingDelete(null)}
       />
 
-      {/* In-app preview modal. PDFs render via <iframe>; images via <img>.
-          Anything else routes through the "open new tab" fallback above and
-          never reaches this modal. */}
+      {/* In-app preview modal */}
       {previewDoc && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70"
           onClick={() => setPreviewDoc(null)}
         >
+          {/* Previous button */}
+          {previewInlineIdx > 0 && (
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); goPreviewPrev() }}
+              className="absolute left-3 top-1/2 -translate-y-1/2 z-10 p-2 rounded-full bg-black/50 text-white hover:bg-black/70 transition-colors"
+              title="Previous document"
+            >
+              <ChevronLeft className="w-6 h-6" />
+            </button>
+          )}
+          {/* Next button */}
+          {previewInlineIdx < previewableSorted.length - 1 && (
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); goPreviewNext() }}
+              className="absolute right-3 top-1/2 -translate-y-1/2 z-10 p-2 rounded-full bg-black/50 text-white hover:bg-black/70 transition-colors"
+              title="Next document"
+            >
+              <ChevronRight className="w-6 h-6" />
+            </button>
+          )}
+
           <div
-            className="relative w-full max-w-6xl h-[90vh] bg-white rounded-lg shadow-2xl flex flex-col overflow-hidden"
+            className="relative w-full max-w-6xl h-[90vh] bg-white rounded-lg shadow-2xl flex flex-col overflow-hidden mx-12"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-center gap-3 px-4 py-3 border-b border-gray-200 bg-gray-50">
+            {/* Modal header */}
+            <div className="flex items-center gap-3 px-4 py-3 border-b border-gray-200 bg-gray-50 shrink-0">
               <FileText className="w-4 h-4 text-blue-500 shrink-0" />
               <div className="text-sm font-medium text-gray-900 truncate flex-1" title={previewDoc.name}>
                 {previewDoc.name}
               </div>
+              {previewableSorted.length > 1 && (
+                <span className="text-xs text-gray-400">
+                  {previewInlineIdx + 1} / {previewableSorted.length}
+                </span>
+              )}
               <button
                 type="button"
                 onClick={async () => {
@@ -599,32 +928,27 @@ export function DocumentsTab({
               <button
                 type="button"
                 onClick={() => setPreviewDoc(null)}
-                title="Close"
+                title="Close (Esc)"
                 className="p-1 rounded text-gray-500 hover:text-gray-900 hover:bg-gray-100 transition-colors"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
-            <div className="flex-1 bg-gray-100 overflow-auto">
+
+            {/* Modal body */}
+            <div className="flex-1 overflow-hidden">
               {previewLoading || !previewUrl ? (
-                <div className="w-full h-full flex items-center justify-center">
+                <div className="w-full h-full flex items-center justify-center bg-gray-100">
                   <Loader2 className="w-6 h-6 text-gray-400 animate-spin" />
                 </div>
               ) : extOf(previewDoc.name) === 'pdf' ? (
                 <iframe
-                  src={previewUrl}
+                  src={`${previewUrl}#toolbar=0&navpanes=0&scrollbar=0`}
                   title={previewDoc.name}
                   className="w-full h-full bg-white"
                 />
               ) : (
-                <div className="w-full h-full flex items-center justify-center p-4">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={previewUrl}
-                    alt={previewDoc.name}
-                    className="max-w-full max-h-full object-contain shadow-md bg-white"
-                  />
-                </div>
+                <ImageViewer url={previewUrl} name={previewDoc.name} />
               )}
             </div>
           </div>

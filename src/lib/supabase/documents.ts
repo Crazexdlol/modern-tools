@@ -6,13 +6,15 @@ import { createClient } from './client'
 export interface ClaimDocument {
   id: string
   name: string
-  // What produced it: a generated report or a manual upload. 'labor-rates'
-  // is a user-set tag on an uploaded document that flags it as a reference
-  // labor-rates sheet for the Estimate Review to auto-extract rates from.
-  source: 'acv-report' | 'award' | 'closing-notes' | 'summary' | 'dv-report' | 'estimate' | 'estimate-review' | 'invoice' | 'storage' | 'upload' | 'labor-rates'
+  // What produced it: a generated report, a manual upload, or an auto-classified upload.
+  // 'upload' and 'labor-rates' are legacy values kept for backward-compat only —
+  // new uploads never produce them; they render as 'document' at display time.
+  source: 'acv-report' | 'award' | 'closing-notes' | 'summary' | 'dv-report' | 'estimate' | 'estimate-review' | 'invoice' | 'storage' | 'upload' | 'labor-rates' | 'document' | 'photo'
   path: string
   size: number
   createdAt: string
+  // When true, this document is only visible to admin users.
+  adminOnly?: boolean
 }
 
 const BUCKET = 'claim-documents'
