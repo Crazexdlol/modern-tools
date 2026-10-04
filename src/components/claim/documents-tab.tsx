@@ -252,7 +252,9 @@ function DocThumbnail({ doc }: { doc: ClaimDocument }) {
 }
 
 // ── Photo zoom / pan modal content ───────────────────────────────────────────
-const ZOOM_MIN = 0.5
+// Minimum = 1 (fit-to-container). Zooming out below 1 just makes the photo
+// smaller against a sea of black, which Henry explicitly didn't want.
+const ZOOM_MIN = 1
 const ZOOM_MAX = 10
 
 interface ZoomState {
@@ -424,6 +426,9 @@ export function DocumentsTab({
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [zipping, setZipping] = useState<'selected' | 'all' | null>(null)
   const [previewDoc, setPreviewDoc] = useState<ClaimDocument | null>(null)
+  // Tracks whether the backdrop-close mousedown originated on the backdrop
+  // itself. See the modal's onMouseDown/onMouseUp handlers below.
+  const backdropDownRef = useRef(false)
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
   const [previewLoading, setPreviewLoading] = useState(false)
   const [sortBy, setSortBy] = useState<{ col: SortCol; dir: SortDir }>({ col: 'date', dir: 'desc' })
@@ -662,6 +667,32 @@ export function DocumentsTab({
             {selectedCount > 0 && (
               <span className="text-sm text-gray-600">{selectedCount} selected</span>
             )}
+            {/* Bulk Admin Only toggle — admin-only, only when something is
+                selected. Flips every selected doc's adminOnly flag between
+                true and false based on whether any selected doc is public. */}
+            {isAdmin && selectedCount > 0 && (() => {
+              const chosen = sorted.filter(d => selected.has(d.path))
+              const anyPublic = chosen.some(d => !d.adminOnly)
+              const next = anyPublic // if any are public, set all to adminOnly=true; else flip all back to public
+              return (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onDocumentsChange(documents.map(d =>
+                      selected.has(d.path) ? { ...d, adminOnly: next } : d
+                    ))
+                  }}
+                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded border text-sm font-medium transition-colors ${
+                    next
+                      ? 'border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100'
+                      : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'
+                  }`}
+                  title={next ? 'Mark selected documents admin-only' : 'Make selected documents visible to everyone'}
+                >
+                  {next ? 'Mark admin only' : 'Make public'}
+                </button>
+              )
+            })()}
             <button
               type="button"
               onClick={handleDownloadSelected}
@@ -800,21 +831,13 @@ export function DocumentsTab({
                             {displaySource(doc.source)}
                           </span>
                         )}
-                        {/* Admin-only toggle — only visible to admins */}
-                        {isAdmin && (
-                          <label className="inline-flex items-center gap-1 cursor-pointer select-none">
-                            <input
-                              type="checkbox"
-                              checked={!!doc.adminOnly}
-                              onChange={(e) => {
-                                onDocumentsChange(documents.map(d =>
-                                  d.path === doc.path ? { ...d, adminOnly: e.target.checked } : d
-                                ))
-                              }}
-                              className="w-3.5 h-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
-                            />
-                            <span className="text-xs text-gray-500 whitespace-nowrap">Admin only</span>
-                          </label>
+                        {/* Admin-only indicator — shown on rows marked
+                            admin-only. Toggle via the bulk selection toolbar
+                            above, not per-row. */}
+                        {doc.adminOnly && (
+                          <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 border border-amber-200 whitespace-nowrap">
+                            Admin only
+                          </span>
                         )}
                       </div>
                     </td>
@@ -866,17 +889,32 @@ export function DocumentsTab({
       {previewDoc && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/70"
-          onClick={() => setPreviewDoc(null)}
+          // Only close when the user BOTH mousedown'd AND mouseup'd on the
+          // backdrop itself. Prevents accidental closes when a pan-drag inside
+          // the image happens to end over the backdrop. e.currentTarget =
+          // the backdrop; e.target = where the mouseup landed.
+          onMouseDown={(e) => {
+            backdropDownRef.current = e.target === e.currentTarget
+          }}
+          onMouseUp={(e) => {
+            if (backdropDownRef.current && e.target === e.currentTarget) {
+              setPreviewDoc(null)
+            }
+            backdropDownRef.current = false
+          }}
         >
           {/* Previous button */}
           {previewInlineIdx > 0 && (
             <button
               type="button"
               onClick={(e) => { e.stopPropagation(); goPreviewPrev() }}
-              className="absolute left-3 top-1/2 -translate-y-1/2 z-10 p-2 rounded-full bg-black/50 text-white hover:bg-black/70 transition-colors"
-              title="Previous document"
+              onMouseDown={(e) => e.stopPropagation()}
+              onMouseUp={(e) => e.stopPropagation()}
+              className="absolute left-6 top-1/2 -translate-y-1/2 z-20 w-12 h-12 rounded-full bg-white text-gray-900 shadow-xl hover:bg-gray-100 hover:scale-105 transition-all flex items-center justify-center"
+              title="Previous document (← arrow key)"
+              aria-label="Previous document"
             >
-              <ChevronLeft className="w-6 h-6" />
+              <ChevronLeft className="w-7 h-7" />
             </button>
           )}
           {/* Next button */}
@@ -884,10 +922,13 @@ export function DocumentsTab({
             <button
               type="button"
               onClick={(e) => { e.stopPropagation(); goPreviewNext() }}
-              className="absolute right-3 top-1/2 -translate-y-1/2 z-10 p-2 rounded-full bg-black/50 text-white hover:bg-black/70 transition-colors"
-              title="Next document"
+              onMouseDown={(e) => e.stopPropagation()}
+              onMouseUp={(e) => e.stopPropagation()}
+              className="absolute right-6 top-1/2 -translate-y-1/2 z-20 w-12 h-12 rounded-full bg-white text-gray-900 shadow-xl hover:bg-gray-100 hover:scale-105 transition-all flex items-center justify-center"
+              title="Next document (→ arrow key)"
+              aria-label="Next document"
             >
-              <ChevronRight className="w-6 h-6" />
+              <ChevronRight className="w-7 h-7" />
             </button>
           )}
 
