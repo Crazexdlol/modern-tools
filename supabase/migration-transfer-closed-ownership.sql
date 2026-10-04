@@ -51,9 +51,20 @@ create trigger transfer_ownership_on_close
   for each row execute function public.transfer_closed_claim_ownership();
 
 -- 3. One-time backfill: every currently-closed claim gets its user_id
---    rewritten to the super-admin. Safe because the trigger from step 2
---    only fires on UPDATEs — this bulk update DOES fire it, but since
---    OLD.status is already 'closed' the condition skips (no infinite loop).
+--    rewritten to the super-admin.
+--
+--    The existing acv_history_appraiser_guard trigger blocks user_id
+--    changes when auth.role() is not 'service_role' and the caller isn't
+--    admin. Supabase SQL Editor runs as 'postgres' (not service_role),
+--    so without this bypass the backfill would fail with:
+--      ERROR: appraisers cannot change user_id
+--
+--    Disable the guard trigger for the backfill, then re-enable. The
+--    ownership-transfer trigger from step 2 still fires but its condition
+--    (OLD.status is distinct from 'closed') is false for already-closed
+--    rows, so it no-ops.
+alter table public.acv_history disable trigger acv_history_appraiser_guard;
+
 update public.acv_history
    set user_id = (
      select id from public.profiles
@@ -68,6 +79,8 @@ update public.acv_history
      order by created_at asc
      limit 1
    );
+
+alter table public.acv_history enable trigger acv_history_appraiser_guard;
 
 -- 4. Verification
 select 'trigger installed'          as label, count(*)::int as value
