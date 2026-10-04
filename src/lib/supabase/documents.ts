@@ -147,6 +147,21 @@ export async function getClaimDocumentUrl(
   return data.signedUrl
 }
 
+// Thumbnail URL for an image in storage. Uses Supabase image transformations
+// (available on Pro+) to resize server-side so the browser only downloads a
+// ~160px version instead of the full-res multi-MB original. Falls back to
+// the un-transformed URL if transforms aren't enabled on the project.
+export async function getClaimDocumentThumbUrl(path: string, width = 160): Promise<string | null> {
+  const supabase = createClient()
+  const { data, error } = await supabase.storage.from(BUCKET).createSignedUrl(path, 300, {
+    transform: { width, resize: 'contain', quality: 70 },
+  })
+  if (error || !data?.signedUrl) {
+    return getClaimDocumentUrl(path)
+  }
+  return data.signedUrl
+}
+
 export async function deleteClaimDocument(path: string): Promise<boolean> {
   const supabase = createClient()
   const { error } = await supabase.storage.from(BUCKET).remove([path])

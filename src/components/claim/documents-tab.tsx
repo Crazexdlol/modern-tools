@@ -11,6 +11,7 @@ import {
 import {
   uploadClaimDocument,
   getClaimDocumentUrl,
+  getClaimDocumentThumbUrl,
   deleteClaimDocument,
   type ClaimDocument,
 } from '@/lib/supabase/documents'
@@ -232,11 +233,14 @@ function SortableTh({
 }
 
 // ── Thumbnail for photo docs ──────────────────────────────────────────────────
+// Uses Supabase image transformations to pull a 160px version — the full-res
+// photos are 3-5 MB and dragging 20 of them in for a 40×40 preview is why
+// the Documents tab loaded sluggishly.
 function DocThumbnail({ doc }: { doc: ClaimDocument }) {
   const [url, setUrl] = useState<string | null>(null)
   useEffect(() => {
     let cancelled = false
-    getClaimDocumentUrl(doc.path).then(u => { if (!cancelled) setUrl(u) })
+    getClaimDocumentThumbUrl(doc.path, 160).then(u => { if (!cancelled) setUrl(u) })
     return () => { cancelled = true }
   }, [doc.path])
   if (!url) return <Image className="w-5 h-5 text-blue-400 shrink-0" />
@@ -246,6 +250,7 @@ function DocThumbnail({ doc }: { doc: ClaimDocument }) {
       src={url}
       alt=""
       loading="lazy"
+      decoding="async"
       className="w-10 h-10 object-cover rounded border border-gray-200 shrink-0"
     />
   )
