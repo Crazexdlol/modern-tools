@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/lib/auth/require-admin'
 import { rateLimit } from '@/lib/rate-limit'
+import { mirrorListings } from '@/lib/comps-db/mirror-listings'
 
 // Module-level cache: which Auto.dev keys have hit their monthly quota.
 // Resets when Vercel cycles the lambda (cold start).
@@ -42,6 +43,13 @@ function normalizeFuelType(raw: string): string {
 
 type AutoDevListing = {
   vin?: string
+  createdAt?: string
+  history?: {
+    accidents?: boolean
+    accidentCount?: number
+    ownerCount?: number
+    oneOwner?: boolean
+  }
   vehicle?: {
     year?: number
     make?: string
@@ -82,10 +90,14 @@ type NormalizedListing = {
   dealerPhone: string
   dealerCity: string
   dealerState: string
+  dealerZip: string
   photoUrl: string
   heading: string
   distanceMi: number
   vdpUrl: string
+  firstSeenAt: string | null
+  priorAccident: boolean | null
+  priorOwnerCount: number | null
   source: 'marketcheck' | 'autodev'
 }
 
@@ -115,10 +127,21 @@ function normalizeMarketcheck(items: Record<string, unknown>[]): NormalizedListi
       dealerPhone: (dealer.phone as string) ?? '',
       dealerCity: (dealer.city as string) ?? '',
       dealerState: (dealer.state as string) ?? '',
+      dealerZip: (dealer.zip as string) ?? '',
       photoUrl: photoLinks[0] ?? '',
       heading: (l.heading as string) ?? '',
       distanceMi: l.dist ? Math.round(Number(l.dist)) : 0,
       vdpUrl: ((l.vdp_url as string) ?? (l.ref_url as string) ?? (dealer.website as string) ?? '') as string,
+      firstSeenAt:
+        (l.first_seen_at_date as string) ??
+        (typeof l.first_seen_at === 'number' ? new Date((l.first_seen_at as number) * 1000).toISOString() : null),
+      // MarketCheck doesn't expose accident history on their free tier —
+      // carfax_clean_title means "not a branded title" which is NOT the same
+      // as "no accidents." Leaving null is more honest than lying.
+      priorAccident: null,
+      // Only derivable when carfax_1_owner is explicitly true. False means
+      // "more than one owner" with no exact count; leave null in that case.
+      priorOwnerCount: l.carfax_1_owner === true ? 1 : null,
       source: 'marketcheck',
     })
   }
@@ -151,10 +174,19 @@ function normalizeAutodev(items: AutoDevListing[]): NormalizedListing[] {
       dealerPhone: '',
       dealerCity: r.city ?? '',
       dealerState: r.state ?? '',
+      dealerZip: r.zip ?? '',
       photoUrl: r.primaryImage ?? '',
       heading,
       distanceMi: 0,
       vdpUrl: r.vdp ?? '',
+      firstSeenAt: l.createdAt ?? null,
+      priorAccident:
+        typeof l.history?.accidents === 'boolean'
+          ? l.history.accidents
+          : typeof l.history?.accidentCount === 'number'
+            ? l.history.accidentCount > 0
+            : null,
+      priorOwnerCount: typeof l.history?.ownerCount === 'number' ? l.history.ownerCount : null,
       source: 'autodev',
     })
   }
@@ -233,6 +265,11 @@ export async function GET(request: NextRequest) {
 
       let mcOk = false
       let adOk = false
+      // Mirror writes run concurrently with the stream but we await them before
+      // closing the controller so Vercel doesn't freeze the lambda mid-write.
+      // User-visible output is unaffected — write() happens before the mirror
+      // promise is kicked off.
+      const mirrorPromises: Promise<unknown>[] = []
 
       const mcTasks = mcKey
         ? mcPages.map(async (start) => {
@@ -245,6 +282,14 @@ export async function GET(request: NextRequest) {
               const normalized = normalizeMarketcheck(items)
               mcOk = true
               write({ type: 'listings', source: 'marketcheck', listings: normalized })
+              // Mirror into the comparable-vehicles DB. Stored as generic
+              // dealer-scrape rows (data_provider='scrape', source=dealer_domain)
+              // — see src/lib/comps-db/mirror-listings.ts.
+              mirrorPromises.push(
+                mirrorListings(normalized, { active: !includeInactive }).catch((err) => {
+                  console.error('[comps-mirror mc]', err instanceof Error ? err.message : err)
+                }),
+              )
             } catch {
               // skip failed page
             }
@@ -261,6 +306,13 @@ export async function GET(request: NextRequest) {
               const normalized = normalizeAutodev(items)
               adOk = true
               write({ type: 'listings', source: 'autodev', listings: normalized })
+              // Mirror Auto.dev results the same way as MarketCheck —
+              // stored as generic scrape rows, deduped by listing_url.
+              mirrorPromises.push(
+                mirrorListings(normalized, { active: true }).catch((err) => {
+                  console.error('[comps-mirror ad]', err instanceof Error ? err.message : err)
+                }),
+              )
             } catch {
               // skip
             }
@@ -274,6 +326,11 @@ export async function GET(request: NextRequest) {
       } else {
         write({ type: 'done', sources: { marketcheck: mcOk, autodev: adOk } })
       }
+
+      // Keep the lambda alive until background mirror writes finish. The
+      // user has already received every NDJSON frame including 'done' at
+      // this point — this just lets the background DB writes complete.
+      await Promise.allSettled(mirrorPromises)
 
       controller.close()
     },
