@@ -18,6 +18,50 @@ Read `CLAUDE.md` first if you haven't. Then read the top entry here before touch
 
 ---
 
+## 2026-10-07 — Adjuster-marketing data acquisition scoped, deferred
+
+**Worked on:** Henry asked for a 500-row nationwide adjuster CSV (name + title + company + email) to use as a cold-outreach list. First response was an outright refusal (misread the ask as "fabricate names"), which Henry corrected — the request was to populate the EXISTING marketing CRM already built in HamsPortal.
+
+**Discovery of what's already built:**
+- `/marketing` route gated by `marketing_access` flag on `profiles`.
+- `clients` table with types: `adjuster`, `body_shop`, `attorney`, `insurance_company`.
+- `client_contacts` sub-table (name, title, phone, email, is_primary).
+- `client_marketing_logs` for outreach cadence tracking (last_marketed_at, remarket_interval_days, next_remarket_at).
+- `/marketing/import` — CSV import tool, matches on fuzzy name, supports contacts.
+- `/marketing/backfill` — extracts client names from `acv_history` (post-close), classifies attorney/body_shop/insurance_company via keyword patterns.
+- Current state (verified via DB probe): 17 clients loaded (12 adjuster, 2 attorney, 3 insurance_company, 0 body_shop), 0 client_contacts.
+
+**Scoping decision — not building this session.** Henry decided to defer because the real honest answer on 500 nationwide adjuster emails is: **you can't scrape them.** Public web just doesn't publish adjuster emails at scale (privacy / anti-scrape). Every realistic path to 500 verified emails goes through either (a) a paid enrichment API (Apollo.io, Hunter.io) or (b) a bought list from a data broker.
+
+**Scoping table I handed Henry for his future reference:**
+
+| Approach | Cost | Timeline | Email coverage |
+|---|---|---|---|
+| Scrape NAIIA + state DOI only | $0 | 1-2 days build | ~10-20% (100 of 500) |
+| Scrape + Hunter.io free | $0 | 2-3 days + 10 months trickle | 500 slowly |
+| Scrape + Hunter.io paid | $49/mo | 2 days + ongoing | ~350 of 500 |
+| **Scrape + Apollo.io one month** | **$49 once** | **1-2 days build** | **~425 of 500 w/ title + LinkedIn** |
+| Bought list from broker | $200-500 | 1 hour | 95% verified |
+
+**My recommendation when he returns:** $49 Apollo Essential plan for one month, then cancel. 2,000 enrichment credits = 4x the need, built-in filters for "Claims Adjuster" + state + insurer, CSV export in one click. Legally cleanest, fastest, highest email-match rate.
+
+**Changed:**
+- `C:\XSFA\hams-crawler\src\adjusters\sources\` + `C:\XSFA\hams-crawler\output\` — empty folders created mkdir-only. No code written. Delete these on next crawler session if we don't resume this path, or keep as scaffold for when Henry decides.
+- Nothing shipped. No code commits beyond this session log entry.
+
+**Deploy status:** Nothing new. Last live deploy still `dpl_Hu8ukgVSKdDZJT5Yk3x78q7bdtq1` from 2026-10-05 (comps-db mirror + 4 new fields).
+
+**In progress / broken / unknowns:**
+- Adjuster marketing data acquisition — **deferred by Henry.** No ETA. When he returns to it, pick one of the five paths above.
+- The empty folders at `C:\XSFA\hams-crawler\src\adjusters\sources\` and `/output\` won't hurt anything — just dead scaffolding.
+- Carryover from 2026-10-05 (unchanged): Dealer.com scraper for `hams-crawler` is still the biggest pending item (6,633 dealers identified). DealerOn second (2,908). Henry tab in Accounting still needs scoping. Documents Rule 1 scrub, DAYS LOU cover title fix, `.flat-cards` CSS cleanup also still pending.
+
+**Next:**
+- When Henry wants adjuster marketing data: sign up Apollo.io Essential ($49), filter "Claims Adjuster" + target states + target insurance_company domains, export CSV, review, upload via `/marketing/import`. No scraper needed.
+- Independent of marketing: the dealer-crawler plan from 2026-10-05 is still the biggest unfinished item.
+
+---
+
 ## 2026-10-05 — Comps-DB mirror live (every ACV search auto-saves listings) + standalone hams-crawler project scaffolded + 40K dealer fingerprint
 
 **Worked on:** Two big things in one session.
