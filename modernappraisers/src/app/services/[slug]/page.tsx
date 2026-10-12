@@ -40,13 +40,6 @@ export default async function ServiceDetailPage({ params }: { params: Promise<{ 
           </section>
         </div>
 
-        {s.typicalRecovery && (
-          <div className="mt-16 p-6 border border-[color:var(--color-border)] rounded-[10px] bg-[color:var(--color-bg-subtle)] max-w-2xl">
-            <div className="text-xs uppercase tracking-wider text-[color:var(--color-ink-soft)]">Typical recovery</div>
-            <div className="mt-2 text-2xl font-bold tracking-tight">{s.typicalRecovery}</div>
-          </div>
-        )}
-
         <div className="mt-16">
           <Link href="/submit" className="inline-flex items-center h-11 px-6 rounded-md bg-[color:var(--color-ink)] text-white text-sm font-semibold hover:bg-black">Submit a Claim →</Link>
         </div>
