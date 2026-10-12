@@ -1,0 +1,25 @@
+@import "tailwindcss";
+@import "@fontsource-variable/inter";
+
+@theme {
+  --font-sans: "Inter Variable", ui-sans-serif, system-ui, sans-serif;
+
+  --color-bg: #ffffff;
+  --color-bg-subtle: #fafafa;
+  --color-ink: #0a0a0a;
+  --color-ink-muted: #4b5563;
+  --color-ink-soft: #6b7280;
+  --color-border: #e5e7eb;
+  --color-border-strong: #d1d5db;
+  --color-accent: #0ea5e9;
+  --color-accent-ink: #0369a1;
+  --color-success: #059669;
+  --color-danger: #dc2626;
+
+  --radius-card: 10px;
+}
+
+html, body { background: var(--color-bg); color: var(--color-ink); font-family: var(--font-sans); font-feature-settings: "cv11", "ss01"; }
+body { -webkit-font-smoothing: antialiased; }
+
+::selection { background: var(--color-accent); color: #fff; }
