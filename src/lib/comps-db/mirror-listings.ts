@@ -24,15 +24,6 @@ export type MirrorInput = {
   priorOwnerCount: number | null
 }
 
-function sourceSlugFromUrl(url: string): string {
-  try {
-    const host = new URL(url).hostname.replace(/^www\./, '')
-    return host.replace(/\./g, '_').toLowerCase()
-  } catch {
-    return 'unknown_source'
-  }
-}
-
 type ListingRow = {
   id: number
   listing_url: string
@@ -42,10 +33,6 @@ type ListingRow = {
 
 /**
  * Mirror normalized listings (MarketCheck or Auto.dev) into the comparable-vehicles DB.
- *
- * Stores identically to the direct-scraper rows (data_provider='scrape',
- * source=dealer_domain, provider_listing_id=null) so the data pool is
- * indistinguishable from the crawler's own output.
  *
  * - Upsert by listing_url (unique in listings).
  * - On price change vs most recent price_history row → insert a new price_history row.
@@ -66,7 +53,6 @@ export async function mirrorListings(
     .filter((l) => l.vdpUrl && l.vdpUrl.startsWith('http'))
     .map((l) => ({
       listing_url: l.vdpUrl,
-      source: sourceSlugFromUrl(l.vdpUrl),
       data_provider: 'scrape',
       vin: l.vin || null,
       year: l.year || null,
@@ -112,9 +98,6 @@ export async function mirrorListings(
     (existing ?? []).map((r) => [r.listing_url, r as ListingRow]),
   )
 
-  // Supabase upsert REPLACES all columns on conflict. For existing rows,
-  // we need to send back the original date_first_scraped so we don't null
-  // out a NOT NULL column. For new rows, use nowIso.
   const upsertRows = rows.map((r) => {
     const prev = prevById.get(r.listing_url)
     return prev ? { ...r, date_first_scraped: prev.date_first_scraped } : r
@@ -134,8 +117,6 @@ export async function mirrorListings(
     (upserted ?? []).map((r) => [r.listing_url, r as ListingRow]),
   )
 
-  // Build price_history inserts: one row per listing where price changed
-  // (or where this is the first time we're seeing it).
   const historyRows: { listing_id: number; price: number; date_scraped: string }[] = []
   for (const r of rows) {
     const after = upsertedById.get(r.listing_url)
