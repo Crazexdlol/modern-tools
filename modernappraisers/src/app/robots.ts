@@ -7,6 +7,6 @@ export default function robots(): MetadataRoute.Robots {
       allow: '/',
       disallow: ['/api/'],
     },
-    sitemap: 'https://modernappraisers.com/sitemap.xml',
+    sitemap: 'https://www.modernappraisers.com/sitemap.xml',
   }
 }

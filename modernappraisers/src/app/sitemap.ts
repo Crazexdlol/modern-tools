@@ -1,6 +1,6 @@
 import type { MetadataRoute } from 'next'
 
-const BASE = 'https://modernappraisers.com'
+const BASE = 'https://www.modernappraisers.com'
 
 // Static route list — every public page on the site. Next.js serves this
 // as /sitemap.xml. Submit the URL to Google Search Console to get the new

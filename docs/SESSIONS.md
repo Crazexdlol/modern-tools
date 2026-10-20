@@ -18,6 +18,64 @@ Read `CLAUDE.md` first if you haven't. Then read the top entry here before touch
 
 ---
 
+## 2026-10-20 (evening) — SEO Level 1 kickoff + modernappraisers polish (team, favicon, submit-claim CTA)
+
+**Worked on:** All modernappraisers.com. Pivoted to marketing site after the morning's HAMS licensed-state + cleanup work (prior entry below). Order of work:
+
+1. **SEO Level 1 — Google Search Console setup.** Walked Henry through verifying domain ownership via Bluehost TXT record (`google-site-verification=j5veFvtQJLXzPYdtcpawxdl3gv7zCZz…`). Verified instantly. Submitted sitemap (`https://modernappraisers.com/sitemap.xml` — had to use full URL, Domain-property Console rejects relative paths). **Deleted 12 stale WordPress-era sitemaps** that had been feeding Google ~44,000 phantom URLs (`pageamap.xml` through `pagelmap.xml`, 7000+ URLs each, last-read Aug 2024). Requested indexing on top 5 pages via Live Test → Request Indexing. Bing Webmaster Tools import still pending (Henry to do when he has 3 min).
+2. **Sitemap/robots canonical fix.** Site redirects apex → www, but the sitemap used apex URLs — Google was flagging the canonical mismatch. Changed `BASE = 'https://modernappraisers.com'` → `'https://www.modernappraisers.com'` in `src/app/sitemap.ts` and `src/app/robots.ts`. Everything now agrees.
+3. **Stable favicon.ico.** Next.js's `src/app/icon.png` convention serves a hash-suffixed URL (`/icon.png?icon.22p2jv-osd8u5.png`) that changes on every deploy, which Google treats as a non-canonical asset and may refuse to render in search results. Generated a multi-size `src/app/favicon.ico` (16/32/48/64/128/256 PNG-encoded, 370KB) from `icon.png` via Sharp + png-to-ico. Next.js serves it at `/favicon.ico` with a stable URL that never changes between deploys.
+4. **Instagram + LinkedIn footer buttons.** Added social icon buttons (inline SVG, no icon library) to the Contact column in `src/components/site-footer.tsx`. Instagram → https://www.instagram.com/modernappraisers/, LinkedIn → https://www.linkedin.com/company/modernappraisers. Styled as outlined 36×36 squares that invert to accent-color on hover (matches the rest of the site's button idiom).
+5. **"Our Team" section on About page.** New section between the metrics strip and the final CTA on `src/app/about/page.tsx`. 4-card grid (sm:2, lg:4) with real headshot photos:
+   - Alex Aleksanyan — Chief Executive Officer
+   - Henry Aleksanyan — Chief Operating Officer & Appraiser
+   - Maeli Sotelo — Office Manager
+   - Wendy Castro — Office Manager
+   Photos processed from Henry's Desktop jpgs → `public/team/{alex,henry,maeli,wendy}.jpg` (resized to 480×480 cover-crop with Sharp attention-focal, mozjpeg 85 quality, 17–27KB each). `TeamMember` component takes an optional `photo` prop; falls back to initials-circle when no photo. Final-CTA section below moved to `bg-[color:var(--color-bg-subtle)]` with top border to visually separate from the team cards.
+6. **Google Reviews — built, provisioned, then pulled.** Full round-trip:
+   - Built `src/components/google-reviews.tsx` with REVIEWS array + empty-state CTA, wired into home page between Evaluation and Contact.
+   - Guided Henry through Google Cloud setup: created "Modern Appraisers" project, enabled Places API (New), skipped onboarding survey, created API key `AIzaSyBUD4KdsYQkQI4xx8QrTumRxophf3aLgfw`, restricted to `*.modernappraisers.com/*` HTTP referer + Places API (New) only. Key saved to Vercel prod env + `.env.local` as `GOOGLE_PLACES_API_KEY`. Place ID (FTID form, extracted from Google Maps share URL) saved as `GOOGLE_PLACES_PLACE_ID=0x80c8eb9ff08fea1b:0xc7ee6fbe627f4bbc` (CID: 14406575121491774396).
+   - Smoke-tested the key with four Places API queries (text, phone, autocomplete, Pacific Ocean location bias). **Modern Appraisers did not surface in any search** — other Las Vegas appraisers (Appraisal Services, LV Appraisal Co., Silver State Appraisers) returned fine. Root cause: Modern Appraisers' GBP is **unclaimed / unverified**, and Google filters unverified listings out of Places API results (knowledge-graph fallback still shows them in regular Google Search — that's why Henry sees 59 reviews on the sidebar when he googles his own business).
+   - Pulled GoogleReviews from the home page (comment-only; component + env vars + key stay in place for 1-line restore). Will wire back on once GBP is claimed and Google re-indexes (hours after verification).
+7. **Submit-a-Claim CTA on home page.** Added a divider + CTA below the HomeContactForm. Copy: *"Already know you need an appraisal? Skip the back-and-forth."* + outline-blue button linking to `/submitaclaim`. Also updated the section's helper line to end with "...or formally submit a claim" so people see the option before scrolling.
+8. **GitHub kept current.** Final commit of the day's modernappraisers work + session log pushed to `origin/main`.
+
+**Changed (modernappraisers):**
+- `src/app/sitemap.ts` + `src/app/robots.ts` — BASE and sitemap URL switched to `https://www.modernappraisers.com`.
+- `src/app/favicon.ico` (new, 370KB multi-size ICO).
+- `src/components/site-footer.tsx` — IG + LinkedIn icon buttons in Contact column.
+- `src/app/about/page.tsx` — new "Our Team" section with 4 member cards, `TeamMember` component with optional photo prop; final-CTA section restyled with subtle bg + top border.
+- `public/team/{alex,henry,maeli,wendy}.jpg` — new (480×480 mozjpeg).
+- `src/components/google-reviews.tsx` — new, kept in tree for future activation.
+- `src/app/page.tsx` — adds/removes GoogleReviews over the course of the session (currently out); adds Submit-a-Claim CTA at bottom.
+- `package.json` + `package-lock.json` — added `png-to-ico` devDep (for favicon generation).
+- `.env.local` — appended `GOOGLE_PLACES_API_KEY` + `GOOGLE_PLACES_PLACE_ID` (gitignored, not committed).
+
+**Deploy status:**
+- **modernappraisers: live.** `dpl_29WbhgQ8VmgLP86Gsuqx6uYwaiWa` is current prod — `modernappraisers.com` + `www.modernappraisers.com` + `modernappraisers.vercel.app` all flipped and verified Ready. Rollback: `npx vercel promote https://modernappraisers-9MxMVJifq5aZpFA253NLVzVAcmK5.vercel.app --scope henry-as-projects-88caed67 --yes` (prior good, before the Submit-a-Claim CTA addition).
+- **HAMS: unchanged this evening.** Still on `dpl_BuTSFjVEiVFeVF5jPntdgo2qK7k9` from the morning licensed-state deploy.
+
+**In progress / broken / unknowns:**
+- **Google Business Profile claim is the big blocker.** The GBP has 59 reviews @ 4.9 stars, is pinned at (46.42, -129.94) which is literally 500 miles into the Pacific Ocean west of Oregon, and is unclaimed/unverified. Until Henry claims it:
+  - Reviews won't surface in Places API (so the home page Reviews section stays pulled)
+  - "Modern Appraisers near me" local searches won't rank
+  - Can't fix the ocean pin location
+  Reclaim workflow: https://support.google.com/business/workflow/9845408 (Henry tried the normal create flow — Google wouldn't surface the existing listing to let him claim it, probably because the search is location-aware and the ocean pin kills location matches). The reclaim workflow is purpose-built for this scenario.
+- **Google Places API key `AIzaSyBUD4KdsYQkQI4xx8QrTumRxophf3aLgfw`** is live in Vercel prod + `.env.local`, restricted to `*.modernappraisers.com/*` HTTP referer + Places API (New) only. Place ID stored in `GOOGLE_PLACES_PLACE_ID`. Once GBP is claimed, the Places API will start returning the business and we can wire the backend route.
+- Pin project showing as "My First Project" in some Cloud Console views — the key IS in the "Modern Appraisers" project (consumer ID `1011837650060` confirmed in a 403 response from an unrestricted test call). The two project names in different panels is just Google Cloud navigation jank; functionally correct.
+- Bing Webmaster Tools import not done yet.
+- GBP description still says "Since 1999" (visible in Google sidebar) — needs editing to "27+ years of combined independent appraisal experience" once Henry owns it.
+
+**Next:**
+1. **Henry claims GBP** via https://support.google.com/business/workflow/9845408. Verification is usually a phone call to (702) 321-5930 — instant.
+2. **Fix GBP pin location** → either real Vegas address or switch to Service-area business mode. Hides the ocean pin.
+3. **Update GBP description** → remove "Since 1999", rework to new site language.
+4. **Re-add GoogleReviews to home page** — uncomment the import + component call in `src/app/page.tsx`. Then build the `/api/reviews` backend route to proxy the Places API (set Referer header manually in server-side fetch to satisfy the referer restriction), cache 24h.
+5. **Bing Webmaster Tools import** — https://www.bing.com/webmasters → "Import from Google Search Console". 3 min, no DNS re-verification needed.
+6. **SEO Level 2** — city/state landing pages ("Diminished value appraiser Las Vegas", etc.), service-page metadata tightening, inbound link-building via industry directories.
+
+---
+
 ## 2026-10-20 — Licensed-state flag fixes + folder cleanup + GitHub resync
 
 **Worked on:** Two unrelated tracks in one session.

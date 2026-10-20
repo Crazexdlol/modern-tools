@@ -4,12 +4,15 @@ import { CarriersMarquee } from '@/components/carriers-marquee'
 import { HomeContactForm } from '@/components/home-contact-form'
 import { SERVICES, iconFor } from '@/lib/services-content'
 
-// Dark theme, carrier-only positioning. Section order (Henry 2026-10-19):
+// Dark theme, carrier-only positioning. Section order:
 //   1. Full-bleed hero car photo
 //   2. What We Do — services teaser
 //   3. Trusted across the industry — carriers marquee
 //   4. Evaluation — value prop block
 //   5. Small Contact Us CTA
+// Google Reviews section pulled 2026-10-20 — restoring once the GBP is
+// claimed + verified so the Places API returns the listing. Component
+// kept in-tree at src/components/google-reviews.tsx.
 
 export default function HomePage() {
   return (
@@ -89,7 +92,7 @@ export default function HomePage() {
       <CarriersMarquee />
 
       {/* 4. Evaluation — value prop block. */}
-      <section id="about" className="py-14 sm:py-20 bg-[color:var(--color-bg-subtle)] border-y border-[color:var(--color-border)]">
+      <section id="about" className="py-14 sm:py-20 bg-[color:var(--color-bg)]">
         <Container>
           <div className="max-w-4xl mx-auto text-center">
             <p className="text-xs font-semibold uppercase tracking-[0.22em] text-[color:var(--color-accent)] mb-4 sm:mb-5">
@@ -123,10 +126,25 @@ export default function HomePage() {
                 <a href="tel:+17023215930" className="font-semibold text-[color:var(--color-accent)] hover:underline">(702) 321-5930</a>{' '}
                 or{' '}
                 <a href="mailto:info@modernappraisers.com" className="font-semibold text-[color:var(--color-accent)] hover:underline">info@modernappraisers.com</a>,
-                or send a note below.
+                send a note below, or formally submit a claim.
               </p>
             </div>
             <HomeContactForm />
+            <div className="mt-8 pt-8 border-t border-[color:var(--color-border)] text-center">
+              <p className="text-sm text-[color:var(--color-ink-muted)] mb-4">
+                Already know you need an appraisal? Skip the back-and-forth.
+              </p>
+              <Link
+                href="/submitaclaim"
+                className="inline-flex items-center h-12 px-7 rounded-sm border-2 border-[color:var(--color-accent)] text-sm font-semibold text-[color:var(--color-accent)] hover:bg-[color:var(--color-accent)] hover:text-white transition-colors"
+              >
+                Submit a Claim
+                <svg viewBox="0 0 24 24" className="w-4 h-4 ml-2" fill="none" stroke="currentColor" strokeWidth="2.25" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <line x1="5" y1="12" x2="19" y2="12" />
+                  <polyline points="12 5 19 12 12 19" />
+                </svg>
+              </Link>
+            </div>
           </div>
         </Container>
       </section>
