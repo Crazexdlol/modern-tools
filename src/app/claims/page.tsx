@@ -7,12 +7,13 @@ import { ClaimsTable } from "@/components/claims-table";
 import { fetchACVHistory, type ACVHistoryEntry } from '@/lib/supabase/history'
 import { useCurrentProfile, fetchAllProfilesBrowser, type Profile } from '@/lib/supabase/profiles'
 
-// All Claims — every claim regardless of status, with an Open/Closed column.
-// Admin-only: non-admins are redirected to the dashboard. The top-nav link is
-// hidden for non-admins in app-header.tsx, and RLS on acv_history would still
-// filter the fetch, but the redirect keeps the URL from resolving to an empty
-// page for anyone who deep-links here.
-export default function AllClaimsPage() {
+// Closed Claims — the archive view. Open claims live on the dashboard and
+// its workflow sub-tabs; this page only shows claims whose status flipped
+// to 'closed'. Admin-only: non-admins are redirected to the dashboard. The
+// top-nav link is hidden for non-admins in app-header.tsx, and RLS on
+// acv_history would still filter the fetch, but the redirect keeps the URL
+// from resolving to an empty page for anyone who deep-links here.
+export default function ClosedClaimsPage() {
   const router = useRouter()
   const [entries, setEntries] = useState<ACVHistoryEntry[]>([])
   const [profiles, setProfiles] = useState<Profile[]>([])
@@ -29,7 +30,7 @@ export default function AllClaimsPage() {
   const load = () => {
     fetchACVHistory().then(result => {
       if (result === null) setFetchError(true)
-      else setEntries(result)
+      else setEntries(result.filter(e => e.status === 'closed'))
     })
     fetchAllProfilesBrowser().then(setProfiles)
   }
@@ -40,31 +41,34 @@ export default function AllClaimsPage() {
   }, [isAdmin])
 
   return (
-    <div className="min-h-screen bg-gray-50 text-gray-900">
+    <div className="min-h-screen bg-slate-50 text-slate-900">
       <AppHeader />
 
-      <main className="max-w-[1600px] mx-auto px-6 py-8">
-        <div className="mb-6">
-          <h2 className="text-2xl font-bold text-gray-900">All Claims</h2>
-          <p className="text-sm text-gray-400">{entries.length} claims</p>
+      <main className="max-w-[1920px] mx-auto px-6 py-7">
+        <div className="mb-5 flex items-baseline gap-3">
+          <h1 className="hp-display">Closed Claims</h1>
+          <span className="text-slate-500 text-[13px] font-medium tabular-nums">
+            <span className="text-slate-900 font-semibold">{entries.length}</span> closed
+          </span>
         </div>
 
         {fetchError && (
           <div className="mb-4 p-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm">
-            Could not load claims from the database. Check your connection, then refresh. If this keeps happening, log out and back in.
+            Could not load claims. Check your connection and refresh.
           </div>
         )}
         <ClaimsTable
           entries={entries}
           onDeleted={(id) => setEntries(prev => prev.filter(e => e.id !== id))}
-          emptyText="No claims yet."
-          showStatus
+          emptyText="No closed claims yet."
           adminView={isAdmin}
           profiles={profiles}
           onAssignmentChanged={load}
           onStarChanged={(id, starred) => setEntries(prev =>
             prev.map(e => e.id === id ? { ...e, starred } : e)
           )}
+          showStatus
+          linkQuery="from=closed"
         />
       </main>
     </div>

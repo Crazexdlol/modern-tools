@@ -1,6 +1,6 @@
 import { createClient as createBrowserClient } from './client'
 
-export type SiteSettingsKey = never
+export type SiteSettingsKey = 'rough_numbers_inbox_owner_id'
 
 export async function fetchSiteSetting<T>(key: SiteSettingsKey): Promise<T | null> {
   const supabase = createBrowserClient()

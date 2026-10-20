@@ -13,6 +13,12 @@ export async function captureSummaryPdf(): Promise<Blob | null> {
     scale: 2,
     backgroundColor: '#ffffff',
     windowWidth: 816, // 8.5in at 96dpi
+    // Without useCORS, the per-company logo <img> (which may load from a
+    // Supabase CDN URL) taints the canvas and toDataURL throws a silent
+    // SecurityError — so the save-to-Documents step quietly skips. Mirrors
+    // the same fix in assignment-sheet.tsx and estimate-review/pdf.ts.
+    useCORS: true,
+    allowTaint: false,
     onclone: (clonedDoc) => {
       const clone = clonedDoc.querySelector('.summary-print-portal') as HTMLElement | null
       if (clone) {

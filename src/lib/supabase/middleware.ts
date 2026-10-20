@@ -8,9 +8,10 @@ export async function updateSession(request: NextRequest) {
     request.nextUrl.pathname.startsWith('/login') ||
     request.nextUrl.pathname.startsWith('/_next') ||
     request.nextUrl.pathname.startsWith('/favicon') ||
-    request.nextUrl.pathname === '/logo.png' ||
-    request.nextUrl.pathname === '/logo.jpg' ||
     request.nextUrl.pathname === '/hamsportal-logo.png' ||
+    request.nextUrl.pathname === '/hamsportal-logo-512.png' ||
+    request.nextUrl.pathname === '/manifest.json' ||
+    request.nextUrl.pathname === '/sw.js' ||
     request.nextUrl.pathname.startsWith('/companies/')
   ) {
     return NextResponse.next()

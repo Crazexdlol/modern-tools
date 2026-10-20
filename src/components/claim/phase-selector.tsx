@@ -26,22 +26,55 @@ export function PhaseSelector({ claimId, currentPhase, currentSetAt, onChanged, 
   const [configs, setConfigs] = useState<StatusPhaseConfig[]>([])
   const [open, setOpen] = useState(false)
   const [busy, setBusy] = useState(false)
+  // Position for the fixed-positioned dropdown so it escapes any ancestor
+  // overflow-hidden / overflow-auto containers (dashboard tables use
+  // overflow-x-auto which also clips Y and swallows absolute dropdowns).
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null)
   const ref = useRef<HTMLDivElement>(null)
+  const btnRef = useRef<HTMLButtonElement>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     fetchStatusPhaseConfigs().then(setConfigs)
   }, [])
 
-  // Close on outside click
+  // Close on outside click — covers both the trigger wrapper AND the
+  // fixed-positioned menu portal.
   useEffect(() => {
     if (!open) return
     const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) {
-        setOpen(false)
-      }
+      const target = e.target as Node
+      const inTrigger = ref.current?.contains(target)
+      const inMenu = menuRef.current?.contains(target)
+      if (!inTrigger && !inMenu) setOpen(false)
     }
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
+  }, [open])
+
+  // Close on scroll / resize — the fixed dropdown would drift otherwise.
+  useEffect(() => {
+    if (!open) return
+    const close = () => setOpen(false)
+    window.addEventListener('scroll', close, true)
+    window.addEventListener('resize', close)
+    return () => {
+      window.removeEventListener('scroll', close, true)
+      window.removeEventListener('resize', close)
+    }
+  }, [open])
+
+  // Measure trigger position every time the menu opens so the fixed dropdown
+  // appears right under the button and doesn't run off the right edge.
+  useEffect(() => {
+    if (!open || !btnRef.current) return
+    const rect = btnRef.current.getBoundingClientRect()
+    const menuWidth = 192 // Tailwind w-48 = 12rem = 192px
+    const viewportW = typeof window !== 'undefined' ? window.innerWidth : 1200
+    const left = rect.left + menuWidth > viewportW - 8
+      ? Math.max(8, rect.right - menuWidth)
+      : rect.left
+    setPos({ top: rect.bottom + 4, left })
   }, [open])
 
   const activeConfig = configs.find(c => c.code === currentPhase) ?? null
@@ -78,11 +111,16 @@ export function PhaseSelector({ claimId, currentPhase, currentSetAt, onChanged, 
   // size="lg" matches the appraiser dashboard's compact centered pill so the
   // admin dashboard has the same row height and phase visual as the
   // non-admin view. size="sm" is the workspace toolbar variant.
+  // size="lg" dashboard variant: stacked rectangular bubble (not a pill) so
+  // the label fits a narrower 140px column with the age on a 2nd line
+  // underneath. min-h locks every phase cell to the same height whether a
+  // phase + age is set or it's "No Status" — rows render identically.
+  // Henry 2026-10-16. size="sm" workspace variant is unchanged.
   const buttonSize = isLg
-    ? 'px-3 py-1.5 rounded-full border w-full justify-center gap-1.5 whitespace-nowrap'
+    ? 'px-2 py-1 rounded-md border w-full flex-col justify-center text-center min-h-[48px]'
     : 'px-3 py-2 rounded-lg border-2 min-h-[52px] h-[52px] justify-center w-full'
-  const activeLabelSize = isLg ? 'text-xs font-semibold !text-black' : 'text-sm font-bold !text-black'
-  const activeAgeSize = isLg ? 'text-[11px] font-semibold !text-black' : 'text-xs !text-black'
+  const activeLabelSize = isLg ? 'text-xs font-semibold leading-tight !text-black' : 'text-sm font-bold !text-black'
+  const activeAgeSize = isLg ? 'text-[11px] font-medium leading-tight !text-black' : 'text-xs !text-black'
   const emptyLabelSize = isLg ? 'text-xs font-semibold text-gray-500' : 'text-sm font-semibold'
   const activeBg = activeConfig
     ? phaseColorClasses(activeConfig.color)
@@ -92,16 +130,17 @@ export function PhaseSelector({ claimId, currentPhase, currentSetAt, onChanged, 
     <div className="relative" ref={ref}>
       <button
         type="button"
+        ref={btnRef}
         disabled={busy}
         onClick={() => setOpen(o => !o)}
         className={`flex items-center transition-colors ${buttonSize} ${activeBg} ${busy ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'}`}
-        title={activeConfig ? `Phase: ${activeConfig.label}${age ? ` (${age})` : ''} — click to change` : 'Set phase'}
+        title={activeConfig ? `Status: ${activeConfig.label}${age ? ` (${age})` : ''} — click to change` : 'Set status'}
       >
         {activeConfig ? (
           isLg ? (
             <>
               <span className={activeLabelSize}>{activeConfig.label}</span>
-              {age && <span className={activeAgeSize}>{age}</span>}
+              {age && <span className={`${activeAgeSize} mt-0.5`}>{age}</span>}
             </>
           ) : (
             <span className="flex flex-col items-center leading-tight">
@@ -110,12 +149,16 @@ export function PhaseSelector({ claimId, currentPhase, currentSetAt, onChanged, 
             </span>
           )
         ) : (
-          <span className={`whitespace-nowrap ${emptyLabelSize}`}>No Phase</span>
+          <span className={`whitespace-nowrap ${emptyLabelSize}`}>No Status</span>
         )}
       </button>
 
-      {open && (
-        <div className="absolute left-0 top-full mt-1 w-48 bg-white border border-gray-200 rounded-lg shadow-lg z-30 py-1 overflow-hidden">
+      {open && pos && (
+        <div
+          ref={menuRef}
+          className="fixed w-48 bg-white border border-gray-200 rounded-lg shadow-lg py-1 overflow-hidden"
+          style={{ top: pos.top, left: pos.left, zIndex: 60 }}
+        >
           <button
             type="button"
             onClick={() => pickPhase(null)}

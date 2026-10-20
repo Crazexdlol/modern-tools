@@ -4,7 +4,7 @@ import { requireClaimAccess } from '@/lib/auth/require-claim-access'
 
 export const runtime = 'nodejs'
 
-const MAX_BODY_LEN = 4000
+const MAX_BODY_LEN = 8000
 
 // POST /api/claims/[id]/auto-message
 // Body: { body: string, senderName: string }
@@ -14,7 +14,9 @@ const MAX_BODY_LEN = 4000
 // Requires SUPABASE_SERVICE_ROLE_KEY at runtime.
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id: claimId } = await params
-  const { caller, errorResponse } = await requireClaimAccess(claimId)
+  // Auto-messages (parser-sourced "Claim parsed from PDF" etc.) land on
+  // locked claims too — they're system notes, not appraiser actions.
+  const { caller, errorResponse } = await requireClaimAccess(claimId, { allowOnLockedClaim: true })
   if (errorResponse) return errorResponse
 
   const body = await request.json().catch(() => null) as {
@@ -31,7 +33,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   // sender_id=null, so accepting a caller-supplied name would let any
   // authenticated user with claim access post spoofed messages ("Admin -
   // Henry", "System", etc.). Ignore whatever the client sends.
-  const senderName = 'HamsPortal (Auto)'
+  const senderName = 'HamsPortal'
 
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL

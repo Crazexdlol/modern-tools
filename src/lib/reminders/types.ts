@@ -21,9 +21,11 @@ export type Reminder = {
   id: string;
   created_by: string;
   target_user_id: string;
-  note: string;
+  subject: string | null;    // headline — required on new rows post-migration
+  note: string;              // optional body text (DB still stores a value; API falls back to subject)
   fire_at: string;           // ISO timestamp
   claim_id: string | null;
+  claim_ma_number?: string | null; // joined from acv_history for display
   recurrence: ReminderRecurrence | null;
   channels: ReminderChannels;
   status: ReminderStatus;
@@ -35,7 +37,8 @@ export type Reminder = {
 
 export type ReminderCreateInput = {
   target_user_ids: string[];           // one row inserted per entry
-  note: string;
+  subject: string;
+  note?: string;
   fire_at: string;
   claim_id?: string | null;
   recurrence?: ReminderRecurrence | null;
@@ -43,6 +46,7 @@ export type ReminderCreateInput = {
 };
 
 export type ReminderUpdateInput = Partial<{
+  subject: string;
   note: string;
   fire_at: string;
   claim_id: string | null;

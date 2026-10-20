@@ -47,6 +47,7 @@ export function DataClient() {
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const [importBusy, setImportBusy] = useState(false)
   const [importError, setImportError] = useState<string | null>(null)
+  const [importDragOver, setImportDragOver] = useState(false)
   const [parsed, setParsed] = useState<ParsedCsv | null>(null)
   const [dryRun, setDryRun] = useState<DryRunResponse | null>(null)
   const [confirmOpen, setConfirmOpen] = useState(false)
@@ -244,7 +245,25 @@ export function DataClient() {
             Anything else is ignored.
           </div>
 
-          <div className="flex flex-wrap items-center gap-3">
+          <div
+            className={`flex flex-wrap items-center gap-3 rounded-lg transition-colors ${
+              importDragOver ? 'ring-2 ring-blue-500 bg-blue-50 ring-offset-2' : ''
+            }`}
+            onDragEnter={(e) => {
+              if (!importBusy && e.dataTransfer.types.includes('Files')) setImportDragOver(true)
+            }}
+            onDragOver={(e) => { e.preventDefault() }}
+            onDragLeave={(e) => {
+              if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setImportDragOver(false)
+            }}
+            onDrop={(e) => {
+              e.preventDefault()
+              setImportDragOver(false)
+              if (importBusy) return
+              const f = Array.from(e.dataTransfer.files).find(file => /\.csv$/i.test(file.name) || file.type === 'text/csv')
+              if (f) onFilePick(f)
+            }}
+          >
             <Button
               onClick={downloadTemplate}
               variant="outline"

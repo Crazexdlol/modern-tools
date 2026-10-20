@@ -6,6 +6,7 @@ import {
   fetchGuidelineByCompanyBrowser,
   type InsuranceGuideline,
 } from '@/lib/supabase/insurance-guidelines'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 
 // Read-only guidelines panel for the claim workspace. Matches the claim's
 // insurance company (case-insensitive, whitespace-normalized) against the
@@ -35,52 +36,65 @@ export function GuidelinesTab({ insuranceCompany }: { insuranceCompany: string |
 
   if (!company) {
     return (
-      <div className="bg-white border border-gray-200 rounded-lg p-8 text-center">
-        <BookOpen className="w-8 h-8 text-gray-300 mx-auto mb-3" />
-        <div className="text-sm text-gray-500">
-          No insurance company set on this claim yet.
-          <br />
-          Fill in <b>Insurance Company</b> in Claim Info to see guidelines here.
-        </div>
-      </div>
+      <Card className="bg-white border-gray-200 shadow-sm">
+        <CardHeader>
+          <CardTitle className="text-black text-lg font-bold tracking-tight">Guidelines</CardTitle>
+        </CardHeader>
+        <CardContent className="p-8 text-center">
+          <BookOpen className="w-8 h-8 text-gray-300 mx-auto mb-3" />
+          <div className="text-sm text-gray-500">
+            No insurance company set on this claim yet.
+            <br />
+            Fill in <b>Insurance Company</b> in Claim Info to see guidelines here.
+          </div>
+        </CardContent>
+      </Card>
     )
   }
 
   if (loading) {
     return (
-      <div className="bg-white border border-gray-200 rounded-lg p-8 text-center">
-        <Loader2 className="w-6 h-6 text-gray-300 mx-auto mb-3 animate-spin" />
-        <div className="text-sm text-gray-400">Loading guidelines for {company}…</div>
-      </div>
+      <Card className="bg-white border-gray-200 shadow-sm">
+        <CardHeader>
+          <CardTitle className="text-black text-lg font-bold tracking-tight">Guidelines</CardTitle>
+        </CardHeader>
+        <CardContent className="p-8 text-center">
+          <Loader2 className="w-6 h-6 text-gray-300 mx-auto mb-3 animate-spin" />
+          <div className="text-sm text-gray-400">Loading guidelines for {company}…</div>
+        </CardContent>
+      </Card>
     )
   }
 
   if (!guideline) {
     return (
-      <div className="bg-white border border-gray-200 rounded-lg p-8 text-center">
-        <BookOpen className="w-8 h-8 text-gray-300 mx-auto mb-3" />
-        <div className="text-sm text-gray-600">
-          No guidelines on file for <b>{company}</b>.
-        </div>
-      </div>
+      <Card className="bg-white border-gray-200 shadow-sm">
+        <CardHeader>
+          <CardTitle className="text-black text-lg font-bold tracking-tight">Guidelines</CardTitle>
+        </CardHeader>
+        <CardContent className="p-8 text-center">
+          <BookOpen className="w-8 h-8 text-gray-300 mx-auto mb-3" />
+          <div className="text-sm text-gray-600">
+            No guidelines on file for <b>{company}</b>.
+          </div>
+        </CardContent>
+      </Card>
     )
   }
 
   return (
-    <div className="flex flex-col h-[calc(100vh-320px)] min-h-[500px] bg-white border border-gray-200 rounded-lg overflow-hidden">
-      {/* Header */}
-      <div className="px-6 py-3 border-b border-gray-200 bg-gray-50 flex items-center gap-2 shrink-0">
-        <BookOpen className="w-4 h-4 text-gray-500" />
-        <h2 className="text-sm font-bold text-gray-900">
-          Guidelines — {guideline.name}
-        </h2>
-        <span className="ml-auto text-[11px] text-gray-400">
-          Updated {new Date(guideline.updatedAt).toLocaleDateString()}
-        </span>
-      </div>
-
-      {/* Scrollable content area */}
-      <div className="flex-1 overflow-y-auto px-8 py-6">
+    <Card className="bg-white border-gray-200 shadow-sm flex flex-col h-[calc(100vh-320px)] min-h-[500px] py-0 gap-0">
+      <CardHeader className="py-3 border-b border-gray-200">
+        <div className="flex items-center gap-2">
+          <CardTitle className="text-black text-lg font-bold tracking-tight">
+            Guidelines — {guideline.name}
+          </CardTitle>
+          <span className="ml-auto text-[11px] text-gray-400">
+            Updated {new Date(guideline.updatedAt).toLocaleDateString()}
+          </span>
+        </div>
+      </CardHeader>
+      <CardContent className="flex-1 overflow-y-auto px-8 py-6">
         {guideline.guidelines.trim() ? (
           <FormattedGuidelines text={guideline.guidelines} />
         ) : (
@@ -88,9 +102,8 @@ export function GuidelinesTab({ insuranceCompany }: { insuranceCompany: string |
             No guideline text has been added for this company yet.
           </div>
         )}
-      </div>
-
-    </div>
+      </CardContent>
+    </Card>
   )
 }
 

@@ -33,7 +33,7 @@ export function EstimateTab({
   claimId: string | null;
   estimate: ClaimEstimate | null;
   onChange: (next: ClaimEstimate) => void;
-  onDocumentSaved?: (blob: Blob, name: string, source: ClaimDocument["source"]) => void;
+  onDocumentSaved?: (blob: Blob, name: string, source: ClaimDocument["source"]) => Promise<void> | void;
   documents: ClaimDocument[];
 }) {
   return (

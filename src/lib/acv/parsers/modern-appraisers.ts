@@ -144,7 +144,13 @@ export function parseModernAppraisers(text: string): ParsedClaim {
   const zip = grabZip(text, ownerSection)
 
   const na = (val: string) => val || 'N/A'
-  const resolvedInsuredName = insuredName || `${firstName} ${lastName}`.trim()
+  // Owner Information section's First+Last Name = the vehicle owner. This
+  // is the top-of-claim "Owner" chip and the dashboard Owner column.
+  const ownerName = `${firstName} ${lastName}`.trim()
+  // Insured Name comes from the Insurance Information section. Fall back
+  // to the owner name only when the Insured Name label is blank (rare on
+  // Modern Appraisers sheets — usually both are present).
+  const resolvedInsuredName = insuredName || ownerName
 
   // Deductible — best-effort extraction. The MA sheet labels this inconsistently
   // across clients; try the common variants and fall through to undefined so
@@ -170,12 +176,13 @@ export function parseModernAppraisers(text: string): ParsedClaim {
       ? adjusterEmailExtracted
       : ''
 
-  // When clientType is 'Insured', the insured IS the claimant (first-party
-  // claim) — mirror the insured fields into the claimant fields so the UI
-  // reflects that without manual re-entry. For 'Claimant' (third-party),
-  // keep claimant fields empty since they're a distinct person.
-  const sameAsInsured = clientType === 'Insured'
-  const copyIf = (v: string) => (sameAsInsured && v ? v : '')
+  // Modern Appraisers assignment sheets don't carry a distinct Claimant
+  // block — only Insurance Information + Owner Information. For first-party
+  // ("Insured") claims the insured IS the vehicle owner; for third-party
+  // ("Claimant") claims the appraiser fills in the claimant details
+  // separately. Leaving claimant fields BLANK is deliberate — mirroring the
+  // insured into the claimant was polluting third-party claims and was
+  // explicitly removed per Henry (2026-10-12).
 
   return {
     format: 'modern-appraisers',
@@ -186,13 +193,14 @@ export function parseModernAppraisers(text: string): ParsedClaim {
     clientType,
     clientName: na(clientName),
     insuredName: na(resolvedInsuredName),
+    ownerName: na(ownerName),
     ownerPhone: na(ownerPhone),
     ownerEmail: na(ownerEmail),
     ownerAddress: na(ownerAddress),
-    claimantName: copyIf(resolvedInsuredName),
-    claimantPhone: copyIf(ownerPhone),
-    claimantEmail: copyIf(ownerEmail),
-    claimantAddress: copyIf(ownerAddress),
+    claimantName: '',
+    claimantPhone: '',
+    claimantEmail: '',
+    claimantAddress: '',
     insuranceCompany: na(insuranceCompany),
     adjuster: na(adjuster),
     adjusterPhone: na(adjusterPhone),

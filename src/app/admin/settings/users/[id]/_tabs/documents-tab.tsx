@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Trash2, Download, Upload } from 'lucide-react'
 import { fetchUserDocuments, type AppraiserDocument } from '@/lib/supabase/appraiser-documents'
+import { confirmDialog } from '@/components/ui/dialog-service'
 
 const KIND_SUGGESTIONS = ['W9', 'License', 'Contract', 'Insurance', 'Other']
 
@@ -12,6 +13,7 @@ export function DocumentsTab({ userId }: { userId: string }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [pendingKind, setPendingKind] = useState('')
+  const [dragOver, setDragOver] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
 
   const load = async () => {
@@ -45,7 +47,7 @@ export function DocumentsTab({ userId }: { userId: string }) {
   }
 
   const remove = async (id: string) => {
-    if (!confirm('Delete this document? This cannot be undone.')) return
+    if (!(await confirmDialog({ title: 'Delete document?', message: 'This cannot be undone.', confirmLabel: 'Delete', variant: 'danger' }))) return
     setBusy(true); setError(null)
     const res = await fetch(`/api/admin/appraiser-documents/${id}`, { method: 'DELETE' })
     setBusy(false)
@@ -56,7 +58,30 @@ export function DocumentsTab({ userId }: { userId: string }) {
   if (loading) return <div className="text-sm text-gray-500">Loading documents…</div>
 
   return (
-    <div className="space-y-4 max-w-3xl">
+    <div
+      className="relative space-y-4 max-w-3xl"
+      onDragEnter={(e) => {
+        if (!busy && e.dataTransfer.types.includes('Files')) setDragOver(true)
+      }}
+      onDragOver={(e) => { e.preventDefault() }}
+      onDragLeave={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDragOver(false)
+      }}
+      onDrop={(e) => {
+        e.preventDefault()
+        setDragOver(false)
+        if (busy) return
+        const f = e.dataTransfer.files?.[0]
+        if (f) upload(f)
+      }}
+    >
+      {dragOver && (
+        <div className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center rounded-xl bg-blue-500/10 outline-dashed outline-2 outline-blue-500 outline-offset-[-4px]">
+          <div className="flex items-center gap-2 rounded-lg bg-blue-600 px-6 py-3 text-white font-bold shadow-lg">
+            <Upload className="w-5 h-5" /> Drop files to upload
+          </div>
+        </div>
+      )}
       <div className="flex gap-2 items-end">
         <label className="block flex-1 max-w-xs">
           <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider block mb-1">Kind (optional)</span>

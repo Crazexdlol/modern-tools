@@ -6,7 +6,7 @@ export const runtime = 'nodejs'
 
 // GET /api/companies/current/members
 // Returns the userIds of every user with access to the caller's active
-// company. Used to filter the Handling Appraiser + Reassign dropdowns so
+// company. Used to filter the Negotiating Appraiser + Reassign dropdowns so
 // they only show appraisers who can actually work claims in the current
 // company. Returns { userIds: string[] }.
 // Pre-migration (or if the caller has no active company): returns { userIds: [] }

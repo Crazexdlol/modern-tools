@@ -1,7 +1,6 @@
 "use client"
 
 import { useEffect } from 'react'
-import { Button } from '@/components/ui/button'
 
 // In-app confirm modal to replace the browser's confirm() popup.
 // Renders nothing when open=false; overlays the page when open=true.
@@ -11,7 +10,8 @@ export interface ConfirmDialogProps {
   title: string
   message?: React.ReactNode
   confirmLabel?: string
-  cancelLabel?: string
+  // Pass `null` to render a one-button notice (alert-style) with no cancel.
+  cancelLabel?: string | null
   variant?: 'primary' | 'danger'
   busy?: boolean
   onConfirm: () => void | Promise<void>
@@ -51,35 +51,40 @@ export function ConfirmDialog({
 
   if (!open) return null
 
-  const confirmClass =
-    variant === 'danger'
-      ? 'bg-red-600 hover:bg-red-500 text-white'
-      : 'bg-blue-600 hover:bg-blue-500 text-white'
-
   return (
     <div
-      className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4"
+      className="fixed inset-0 bg-slate-950/50 flex items-center justify-center z-50 p-4 backdrop-blur-[2px]"
       onClick={(e) => {
         if (e.target === e.currentTarget && !busy) onCancel()
       }}
     >
-      <div className="bg-white rounded-lg shadow-xl w-full max-w-md p-6 space-y-4">
-        <h2 className="text-lg font-semibold text-gray-900">{title}</h2>
+      <div
+        className="bg-white rounded-xl w-full max-w-md p-5 space-y-4 ring-1 ring-slate-200"
+        style={{ boxShadow: 'var(--hp-elev-pop)' }}
+      >
+        <h2 className="text-[16px] font-semibold text-slate-900 tracking-tight">{title}</h2>
         {message && (
-          <div className="text-sm text-gray-700 leading-relaxed">{message}</div>
+          <div className="text-[13.5px] text-slate-600 leading-relaxed">{message}</div>
         )}
-        <div className="flex justify-end gap-2 pt-2">
-          <Button
-            variant="outline"
-            onClick={onCancel}
+        <div className="flex justify-end gap-2 pt-1">
+          {cancelLabel !== null && (
+            <button
+              type="button"
+              onClick={onCancel}
+              disabled={busy}
+              className="hp-btn hp-btn-secondary disabled:opacity-60 disabled:pointer-events-none"
+            >
+              {cancelLabel}
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={onConfirm}
             disabled={busy}
-            className="border-gray-200 text-gray-700 hover:bg-gray-100"
+            className={`hp-btn ${variant === 'danger' ? 'hp-btn-danger' : 'hp-btn-primary'} disabled:opacity-60 disabled:pointer-events-none`}
           >
-            {cancelLabel}
-          </Button>
-          <Button onClick={onConfirm} disabled={busy} className={confirmClass}>
             {busy ? 'Working…' : confirmLabel}
-          </Button>
+          </button>
         </div>
       </div>
     </div>

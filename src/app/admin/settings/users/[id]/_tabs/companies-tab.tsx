@@ -85,7 +85,7 @@ export function CompaniesTab({ userId }: { userId: string }) {
         ))}
       </div>
       <div className="flex items-center gap-3">
-        <Button onClick={save} disabled={!dirty || saving} className="bg-emerald-600 hover:bg-emerald-500 text-white">
+        <Button onClick={save} disabled={!dirty || saving} className="bg-blue-600 hover:bg-blue-500 text-white">
           {saving ? 'Saving…' : 'Save'}
         </Button>
         {message && <span className={`text-xs ${message === 'Saved.' ? 'text-emerald-600' : 'text-red-600'}`}>{message}</span>}

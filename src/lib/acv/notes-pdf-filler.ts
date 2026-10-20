@@ -76,7 +76,9 @@ export async function fillNotesPdf(companySlug: string, data: NotesPdfData): Pro
     }
   }
 
-  // Set DA (Default Appearance) on every field to use Times Roman
+  // Set DA (Default Appearance) on every field to use Times Roman at 11pt
+  // so the font family lands even on fields that have no explicit widget-
+  // level DA baked in.
   form.getFields().forEach(f => {
     const da = `0 0 0 rg /${fontKey} 11 Tf`
     f.acroField.dict.set(PDFName.of('DA'), PDFString.of(da))
@@ -84,6 +86,18 @@ export async function fillNotesPdf(companySlug: string, data: NotesPdfData): Pro
       w.dict.set(PDFName.of('DA'), PDFString.of(da))
     })
   })
+
+  // Shrink the long-form Comments field (Text6) one point smaller than the
+  // header fields. Field rectangle, position, font family, and every other
+  // field stay untouched — only the per-field point size changes. ~3-4
+  // more lines of narrative fit in the same box, so longer closing notes
+  // stop getting cut off at the bottom of the template's fixed Text6 area
+  // without needing a new template or a layout rebuild (Henry 2026-10-18).
+  // Must be called AFTER the global DA loop above — that loop overwrites
+  // DA on every field including Text6, so setFontSize has to run last.
+  try {
+    form.getTextField('Text6').setFontSize(10)
+  } catch { /* template missing Text6 — fall back to default size */ }
 
   // Header fields
   setField(form, 'Date7_af_date', fmtDate(data.date))

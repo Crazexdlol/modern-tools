@@ -6,6 +6,7 @@ import { Archive, ExternalLink, Loader2, Star, StarOff, Trash2, X } from 'lucide
 import {
   archiveClient,
   CLIENT_TYPE_LABELS,
+  SELECTABLE_CLIENT_TYPES,
   createContact,
   deleteContact,
   deleteLogEntry,
@@ -23,6 +24,7 @@ import {
   type ClientType,
   type MarketingMethod,
 } from '@/lib/supabase/clients'
+import { confirmDialog } from '@/components/ui/dialog-service'
 import { geocodeAddress } from '@/lib/mapbox/geocode'
 
 const METHOD_LABEL: Record<MarketingMethod, string> = {
@@ -183,7 +185,10 @@ function FieldsSection({
     <section>
       <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Details</h3>
       <div className="grid grid-cols-2 gap-3">
-        <FieldSelect label="Type" value={client.type} options={Object.keys(CLIENT_TYPE_LABELS) as ClientType[]} labelFor={(t) => CLIENT_TYPE_LABELS[t]} onSave={(v) => onSave('type', v)} />
+        <FieldSelect label="Type" value={client.type} options={SELECTABLE_CLIENT_TYPES} labelFor={(t) => CLIENT_TYPE_LABELS[t]} onSave={(v) => onSave('type', v)} />
+        {client.type === 'other' && (
+          <FieldInput label="Custom type" value={client.typeCustom ?? ''} onSave={(v) => onSave('typeCustom', v || null)} placeholder="e.g. Dealer group" />
+        )}
         <FieldInput label="Phone" value={client.phone ?? ''} onSave={(v) => onSave('phone', v || null)} />
         <FieldInput label="Email" value={client.email ?? ''} onSave={(v) => onSave('email', v || null)} />
         <FieldInput label="Website" value={client.website ?? ''} onSave={(v) => onSave('website', v || null)} />
@@ -197,11 +202,54 @@ function FieldsSection({
       <div className="mt-3">
         <FieldTextarea label="Notes" value={client.notes ?? ''} onSave={(v) => onSave('notes', v || null)} />
       </div>
+      {/* Rough-numbers workflow default (2026-10-13). When on, new claims for
+          this client pre-check the "Needs rough numbers?" toggle. Appraisers
+          can still flip the toggle per-claim. */}
+      <div className="mt-3 flex items-start justify-between gap-4 border-t border-gray-100 pt-3">
+        <div className="min-w-0">
+          <div className="text-sm font-semibold text-gray-700">Default to rough numbers for new claims</div>
+          <div className="text-xs text-gray-500 mt-0.5">
+            Pre-checks the Needs rough numbers toggle on new claims for this client. Appraisers can still flip the toggle per-claim.
+          </div>
+        </div>
+        <label className="relative inline-flex items-center cursor-pointer shrink-0">
+          <input
+            type="checkbox"
+            checked={client.roughNumbersDefault === true}
+            onChange={(e) => onSave('roughNumbersDefault', e.target.checked)}
+            className="sr-only peer"
+          />
+          <div className="w-11 h-6 bg-gray-200 peer-checked:bg-blue-600 rounded-full peer peer-focus:ring-2 peer-focus:ring-blue-500/40 transition-colors"></div>
+          <div className="absolute left-0.5 top-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform peer-checked:translate-x-5"></div>
+        </label>
+      </div>
+      {/* RTA default (2026-10-18). When on, new claims for this client
+          auto-add 'rta' (Right To Appraisal) to claim types — gates the
+          Opposing Appraiser field as required at creation. Flipped on for
+          Sedgwick clients by the migration. */}
+      <div className="mt-3 flex items-start justify-between gap-4 border-t border-gray-100 pt-3">
+        <div className="min-w-0">
+          <div className="text-sm font-semibold text-gray-700">Default to RTA for new claims</div>
+          <div className="text-xs text-gray-500 mt-0.5">
+            Auto-adds the RTA (Right To Appraisal) chip to new claims for this client, which makes Opposing Appraiser required at creation.
+          </div>
+        </div>
+        <label className="relative inline-flex items-center cursor-pointer shrink-0">
+          <input
+            type="checkbox"
+            checked={client.rtaDefault === true}
+            onChange={(e) => onSave('rtaDefault', e.target.checked)}
+            className="sr-only peer"
+          />
+          <div className="w-11 h-6 bg-gray-200 peer-checked:bg-blue-600 rounded-full peer peer-focus:ring-2 peer-focus:ring-blue-500/40 transition-colors"></div>
+          <div className="absolute left-0.5 top-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform peer-checked:translate-x-5"></div>
+        </label>
+      </div>
     </section>
   )
 }
 
-function FieldInput({ label, value, onSave, maxLength }: { label: string; value: string; onSave: (v: string) => void; maxLength?: number }) {
+function FieldInput({ label, value, onSave, maxLength, placeholder }: { label: string; value: string; onSave: (v: string) => void; maxLength?: number; placeholder?: string }) {
   const [v, setV] = useState(value)
   useEffect(() => { setV(value) }, [value])
   return (
@@ -211,6 +259,7 @@ function FieldInput({ label, value, onSave, maxLength }: { label: string; value:
         type="text"
         value={v}
         maxLength={maxLength}
+        placeholder={placeholder}
         onChange={(e) => setV(e.target.value)}
         onBlur={() => { if (v !== value) onSave(v) }}
         className="w-full text-sm border border-gray-200 rounded-md px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -281,7 +330,7 @@ function MarketingSection({
   }
 
   const removeLog = async (id: string) => {
-    if (!confirm('Remove this touch from the log?')) return
+    if (!(await confirmDialog({ title: 'Remove touch?', message: 'This marketing touch will be removed from the log.', confirmLabel: 'Remove', variant: 'danger' }))) return
     await deleteLogEntry(id)
     await onLogChanged()
   }
@@ -406,7 +455,7 @@ function ContactsSection({ clientId, contacts, onChanged }: {
   }
 
   const remove = async (id: string) => {
-    if (!confirm('Remove this contact?')) return
+    if (!(await confirmDialog({ title: 'Remove contact?', message: 'This contact will be removed from the client.', confirmLabel: 'Remove', variant: 'danger' }))) return
     await deleteContact(id)
     await onChanged()
   }
@@ -496,14 +545,14 @@ function ClaimsSection({ claims }: { claims: ClientClaim[] }) {
         <ul className="divide-y divide-gray-100 rounded-lg border border-gray-200 bg-white max-h-64 overflow-y-auto">
           {claims.map(c => (
             <li key={c.id} className="px-3 py-1.5 text-sm flex items-center gap-2">
-              <Link href={`/claims/${c.id}`} className="text-blue-600 hover:underline font-semibold truncate">
+              <Link href={`/claims/${c.id}`} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline font-semibold truncate">
                 {c.maNumber || c.id}
               </Link>
               <span className="text-xs text-gray-500 truncate flex-1">{c.vehicle}</span>
               <span className={`text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded border ${c.status === 'closed' ? 'bg-gray-100 border-gray-200 text-gray-600' : 'bg-emerald-50 border-emerald-200 text-emerald-800'}`}>
                 {c.status}
               </span>
-              <Link href={`/claims/${c.id}`} className="text-gray-400 hover:text-blue-600">
+              <Link href={`/claims/${c.id}`} target="_blank" rel="noreferrer" className="text-gray-400 hover:text-blue-600">
                 <ExternalLink className="w-3.5 h-3.5" />
               </Link>
             </li>
@@ -522,7 +571,7 @@ function ArchiveSection({ clientId, onArchived }: { clientId: string; onArchived
       <button
         type="button"
         onClick={async () => {
-          if (!confirm('Archive this client? Existing claim links remain but the client hides from the list.')) return
+          if (!(await confirmDialog({ title: 'Archive client?', message: 'Existing claim links remain but the client hides from the list. You can un-archive later.', confirmLabel: 'Archive', variant: 'danger' }))) return
           setBusy(true)
           const ok = await archiveClient(clientId)
           setBusy(false)

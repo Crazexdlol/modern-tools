@@ -3,7 +3,13 @@
 // block, a raw `notes` string, and a `format` discriminator so downstream
 // callers can branch (e.g. only Eagle View triggers the auto-message flow).
 
-export type ClaimFormat = 'modern-appraisers' | 'eagle-view' | 'ccc'
+export type ClaimFormat =
+  | 'modern-appraisers'
+  | 'eagle-view'
+  | 'ccc'
+  | 'claim-solution' // Dakabi / ClaimSolution Inc. assignment sheet
+  | 'corbett'        // Corbett Claim Service (Assignment Details ... Claim Ref:)
+  | 'crawford'       // Crawford Vehicle Services (Crawford and Company)
 
 export interface ParsedClaim {
   format: ClaimFormat
@@ -14,6 +20,10 @@ export interface ParsedClaim {
   clientType: 'Insured' | 'Claimant'
   clientName: string
   insuredName: string
+  // Vehicle owner — distinct from insured (parent/child, business/employee,
+  // etc.). Parsers populate this from the Owner Information section when
+  // present; empty when the source doc only identifies the insured.
+  ownerName: string
   ownerPhone: string
   ownerEmail: string
   ownerAddress: string

@@ -61,3 +61,21 @@ export function isWeekendET(d: Date): boolean {
   const wd = etParts(d).wd
   return wd === 0 || wd === 6
 }
+
+// Count calendar day-boundary crossings between two dates as they fall on
+// the ET calendar. Includes Sat and Sun — unlike businessDaysBetween, every
+// day counts. Used by the status-request cron so an appraiser going silent
+// Thursday hits the 3-day threshold Sunday, not next Tuesday.
+export function calendarDaysBetween(from: Date, to: Date): number {
+  if (to <= from) return 0
+  const start = etParts(from)
+  const end = etParts(to)
+  const cursor = new Date(Date.UTC(start.y, start.m - 1, start.day, 12, 0, 0))
+  const endCal = new Date(Date.UTC(end.y, end.m - 1, end.day, 12, 0, 0))
+  let count = 0
+  while (cursor < endCal) {
+    cursor.setUTCDate(cursor.getUTCDate() + 1)
+    count++
+  }
+  return count
+}

@@ -54,6 +54,7 @@ export function GuidelinesClient() {
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const [importBusy, setImportBusy] = useState(false)
   const [importError, setImportError] = useState<string | null>(null)
+  const [importDragOver, setImportDragOver] = useState(false)
   const [parsed, setParsed] = useState<ParsedCsv | null>(null)
   const [dryRun, setDryRun] = useState<ImportDryRun | null>(null)
   const [overwrite, setOverwrite] = useState(false)
@@ -267,7 +268,25 @@ export function GuidelinesClient() {
             Column names are matched case-insensitively (e.g., &quot;Company&quot;, &quot;Insurer&quot;, and &quot;Insurance Co.&quot; all map to Insurance Company).
           </div>
 
-          <div className="flex flex-wrap items-center gap-3">
+          <div
+            className={`flex flex-wrap items-center gap-3 rounded-lg transition-colors ${
+              importDragOver ? 'ring-2 ring-blue-500 bg-blue-50 ring-offset-2' : ''
+            }`}
+            onDragEnter={(e) => {
+              if (!importBusy && e.dataTransfer.types.includes('Files')) setImportDragOver(true)
+            }}
+            onDragOver={(e) => { e.preventDefault() }}
+            onDragLeave={(e) => {
+              if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setImportDragOver(false)
+            }}
+            onDrop={(e) => {
+              e.preventDefault()
+              setImportDragOver(false)
+              if (importBusy) return
+              const f = Array.from(e.dataTransfer.files).find(file => /\.csv$/i.test(file.name) || file.type === 'text/csv')
+              if (f) onFilePick(f)
+            }}
+          >
             <Button onClick={downloadTemplate} variant="outline" className="gap-2">
               <FileText className="w-4 h-4" /> Download template
             </Button>
@@ -417,7 +436,7 @@ Blank line = new paragraph.
                           <Button variant="outline" onClick={cancelEdit} disabled={saving} className="gap-1">
                             <X className="w-4 h-4" /> Cancel
                           </Button>
-                          <Button onClick={() => saveEdit(g)} disabled={saving} className="bg-emerald-600 hover:bg-emerald-500 text-white gap-1">
+                          <Button onClick={() => saveEdit(g)} disabled={saving} className="bg-blue-600 hover:bg-blue-500 text-white gap-1">
                             <Check className="w-4 h-4" /> {saving ? 'Saving…' : 'Save'}
                           </Button>
                         </div>

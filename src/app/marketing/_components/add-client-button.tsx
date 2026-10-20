@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { AlertTriangle, Loader2, Plus, X } from 'lucide-react'
 import {
   CLIENT_TYPE_LABELS,
+  SELECTABLE_CLIENT_TYPES,
   createClient as createClientRecord,
   fuzzyMatchClients,
   type Client,
@@ -45,7 +46,8 @@ function AddClientModal({
   onCreated: (c: Client) => void
 }) {
   const [name, setName] = useState('')
-  const [type, setType] = useState<ClientType>('adjuster')
+  const [type, setType] = useState<ClientType>('tpa')
+  const [typeCustom, setTypeCustom] = useState('')
   const [city, setCity] = useState('')
   const [state, setStateCode] = useState('')
   const [phone, setPhone] = useState('')
@@ -78,6 +80,7 @@ function AddClientModal({
       state: state.trim() || null,
       phone: phone.trim() || null,
       email: email.trim() || null,
+      typeCustom: type === 'other' ? (typeCustom.trim() || null) : null,
     })
     setSaving(false)
     if (!created) { setError('Could not create client. Try again.'); return }
@@ -89,6 +92,9 @@ function AddClientModal({
       id: m.id,
       name: m.name,
       type: m.type,
+      typeCustom: null,
+      roughNumbersDefault: false,
+      rtaDefault: false,
       addressLine: null, city: m.city, state: m.state, zip: null,
       lat: null, lng: null, phone: null, email: null, website: null, notes: null,
       lastMarketedAt: null, remarketIntervalDays: null, nextRemarketAt: null,
@@ -137,10 +143,17 @@ function AddClientModal({
             <label className="block text-xs font-semibold text-gray-700 mb-1">Type</label>
             <select value={type} onChange={(e) => setType(e.target.value as ClientType)}
                     className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-              {(Object.keys(CLIENT_TYPE_LABELS) as ClientType[]).map(t => (
+              {SELECTABLE_CLIENT_TYPES.map(t => (
                 <option key={t} value={t}>{CLIENT_TYPE_LABELS[t]}</option>
               ))}
             </select>
+            {type === 'other' && (
+              <div className="mt-2">
+                <label className="block text-xs font-semibold text-gray-700 mb-1">Custom type label</label>
+                <input type="text" value={typeCustom} onChange={(e) => setTypeCustom(e.target.value)} placeholder="e.g. Dealer group"
+                       className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+              </div>
+            )}
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>

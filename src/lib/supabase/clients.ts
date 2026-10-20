@@ -21,19 +21,59 @@ async function getActiveCompanyId(): Promise<string | null> {
   return _activeCompanyIdCache
 }
 
-export type ClientType = 'adjuster' | 'body_shop' | 'attorney' | 'insurance_company'
+// Current client types (post 2026-10-12 overhaul):
+//   tpa                 - Third-party administrator (Sedgwick etc.)
+//   insurance_company   - Insurance carrier
+//   attorney            - Law firm / attorney office
+//   body_shop           - Body shop
+//   other               - Freeform; the user-entered label lives on
+//                         Client.typeCustom
+// Legacy 'adjuster' is retained in the TS union only for defensive
+// deserialization — the type-expand migration flipped every adjuster
+// row to 'tpa', and the DB check constraint no longer allows new
+// 'adjuster' inserts. UI pickers never surface it.
+export type ClientType = 'tpa' | 'body_shop' | 'attorney' | 'insurance_company' | 'referral' | 'other' | 'adjuster'
 
 export const CLIENT_TYPE_LABELS: Record<ClientType, string> = {
-  adjuster: 'Adjuster',
-  body_shop: 'Body Shop',
+  tpa: 'TPA',
+  insurance_company: 'Ins. Co.',
   attorney: 'Attorney',
-  insurance_company: 'Insurance Company',
+  body_shop: 'Body Shop',
+  referral: 'Referral',
+  other: 'Other',
+  // Legacy — any surviving pre-migration row still renders readably.
+  adjuster: 'TPA',
 }
+
+// The types the admin UI exposes for new clients. Does NOT include
+// 'adjuster' (legacy only). Order here is the picker order.
+export const SELECTABLE_CLIENT_TYPES: ClientType[] = [
+  'tpa',
+  'insurance_company',
+  'attorney',
+  'body_shop',
+  'referral',
+  'other',
+]
 
 export interface Client {
   id: string
   name: string
   type: ClientType
+  // Freeform label shown when type === 'other'. Null for every other type.
+  // Pre-migration rows have no type_custom column — rowToClient defaults
+  // this to null so legacy fetches don't crash.
+  typeCustom: string | null
+  // When true, new claims for this client default to needs_rough_numbers=true.
+  // Admin flips per-client in the client-edit UI. Pre-migration rows return
+  // false (rough_numbers_default column absent).
+  roughNumbersDefault: boolean
+  // When true, new claims for this client auto-add 'rta' (Right To
+  // Appraisal) to claim.claimTypes at creation — the flag that gates
+  // Opposing Appraiser as required at creation. Mirror of
+  // roughNumbersDefault. Pre-migration rows return false. (Henry
+  // 2026-10-18: every Sedgwick claim gets RTA; backfilled on open claims.)
+  rtaDefault: boolean
   addressLine: string | null
   city: string | null
   state: string | null
@@ -82,6 +122,9 @@ interface ClientRow {
   id: string
   name: string
   type: string
+  type_custom?: string | null
+  rough_numbers_default?: boolean | null
+  rta_default?: boolean | null
   address_line: string | null
   city: string | null
   state: string | null
@@ -103,10 +146,17 @@ interface ClientRow {
 }
 
 function rowToClient(r: ClientRow): Client {
+  const knownTypes: ClientType[] = ['tpa', 'body_shop', 'attorney', 'insurance_company', 'referral', 'other', 'adjuster']
+  const normalizedType: ClientType = knownTypes.includes(r.type as ClientType)
+    ? (r.type as ClientType)
+    : 'other'
   return {
     id: r.id,
     name: r.name,
-    type: (['adjuster', 'body_shop', 'attorney', 'insurance_company'].includes(r.type) ? r.type : 'adjuster') as ClientType,
+    type: normalizedType,
+    typeCustom: r.type_custom ?? null,
+    roughNumbersDefault: r.rough_numbers_default === true,
+    rtaDefault: r.rta_default === true,
     addressLine: r.address_line,
     city: r.city,
     state: r.state,
@@ -142,6 +192,75 @@ export async function searchClientsByName(q: string, limit = 12): Promise<Client
     .limit(limit)
   if (error) { console.error('searchClientsByName failed:', error); return [] }
   return (data as ClientRow[]).map(rowToClient)
+}
+
+// Combined type-ahead result: a company match OR a contact-person match
+// (which carries the parent company info so the picker can render
+// "Person · Company" and attribute the resulting claim to both).
+export type ClientPickerMatch =
+  | { kind: 'client'; client: Client }
+  | { kind: 'contact'; contact: ClientContact; client: Client }
+
+// Search both clients AND their contacts in parallel. Used by the Claim
+// Info client picker so Henry can pick "Brandon @ Clear Counsel Law" and
+// have the resulting claim attributed to both Brandon (per-person stats)
+// and Clear Counsel (per-company dashboard column). Returns ~limit total
+// rows split across the two sources; name matches are case-insensitive.
+export async function searchClientsAndContactsByName(
+  q: string,
+  limit = 12,
+): Promise<ClientPickerMatch[]> {
+  const query = q.trim()
+  if (!query) return []
+  const supabase = createBrowserClient()
+
+  // Query both sources concurrently. Contacts are joined with their parent
+  // client so we can show the company label inline (and so a contact whose
+  // parent is archived doesn't surface).
+  const clientsP = supabase
+    .from('clients')
+    .select('*')
+    .is('archived_at', null)
+    .ilike('name', `%${query}%`)
+    .order('name', { ascending: true })
+    .limit(limit)
+
+  const contactsP = supabase
+    .from('client_contacts')
+    .select('*, client:clients!inner(*)')
+    .ilike('name', `%${query}%`)
+    .is('client.archived_at', null)
+    .order('name', { ascending: true })
+    .limit(limit)
+
+  const [cRes, pRes] = await Promise.all([clientsP, contactsP])
+  if (cRes.error) console.error('searchClientsAndContactsByName (clients) failed:', cRes.error)
+  if (pRes.error) console.error('searchClientsAndContactsByName (contacts) failed:', pRes.error)
+
+  const clientMatches: ClientPickerMatch[] = ((cRes.data as ClientRow[]) ?? []).map(r => ({
+    kind: 'client',
+    client: rowToClient(r),
+  }))
+
+  const contactMatches: ClientPickerMatch[] = (((pRes.data as unknown) as Array<ContactRow & { client: ClientRow }>) ?? [])
+    .filter(r => r.client)
+    .map(r => ({
+      kind: 'contact',
+      contact: {
+        id: r.id as string,
+        clientId: r.client_id as string,
+        name: r.name as string,
+        title: (r.title as string | null) ?? null,
+        phone: (r.phone as string | null) ?? null,
+        email: (r.email as string | null) ?? null,
+        isPrimary: r.is_primary === true,
+        notes: (r.notes as string | null) ?? null,
+        createdAt: r.created_at as string,
+      },
+      client: rowToClient(r.client),
+    }))
+
+  return [...clientMatches, ...contactMatches]
 }
 
 // Fuzzy "did you mean" — trigram similarity. Used to warn the user before
@@ -258,6 +377,9 @@ export async function updateClient(id: string, patch: ClientUpdate): Promise<Cli
   const dbPatch: Record<string, unknown> = {}
   if (patch.name !== undefined) dbPatch.name = patch.name
   if (patch.type !== undefined) dbPatch.type = patch.type
+  if (patch.typeCustom !== undefined) dbPatch.type_custom = patch.typeCustom
+  if (patch.roughNumbersDefault !== undefined) dbPatch.rough_numbers_default = patch.roughNumbersDefault
+  if (patch.rtaDefault !== undefined) dbPatch.rta_default = patch.rtaDefault
   if (patch.addressLine !== undefined) dbPatch.address_line = patch.addressLine
   if (patch.city !== undefined) dbPatch.city = patch.city
   if (patch.state !== undefined) dbPatch.state = patch.state?.toUpperCase() ?? null
@@ -272,7 +394,17 @@ export async function updateClient(id: string, patch: ClientUpdate): Promise<Cli
   if (patch.remarketIntervalDays !== undefined) dbPatch.remarket_interval_days = patch.remarketIntervalDays
   if (patch.reminderSentAt !== undefined) dbPatch.reminder_sent_at = patch.reminderSentAt
   if (patch.archivedAt !== undefined) dbPatch.archived_at = patch.archivedAt
-  const { data, error } = await supabase.from('clients').update(dbPatch).eq('id', id).select().single()
+  let { data, error } = await supabase.from('clients').update(dbPatch).eq('id', id).select().single()
+  // Pre-migration safety: if a column hasn't been added yet, strip it and
+  // retry. Admin can save other fields without losing the edit.
+  while (error && error.code === '42703') {
+    let stripped = false
+    for (const col of ['type_custom', 'rough_numbers_default', 'rta_default']) {
+      if (col in dbPatch) { delete dbPatch[col]; stripped = true }
+    }
+    if (!stripped) break
+    ;({ data, error } = await supabase.from('clients').update(dbPatch).eq('id', id).select().single())
+  }
   if (error) { console.error('updateClient failed:', error); return null }
   return rowToClient(data as ClientRow)
 }
@@ -490,10 +622,17 @@ export async function fetchClaimsForClient(clientId: string): Promise<ClientClai
 export interface NewClientInput {
   name: string
   type: ClientType
+  // When type='other', this is the user-entered label (e.g. "Dealer Group").
+  // Ignored for other type values.
+  typeCustom?: string | null
+  addressLine?: string | null
   city?: string | null
   state?: string | null
+  zip?: string | null
   phone?: string | null
   email?: string | null
+  website?: string | null
+  notes?: string | null
 }
 
 export async function createClient(input: NewClientInput): Promise<Client | null> {
@@ -502,18 +641,32 @@ export async function createClient(input: NewClientInput): Promise<Client | null
   const payload: Record<string, unknown> = {
     name: input.name.trim(),
     type: input.type,
+    type_custom: input.type === 'other' ? (input.typeCustom?.trim() || null) : null,
+    address_line: input.addressLine?.trim() || null,
     city: input.city?.trim() || null,
     state: input.state?.trim().toUpperCase() || null,
+    zip: input.zip?.trim() || null,
     phone: input.phone?.trim() || null,
     email: input.email?.trim() || null,
+    website: input.website?.trim() || null,
+    notes: input.notes?.trim() || null,
   }
   if (activeCompanyId) payload.company_id = activeCompanyId
-  const { data, error } = await supabase
+  let { data, error } = await supabase
     .from('clients')
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     .insert(payload as any)
     .select()
     .single()
+  if (error && error.code === '42703' && 'type_custom' in payload) {
+    delete payload.type_custom
+    ;({ data, error } = await supabase
+      .from('clients')
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .insert(payload as any)
+      .select()
+      .single())
+  }
   if (error) { console.error('createClient failed:', error); return null }
   return rowToClient(data as ClientRow)
 }

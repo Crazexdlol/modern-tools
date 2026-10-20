@@ -4,7 +4,13 @@ import { requireAdmin } from '@/lib/auth/require-admin'
 
 export const runtime = 'nodejs'
 
-const ALLOWED_COLORS = ['green', 'red', 'amber', 'blue', 'gray']
+// Keep in sync with phaseColorClasses + status-phases-client.tsx COLORS +
+// the POST route's ALLOWED_COLORS.
+const ALLOWED_COLORS = [
+  'red', 'orange', 'amber', 'yellow',
+  'green', 'teal', 'blue', 'purple',
+  'fuchsia', 'gray',
+]
 
 export async function PATCH(
   request: NextRequest,
@@ -19,8 +25,16 @@ export async function PATCH(
     color?: string
     sortOrder?: number
     archived?: boolean
+    pausesCycleTime?: boolean
   } | null
-  if (!body || (body.label === undefined && body.color === undefined && body.sortOrder === undefined && body.archived === undefined)) {
+  if (
+    !body ||
+    (body.label === undefined &&
+      body.color === undefined &&
+      body.sortOrder === undefined &&
+      body.archived === undefined &&
+      body.pausesCycleTime === undefined)
+  ) {
     return NextResponse.json({ error: 'no fields to update' }, { status: 400 })
   }
 
@@ -30,8 +44,15 @@ export async function PATCH(
   if (body.color !== undefined) patch.color = ALLOWED_COLORS.includes(body.color) ? body.color : 'gray'
   if (body.sortOrder !== undefined) patch.sort_order = body.sortOrder
   if (body.archived !== undefined) patch.archived = body.archived
+  if (body.pausesCycleTime !== undefined) patch.pauses_cycle_time = body.pausesCycleTime
 
-  const { error } = await service.from('status_phase_configs').update(patch).eq('code', code)
+  let { error } = await service.from('status_phase_configs').update(patch).eq('code', code)
+  if (error && error.code === '42703') {
+    // pauses_cycle_time column not migrated yet — strip it and retry so
+    // other field edits still land.
+    delete patch.pauses_cycle_time
+    ;({ error } = await service.from('status_phase_configs').update(patch).eq('code', code))
+  }
   if (error) return NextResponse.json({ error: error.message }, { status: 400 })
   return NextResponse.json({ ok: true })
 }

@@ -46,6 +46,9 @@ export interface ACVHistoryEntry {
   // Diminished Value tab state (jsonb; shape lives in the DV tab).
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   dv?: any
+  // Loss of Use tab state (jsonb; shape = LOUState in acv/types.ts).
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  lou?: any
   // Reports tab — Invoice state (jsonb; shape lives in reports-tab.tsx).
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   invoice?: any
@@ -59,7 +62,7 @@ export interface ACVHistoryEntry {
   // status_phase (which carries orthogonal flags like Rush/Umpire/Hold/DV
   // Response). Transitions via /api/claims/[id]/advance-workflow.
   // 'main' is the default for freshly created claims.
-  workflowStage?: 'main' | 'qc' | 'billing' | 'delivery' | 'payment'
+  workflowStage?: 'main' | 'qc' | 'billing_delivery' | 'payment'
   workflowStageSetAt?: string | null
   // Reason the claim was closed (set via /api/claims/[id]/approve).
   //   'completed' — normal course, ran to closure
@@ -85,10 +88,50 @@ export interface ACVHistoryEntry {
   // user_claim_views.opened_at for the current auth user; null if this user
   // has never opened this claim (or the migration hasn't run yet).
   openedAt?: string | null
+  // Row-level reopen descriptors (see supabase/migration-claim-labels.sql).
+  // Pills shown alongside the Open/Submitted status chip. supplementCount
+  // increments on every reopen-as-supplement; isRevision is a one-time
+  // flag set on reopen-as-revision. "Specialty" is NOT here — it's a
+  // chip inside claim.claimTypes.
+  supplementCount?: number
+  isRevision?: boolean
+  // Rough-numbers workflow (2026-10-13). needsRoughNumbers is set at claim
+  // creation from the "Needs rough numbers?" toggle; immutable thereafter.
+  // roughNumbersHandoffAt is a one-shot marker — set the first time Submit
+  // fires on a rough-numbers claim. Second Submit sees it populated and
+  // routes to QC normally. Both default to false/null pre-migration.
+  needsRoughNumbers?: boolean
+  roughNumbersHandoffAt?: string | null
+  // Umpire tracking (2026-10-15). proceededToUmpire = this claim went to a
+  // third-party umpire for resolution. umpireAgreement = parties agreed on
+  // the umpire pick (true) or it was court-appointed (false). Owned by the
+  // /api/claims/[id]/umpire endpoint; the autosave never writes these.
+  proceededToUmpire?: boolean
+  umpireAgreement?: boolean
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function rowToEntry(row: any): ACVHistoryEntry {
+  // MA# is owned by the DB column `ma_number` (assigned by the BEFORE
+  // INSERT trigger `assign_ma_number_if_missing`). The `claim` jsonb's
+  // own `maNumber` field is a lagging mirror — it's only overwritten
+  // when the appraiser edits the claim and the whole jsonb is re-saved.
+  // Merge the authoritative column value into the jsonb at read time so
+  // the UI (which reads claim.maNumber) always sees the live MA#.
+  const rawClaim = (row.claim ?? {}) as ClaimInfo
+  const mergedClaim: ClaimInfo = {
+    ...rawClaim,
+    maNumber: row.ma_number || rawClaim.maNumber || '',
+  }
+  // Dual-read for the handlingAppraiser → negotiatingAppraiser rename.
+  // Pre-migration rows still have the old key; synthesize the new key so UI
+  // doesn't go blank in the gap between code deploy and migration run.
+  // Safe to leave indefinitely — once the migration runs, the OR falls to
+  // the new key naturally.
+  const legacyHandling = (rawClaim as unknown as { handlingAppraiser?: string | null }).handlingAppraiser
+  if (!mergedClaim.negotiatingAppraiser && legacyHandling) {
+    mergedClaim.negotiatingAppraiser = legacyHandling
+  }
   return {
     id: row.id,
     date: row.date,
@@ -98,7 +141,7 @@ function rowToEntry(row: any): ACVHistoryEntry {
     vin: row.vin,
     maNumber: row.ma_number,
     acv: Number(row.acv),
-    claim: row.claim as ClaimInfo,
+    claim: mergedClaim,
     comps: row.comps as SelectedComp[],
     adjustments: row.adjustments as ACVAdjustments,
     result: row.result as ACVResult,
@@ -112,17 +155,29 @@ function rowToEntry(row: any): ACVHistoryEntry {
     estimate: row.estimate ?? undefined,
     documents: row.documents ?? undefined,
     dv: row.dv ?? undefined,
+    lou: row.lou ?? undefined,
     invoice: row.invoice ?? undefined,
     storage: row.storage ?? undefined,
     statusPhase: row.status_phase ?? null,
     statusPhaseSetAt: row.status_phase_set_at ?? null,
-    workflowStage: (['main','qc','billing','delivery','payment'] as const).includes(row.workflow_stage) ? row.workflow_stage : 'main',
+    workflowStage: (['main','qc','billing_delivery','payment'] as const).includes(row.workflow_stage)
+      ? row.workflow_stage
+      // Pre-migration transitional read: a row that still reads 'billing' or
+      // 'delivery' (shouldn't persist past the merge migration, but tolerate
+      // it so stale cached data doesn't crash) collapses to billing_delivery.
+      : (row.workflow_stage === 'billing' || row.workflow_stage === 'delivery' ? 'billing_delivery' : 'main'),
     workflowStageSetAt: row.workflow_stage_set_at ?? null,
     closeReason: row.close_reason === 'completed' || row.close_reason === 'cancelled' ? row.close_reason : null,
     closedAt: row.closed_at ?? null,
     clientId: row.client_id ?? null,
     starred: row.starred === true,
     assignedAt: row.assigned_at ?? null,
+    supplementCount: Number(row.supplement_count ?? 0),
+    isRevision: row.is_revision === true,
+    needsRoughNumbers: row.needs_rough_numbers === true,
+    roughNumbersHandoffAt: row.rough_numbers_handoff_at ?? null,
+    proceededToUmpire: row.proceeded_to_umpire === true,
+    umpireAgreement: row.umpire_agreement !== false,  // default true pre-migration
   }
 }
 
@@ -142,7 +197,7 @@ export async function fetchACVHistory(): Promise<ACVHistoryEntry[] | null> {
   // column set so the dashboard stays alive. `starred` and `closeReason`
   // default gracefully (false / null) when absent, so the UI is fine either
   // way.
-  const colsFull = 'id, date, created_at, mode, vehicle, vin, ma_number, acv, status, claim, assigned_to, assigned_at, submitted_at, submitted_by, status_phase, status_phase_set_at, workflow_stage, workflow_stage_set_at, starred, close_reason, closed_at'
+  const colsFull = 'id, date, created_at, mode, vehicle, vin, ma_number, acv, status, claim, assigned_to, assigned_at, submitted_at, submitted_by, status_phase, status_phase_set_at, workflow_stage, workflow_stage_set_at, starred, close_reason, closed_at, supplement_count, is_revision, needs_rough_numbers, rough_numbers_handoff_at, proceeded_to_umpire, umpire_agreement'
   // Core list excludes workflow_stage so a pre-migration DB can still render
   // the dashboard — rowToEntry defaults workflow_stage to 'main' if absent.
   const colsCore = 'id, date, created_at, mode, vehicle, vin, ma_number, acv, status, claim, assigned_to, assigned_at, submitted_at, submitted_by, status_phase, status_phase_set_at'
@@ -221,10 +276,10 @@ export async function saveACVHistory(
   entry: ACVHistoryEntry,
   editId?: string | null,
   activeCompanyId?: string | null,
-) {
+): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
   const supabase = createClient()
   const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return
+  if (!user) return { ok: false, error: 'Not signed in' }
 
   // Defense-in-depth: refuse to persist a row with nothing identifying it.
   // The auto-save path already short-circuits on this, but if any other
@@ -236,7 +291,7 @@ export async function saveACVHistory(
   const idClaim = (entry.claim?.claimNumber || '').trim()
   if (!editId && !idMa && !idInsured && !idClaim) {
     console.warn('[saveACVHistory] skipping save — no identifying fields (ma_number / insuredName / claimNumber)')
-    return
+    return { ok: false, error: 'No identifying fields on the claim (MA#, Insured, or Claim#)' }
   }
 
   const id = editId || entry.id || `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
@@ -251,7 +306,6 @@ export async function saveACVHistory(
     mode: entry.mode,
     vehicle: entry.vehicle,
     vin: entry.vin,
-    ma_number: entry.maNumber,
     acv: entry.acv,
     claim: entry.claim,
     comps: entry.comps,
@@ -259,15 +313,37 @@ export async function saveACVHistory(
     result: entry.result,
     mileage_rate: entry.mileageRate ?? 0,
   }
+  // ma_number is owned entirely by the DB:
+  //   - INSERT: the BEFORE INSERT trigger (assign_ma_number_if_missing)
+  //     assigns from the live sequence. Including entry.maNumber in the
+  //     payload would skip the trigger (it only fires on blank) AND the
+  //     sequence wouldn't advance — every subsequent new claim would peek
+  //     the same number. That's the bug Henry hit 2026-10-10.
+  //   - UPDATE: existing claims keep their MA#; we never want a save to
+  //     overwrite one via a stale UI state. Omitting the field means
+  //     Postgres doesn't touch the column.
+  // Scripts that need to force a specific MA# (test fixtures, backfills)
+  // bypass saveACVHistory and insert directly, so this doesn't block them.
   if (entry.status !== undefined) payload.status = entry.status
   if (entry.reportsState !== undefined) payload.reports_state = entry.reportsState
   if (entry.auctionListings !== undefined) payload.auction_listings = entry.auctionListings
   if (entry.estimate !== undefined) payload.estimate = entry.estimate
   if (entry.documents !== undefined) payload.documents = entry.documents
   if (entry.dv !== undefined) payload.dv = entry.dv
+  if (entry.lou !== undefined) payload.lou = entry.lou
   if (entry.invoice !== undefined) payload.invoice = entry.invoice
   if (entry.storage !== undefined) payload.storage = entry.storage
   if (entry.clientId !== undefined) payload.client_id = entry.clientId
+  // needs_rough_numbers is set at claim creation from the "Needs rough
+  // numbers?" toggle. rough_numbers_handoff_at is owned entirely by the
+  // /submit route and is NEVER written here — the autosave would otherwise
+  // race against the submit route and could regress the one-shot marker.
+  if (entry.needsRoughNumbers !== undefined) payload.needs_rough_numbers = entry.needsRoughNumbers
+  // supplement_count and is_revision are owned entirely by
+  // /api/claims/[id]/reopen; passing them from the client would risk the
+  // autosave regressing the counter, so saveACVHistory intentionally
+  // never writes them. Specialty rides inside claim.claimTypes jsonb and
+  // persists via the `claim` field above with no extra column.
 
   // Existence check first: an "update returned 0 rows" could mean either
   // "row not found" (correct to fall through to insert) OR "RLS blocked
@@ -283,7 +359,7 @@ export async function saveACVHistory(
     .maybeSingle()
   if (existsErr) {
     console.error('Failed to check claim existence:', existsErr)
-    return
+    return { ok: false, error: `Could not check claim existence: ${existsErr.message}` }
   }
 
   if (existing) {
@@ -292,14 +368,34 @@ export async function saveACVHistory(
       .from('acv_history')
       .update(payload)
       .eq('id', id)
-    if (updateError && updateError.code === '42703') {
-      // documents/dv/invoice/client_id columns not migrated yet — save
-      // everything else rather than losing the claim edit.
-      delete payload.documents
-      delete payload.dv
-      delete payload.invoice
-      delete payload.storage
-      delete payload.client_id
+    // Pre-migration fallback: when a jsonb column (documents/dv/lou/invoice/
+    // storage/client_id) hasn't been migrated yet, the update fails. Postgres
+    // raises 42703 ("undefined_column") when hit directly, but PostgREST
+    // intercepts and raises PGRST204 ("Column 'x' of 'y' not found in the
+    // schema cache") — different code, same root cause. Catch both so a
+    // pre-migration DB still saves the claim-level fields.
+    const isSchemaCacheMiss =
+      updateError &&
+      (updateError.code === '42703' ||
+       updateError.code === 'PGRST204' ||
+       /not found in the schema cache|does not exist/i.test(updateError.message || ''))
+    if (isSchemaCacheMiss) {
+      // Strip ONLY the specific offending column if we can parse it from the
+      // error, otherwise strip all post-baseline jsonb columns.
+      const match = (updateError!.message || '').match(/'(documents|dv|lou|invoice|storage|client_id|needs_rough_numbers)'/i)
+      if (match) {
+        delete payload[match[1].toLowerCase()]
+        console.warn(`[saveACVHistory] column '${match[1]}' missing in DB — retrying without it. Run the matching migration to persist this field.`)
+      } else {
+        delete payload.documents
+        delete payload.dv
+        delete payload.lou
+        delete payload.invoice
+        delete payload.storage
+        delete payload.client_id
+        delete payload.needs_rough_numbers
+        console.warn('[saveACVHistory] schema cache miss on unknown column — retrying without all post-baseline jsonb fields.')
+      }
       ;({ error: updateError } = await supabase
         .from('acv_history')
         .update(payload)
@@ -307,8 +403,9 @@ export async function saveACVHistory(
     }
     if (updateError) {
       console.error('Failed to update ACV history:', updateError)
+      return { ok: false, error: `Update failed: ${updateError.message}` }
     }
-    return
+    return { ok: true, id }
   }
 
   // Row not visible — either brand-new id we're creating, or someone
@@ -336,9 +433,44 @@ export async function saveACVHistory(
   let { error: insertError } = await supabase
     .from('acv_history')
     .insert(insertPayload)
-  if (insertError && insertError.code === '42703') {
-    // Pre-migration fallback: drop company_id and retry.
-    delete insertPayload.company_id
+  // Pre-migration fallback (both 42703 and PGRST204 — see UPDATE path above).
+  const isInsertSchemaMiss =
+    insertError &&
+    (insertError.code === '42703' ||
+     insertError.code === 'PGRST204' ||
+     /not found in the schema cache|does not exist/i.test(insertError.message || ''))
+  if (isInsertSchemaMiss) {
+    const match = (insertError!.message || '').match(/'(documents|dv|lou|invoice|storage|client_id|company_id|needs_rough_numbers)'/i)
+    if (match) {
+      delete insertPayload[match[1].toLowerCase()]
+    } else {
+      delete insertPayload.company_id
+      delete insertPayload.lou
+      delete insertPayload.invoice
+      delete insertPayload.documents
+      delete insertPayload.dv
+      delete insertPayload.storage
+      delete insertPayload.client_id
+      delete insertPayload.needs_rough_numbers
+    }
+    ;({ error: insertError } = await supabase
+      .from('acv_history')
+      .insert(insertPayload))
+  }
+  // MA# collision retry: the Claim Info form peeks the next MA# so the
+  // user sees it immediately, but another user may consume that value
+  // between peek and save. UNIQUE constraint fires with 23505 on
+  // acv_history_ma_number_unique. Retry with ma_number stripped — the
+  // BEFORE INSERT trigger (assign_ma_number_if_missing) then assigns the
+  // live next value, which includes a 1000-attempt collision loop of its
+  // own. User never sees the collision; the MA# that lands on the row
+  // might be peek-value + 1 instead of peek-value.
+  if (
+    insertError &&
+    insertError.code === '23505' &&
+    /ma_number/i.test(insertError.message)
+  ) {
+    delete insertPayload.ma_number
     ;({ error: insertError } = await supabase
       .from('acv_history')
       .insert(insertPayload))
@@ -349,6 +481,7 @@ export async function saveACVHistory(
     console.error('Failed to insert ACV history:', insertError)
     throw new Error(insertError.message)
   }
+  return { ok: true, id }
 }
 
 // Returns true on success, false on failure. Callers (e.g. bulk delete)

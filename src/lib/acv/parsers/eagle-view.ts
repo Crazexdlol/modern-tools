@@ -78,21 +78,44 @@ function parseBlock(block: string): {
 
 // Splits the text into the 4 party blocks in fixed order:
 // [0] Vehicle Location, [1] Claimant, [2] Insured, [3] Owner.
-// Uses "Company Name" as the block-start marker and finds all 4 occurrences.
-// BUG 5 FIX: breaks after 4 starts (was incorrectly breaking at 5).
+//
+// Anchors on each section's header (e.g. "Vehicle Location", "Claimant",
+// "Insured", "Owner") rather than counting "Company Name" occurrences —
+// some Eagle View variants (Vista-branded sub-template) ALSO carry a
+// "Company Name" line inside the top "Appraiser Details" block, which
+// used to shift every party block index by one, so Insured Name was
+// populated from the Claimant block and Owner was skipped entirely.
+//
+// Each header must sit on its own line to count as a section marker (that
+// filters out stray matches like "Claimant" appearing as the "Party" field
+// value in Admin Data). Each block ends at the next section header (or
+// "Notes", or end-of-text).
 function splitPartyBlocks(text: string): { blocks: [string, string, string, string]; starts: number[] } {
-  const starts: number[] = []
-  const re = /Company Name/g
-  let m: RegExpExecArray | null
-  while ((m = re.exec(text)) !== null) {
-    starts.push(m.index)
-    if (starts.length === 4) break // only need 4; was erroneously 5
+  const headerMatch = (header: string): number => {
+    const re = new RegExp(`(?:^|\\n)\\s*${esc(header)}\\s*(?:\\n|$)`)
+    const m = text.match(re)
+    return m && m.index !== undefined ? m.index + m[0].indexOf(header) : -1
   }
-  const empty = ''
-  const b0 = starts[0] !== undefined ? text.slice(starts[0], starts[1] ?? text.length) : empty
-  const b1 = starts[1] !== undefined ? text.slice(starts[1], starts[2] ?? text.length) : empty
-  const b2 = starts[2] !== undefined ? text.slice(starts[2], starts[3] ?? text.length) : empty
-  const b3 = starts[3] !== undefined ? text.slice(starts[3], text.length) : empty
+  // "Notes" is the end-of-block anchor for the final (Owner) block. If a
+  // sheet omits Notes, the block runs to end-of-text — fine.
+  const notesIdx = headerMatch('Notes')
+  const vlIdx = headerMatch('Vehicle Location')
+  const clIdx = headerMatch('Claimant')
+  const inIdx = headerMatch('Insured')
+  const owIdx = headerMatch('Owner')
+  const starts = [vlIdx, clIdx, inIdx, owIdx]
+  const endBound = (i: number): number => {
+    for (let j = i + 1; j < starts.length; j++) {
+      if (starts[j] >= 0) return starts[j]
+    }
+    return notesIdx >= 0 ? notesIdx : text.length
+  }
+  const slice = (i: number): string =>
+    starts[i] >= 0 ? text.slice(starts[i], endBound(i)) : ''
+  const b0 = slice(0)
+  const b1 = slice(1)
+  const b2 = slice(2)
+  const b3 = slice(3)
   return { blocks: [b0, b1, b2, b3], starts }
 }
 
@@ -175,14 +198,20 @@ export function parseEagleView(text: string): ParsedClaim {
 
   // 4 party blocks in fixed order: [VehicleLocation, Claimant, Insured, Owner]
   const { blocks } = splitPartyBlocks(text)
-  const [, claimantBlock, insuredBlock] = blocks
+  const [, claimantBlock, insuredBlock, ownerBlock] = blocks
   const insured = parseBlock(insuredBlock)
   const claimant = parseBlock(claimantBlock)
+  const owner = parseBlock(ownerBlock)
 
   const insuredName = joinName(insured.first, insured.last)
   const claimantName = joinName(claimant.first, claimant.last)
+  const ownerName = joinName(owner.first, owner.last)
 
-  const zip = extractZip(insured.cityStateZip) || extractZip(claimant.cityStateZip)
+  // ZIP fallback cascade: insured → claimant → owner. Empty if all three
+  // sections are blank (shouldn't happen on a real assignment).
+  const zip = extractZip(insured.cityStateZip)
+    || extractZip(claimant.cityStateZip)
+    || extractZip(owner.cityStateZip)
 
   const notes = extractNotes(text)
 
@@ -197,9 +226,15 @@ export function parseEagleView(text: string): ParsedClaim {
     // a Sedgwick sub-assignment regardless of the underlying insurer.
     clientName: 'Sedgwick',
     insuredName,
-    ownerPhone: insured.phone,
-    ownerEmail: insured.email,
-    ownerAddress: joinAddress(insured.address, insured.cityStateZip),
+    // Vista-branded Eagle View sheets carry a separate Owner block, which
+    // may differ from the Insured. If the Owner block was populated use its
+    // name; otherwise fall back to insured (preserves the older behaviour
+    // where Sedgwick's Owner == Insured).
+    ownerName: ownerName || insuredName,
+    ownerPhone: owner.phone || insured.phone,
+    ownerEmail: owner.email || insured.email,
+    ownerAddress: joinAddress(owner.address, owner.cityStateZip)
+      || joinAddress(insured.address, insured.cityStateZip),
     claimantName,
     claimantPhone: claimant.phone,
     claimantEmail: claimant.email,

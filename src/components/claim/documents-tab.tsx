@@ -4,8 +4,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useDropzone } from 'react-dropzone'
 import JSZip from 'jszip'
 import {
+  Archive,
   ArrowDown, ArrowUp, ArrowUpDown,
-  Check, Download, ExternalLink, FileText, Image, Loader2, Minus, Pencil, Plus,
+  Check, Combine, Download, ExternalLink, FileText, Image, Loader2, Minus, Pencil, Plus,
   ChevronLeft, ChevronRight, Trash2, Upload, X,
 } from 'lucide-react'
 import {
@@ -15,8 +16,11 @@ import {
   deleteClaimDocument,
   type ClaimDocument,
 } from '@/lib/supabase/documents'
+import { combineDocsToPdf, canCombineDoc } from '@/lib/pdf-combine'
 import { useCurrentProfile } from '@/lib/supabase/profiles'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
+import { cn } from '@/lib/utils'
+import { saveFilePickerFirst } from '@/lib/save-pdf'
 
 // ── Source labels ─────────────────────────────────────────────────────────────
 // 'upload' and 'labor-rates' are legacy values kept for backward-compat
@@ -171,34 +175,61 @@ async function downloadOne(doc: ClaimDocument): Promise<{ ok: boolean; error?: s
   }
 }
 
-async function downloadZip(docs: ClaimDocument[], zipName: string): Promise<{ ok: boolean; errors: string[] }> {
+// Builds the zip blob WITHOUT writing it to disk — callers decide where/how
+// to save, via saveFilePickerFirst so the OS picker opens on the live click
+// gesture rather than after this (long-running) fetch chain stales out the
+// user activation. (The old inline-saveBlob version silently failed on Chrome
+// when the picker threw NotAllowedError and the anchor fallback no-op'd.
+// Henry hit this 2026-10-14 — selected docs, clicked download, got nothing.)
+//
+// Fetches run in parallel via Promise.all — serial awaits were ~500ms per
+// file, so 10 docs took 5 seconds and the empty 0-byte file Chrome creates
+// at picker-confirm time was visible to the user long enough for them to
+// double-click it before the write completed. Parallel knocks that to
+// ~network-bound-single-file time regardless of count.
+async function buildZipBlob(docs: ClaimDocument[]): Promise<{ blob: Blob; errors: string[] }> {
+  const results = await Promise.all(docs.map(async (doc) => {
+    try {
+      const url = await getClaimDocumentUrl(doc.path)
+      if (!url) return { doc, buf: null as ArrayBuffer | null, failed: true }
+      const response = await fetch(url)
+      if (!response.ok) return { doc, buf: null, failed: true }
+      // Read as ArrayBuffer rather than Blob — JSZip's Blob handling has
+      // been the source of corrupt-output bugs when the Blob's internal
+      // promise hasn't fully resolved by generateAsync time. ArrayBuffer
+      // input is read synchronously and always produces correct bytes.
+      const buf = await response.arrayBuffer()
+      if (buf.byteLength === 0) return { doc, buf: null, failed: true }
+      return { doc, buf, failed: false }
+    } catch {
+      return { doc, buf: null, failed: true }
+    }
+  }))
+
   const zip = new JSZip()
   const seen = new Map<string, number>()
   const errors: string[] = []
-  for (const doc of docs) {
-    const url = await getClaimDocumentUrl(doc.path)
-    if (!url) { errors.push(doc.name); continue }
-    try {
-      const response = await fetch(url)
-      if (!response.ok) { errors.push(doc.name); continue }
-      const blob = await response.blob()
-      const seq = (seen.get(doc.name) ?? 0) + 1
-      seen.set(doc.name, seq)
-      const inZipName = seq === 1
-        ? doc.name
-        : (() => {
-            const dot = doc.name.lastIndexOf('.')
-            if (dot < 0) return `${doc.name} (${seq})`
-            return `${doc.name.slice(0, dot)} (${seq})${doc.name.slice(dot)}`
-          })()
-      zip.file(inZipName, blob)
-    } catch {
-      errors.push(doc.name)
-    }
+  for (const r of results) {
+    if (r.failed || !r.buf) { errors.push(r.doc.name); continue }
+    const seq = (seen.get(r.doc.name) ?? 0) + 1
+    seen.set(r.doc.name, seq)
+    const inZipName = seq === 1
+      ? r.doc.name
+      : (() => {
+          const dot = r.doc.name.lastIndexOf('.')
+          if (dot < 0) return `${r.doc.name} (${seq})`
+          return `${r.doc.name.slice(0, dot)} (${seq})${r.doc.name.slice(dot)}`
+        })()
+    // binary:true tells JSZip the input is raw bytes (not a UTF-8 string),
+    // which is critical for PDFs / images and matches ArrayBuffer semantics.
+    zip.file(inZipName, r.buf, { binary: true })
   }
-  const zipBlob = await zip.generateAsync({ type: 'blob' })
-  await saveBlob(zipBlob, zipName)
-  return { ok: errors.length === 0, errors }
+  // STORE (no compression) — PDFs and JPGs are already compressed; DEFLATE
+  // bloats CPU time without shrinking the archive, and some ZIP tools on
+  // Windows have historically mis-decompressed DEFLATEd entries that round-
+  // tripped through a Blob path. STORE is the safest round-trip.
+  const blob = await zip.generateAsync({ type: 'blob', compression: 'STORE' })
+  return { blob, errors }
 }
 
 // ── Sort types ────────────────────────────────────────────────────────────────
@@ -411,10 +442,14 @@ function ImageViewer({ url, name }: { url: string; name: string }) {
 // ── Main component ────────────────────────────────────────────────────────────
 export function DocumentsTab({
   claimId,
+  maNumber,
   documents,
   onDocumentsChange,
 }: {
   claimId: string
+  // Used as the ZIP filename when downloading multiple docs: `${maNumber}-folder.zip`.
+  // Falls back to the claim id when empty (brand-new claim before MA# assignment).
+  maNumber: string
   documents: ClaimDocument[]
   onDocumentsChange: (next: ClaimDocument[]) => void
 }) {
@@ -437,11 +472,21 @@ export function DocumentsTab({
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
   const [previewLoading, setPreviewLoading] = useState(false)
   const [sortBy, setSortBy] = useState<{ col: SortCol; dir: SortDir }>({ col: 'date', dir: 'desc' })
+  // When false (default) the archived report PDFs are hidden from the main
+  // list — only the newest ACV / Award / Summary / etc. shows. Toggle in the
+  // header reveals the archived set with a greyed-out visual treatment.
+  const [showArchived, setShowArchived] = useState(false)
 
-  // Visible docs: non-admins see only !adminOnly docs.
-  const visibleDocs = useMemo(
-    () => documents.filter(d => !d.adminOnly || isAdmin),
+  const archivedCount = useMemo(
+    () => documents.filter(d => d.archived && (!d.adminOnly || isAdmin)).length,
     [documents, isAdmin],
+  )
+
+  // Visible docs: non-admins see only !adminOnly docs; archived docs are
+  // filtered out unless the toggle is on.
+  const visibleDocs = useMemo(
+    () => documents.filter(d => (!d.adminOnly || isAdmin) && (showArchived || !d.archived)),
+    [documents, isAdmin, showArchived],
   )
 
   const sorted = useMemo(() => {
@@ -521,7 +566,14 @@ export function DocumentsTab({
     setUploading(false)
   }, [claimId, documents, onDocumentsChange])
 
-  const { getRootProps, getInputProps } = useDropzone({ onDrop: handleDrop, noDrag: true })
+  // noClick + noKeyboard: the root wraps the entire tab, so we only want
+  // drag to trigger it. Click-to-pick stays on the dedicated Upload button
+  // (fires `open()` from the hook).
+  const { getRootProps, getInputProps, isDragActive, open: openFilePicker } = useDropzone({
+    onDrop: handleDrop,
+    noClick: true,
+    noKeyboard: true,
+  })
 
   const handleOpen = async (doc: ClaimDocument, e?: React.MouseEvent) => {
     setError(null)
@@ -589,6 +641,98 @@ export function DocumentsTab({
     } else setError('Delete failed. Try again.')
   }
 
+  // Bulk delete — only path for removing documents now that the per-row
+  // trash button is gone. Fires every selected doc at the storage API in
+  // parallel; any failures stay in `selected` so the user can retry.
+  const [bulkDeleting, setBulkDeleting] = useState(false)
+  const [pendingBulkDelete, setPendingBulkDelete] = useState(false)
+  const [combining, setCombining] = useState(false)
+
+  // Position of each selected doc in selection order. The `selected` Set
+  // preserves insertion order (and toggling a path off then on moves it to
+  // the end), so iterating it yields the exact order the user clicked —
+  // which is also the order Combine will stack pages in. Non-selected docs
+  // are absent from the map.
+  const selectionOrder = useMemo(() => {
+    const m = new Map<string, number>()
+    let i = 1
+    for (const p of selected) m.set(p, i++)
+    return m
+  }, [selected])
+
+  // Only PDFs and images can be merged; everything else is excluded from
+  // the Combine op (and from the enabled-count on the button label).
+  // Iterate `documents` (not `sorted`) so a selected doc that got filtered
+  // out of the visible list — e.g. an admin-only doc after toggling off
+  // archived view — still counts correctly.
+  const combinableSelectedCount = useMemo(() => {
+    let n = 0
+    for (const d of documents) if (selected.has(d.path) && canCombineDoc(d)) n++
+    return n
+  }, [documents, selected])
+
+  const handleCombine = async () => {
+    if (combining) return
+    // Chase the Set in its own iteration order so the output stacks in
+    // the exact order the user clicked. Map paths back through the full
+    // `documents` list (not `sorted`) so a doc selected before the user
+    // changed the sort column still appears.
+    const bySelectionOrder: ClaimDocument[] = []
+    for (const path of selected) {
+      const doc = documents.find(d => d.path === path)
+      if (doc && canCombineDoc(doc)) bySelectionOrder.push(doc)
+    }
+    if (bySelectionOrder.length < 2) return
+
+    setError(null)
+    setCombining(true)
+    try {
+      const { blob, skipped } = await combineDocsToPdf(bySelectionOrder)
+      // Filename convention: `{MA#}-Documents.pdf`. Falls back to the raw
+      // claim id for brand-new claims that haven't been assigned an MA#
+      // yet (the DB trigger assigns MA# on insert).
+      const stem = (maNumber || claimId || 'claim').trim()
+      const outName = `${stem}-Documents.pdf`
+      const asFile = new File([blob], outName, { type: 'application/pdf' })
+      const uploaded = await uploadClaimDocument(claimId, asFile, outName, 'document')
+      if (!uploaded) {
+        setError('Combined PDF created but upload failed. The file may exceed the 25 MB cap — try combining fewer or smaller files.')
+        return
+      }
+      onDocumentsChange([...documents, uploaded])
+      // Clear selection after a successful combine so the user has a clean
+      // slate for the next action (and the order badges disappear).
+      setSelected(new Set())
+      if (skipped.length > 0) {
+        setError(`Combined ${bySelectionOrder.length - skipped.length} of ${bySelectionOrder.length}. Skipped: ${skipped.slice(0, 5).join(', ')}${skipped.length > 5 ? '…' : ''}`)
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Combine failed')
+    } finally {
+      setCombining(false)
+    }
+  }
+  const confirmBulkDelete = async () => {
+    setPendingBulkDelete(false)
+    if (selected.size === 0) return
+    setBulkDeleting(true)
+    setError(null)
+    const paths = Array.from(selected)
+    const results = await Promise.all(paths.map(p => deleteClaimDocument(p).then(ok => ({ p, ok }))))
+    const succeeded = new Set(results.filter(r => r.ok).map(r => r.p))
+    const failed = results.filter(r => !r.ok).map(r => r.p)
+    if (succeeded.size > 0) {
+      onDocumentsChange(documents.filter(d => !succeeded.has(d.path)))
+      setSelected(prev => {
+        const next = new Set(prev)
+        for (const p of succeeded) next.delete(p)
+        return next
+      })
+    }
+    if (failed.length > 0) setError(`${failed.length} delete${failed.length === 1 ? '' : 's'} failed. Try again.`)
+    setBulkDeleting(false)
+  }
+
   const startRename = (doc: ClaimDocument) => {
     setEditingPath(doc.path)
     setEditValue(doc.name)
@@ -626,47 +770,110 @@ export function DocumentsTab({
     if (!r.ok && r.error) setError(r.error)
   }
 
+  // Zip filename for multi-doc downloads: "{MA#}-folder.zip" so an employee
+  // dragging several zips side-by-side knows which claim each one belongs to.
+  // Falls back to the raw claim id for brand-new claims that haven't been
+  // assigned an MA# yet (the DB trigger assigns MA# on insert).
+  const zipFileName = `${(maNumber || claimId || 'claim').trim()}-folder.zip`
+
+  const runZipDownload = async (chosen: ClaimDocument[], busyLabel: 'selected' | 'all') => {
+    setError(null)
+    let errors: string[] = []
+    try {
+      await saveFilePickerFirst(
+        zipFileName,
+        'application/zip',
+        'zip',
+        async () => {
+          setZipping(busyLabel)
+          try {
+            const r = await buildZipBlob(chosen)
+            errors = r.errors
+            // Defensive: if NOTHING succeeded, don't hand saveFilePickerFirst
+            // an empty zip to write — throw so the writable is never opened.
+            // Henry hit this 2026-10-14: picker opened, file was created,
+            // but was empty because every fetch had silently failed.
+            if (errors.length === chosen.length) {
+              throw new Error(`None of the ${chosen.length} documents could be fetched. Check network / sign-in and try again.`)
+            }
+            return r.blob
+          } finally {
+            setZipping(null)
+          }
+        },
+      )
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Zip download failed')
+      return
+    }
+    if (errors.length > 0) {
+      setError(`${errors.length} document${errors.length === 1 ? '' : 's'} missing from zip: ${errors.slice(0, 5).join(', ')}${errors.length > 5 ? '…' : ''}`)
+    }
+  }
+
   const handleDownloadSelected = async () => {
     const chosen = sorted.filter(d => selected.has(d.path))
     if (chosen.length === 0) return
-    setZipping('selected')
-    setError(null)
-    const r = await downloadZip(chosen, `Claim documents (${chosen.length}).zip`)
-    setZipping(null)
-    if (r.errors.length > 0) setError(`Some documents failed: ${r.errors.slice(0, 3).join(', ')}${r.errors.length > 3 ? '…' : ''}`)
+    await runZipDownload(chosen, 'selected')
   }
 
   const handleDownloadAll = async () => {
     if (sorted.length === 0) return
-    setZipping('all')
-    setError(null)
-    const r = await downloadZip(sorted, 'Claim documents.zip')
-    setZipping(null)
-    if (r.errors.length > 0) setError(`Some documents failed: ${r.errors.slice(0, 3).join(', ')}${r.errors.length > 3 ? '…' : ''}`)
+    await runZipDownload(sorted, 'all')
   }
 
   const selectedCount = selected.size
 
   return (
-    <div className="space-y-6">
+    <div {...getRootProps()} className="relative space-y-6">
+      <input {...getInputProps()} />
+      {isDragActive && (
+        <div className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center rounded-xl bg-blue-500/10 outline-dashed outline-2 outline-blue-500 outline-offset-[-4px]">
+          <div className="flex items-center gap-2 rounded-lg bg-blue-600 px-6 py-3 text-white font-bold shadow-lg">
+            <Upload className="w-5 h-5" /> Drop files to upload
+          </div>
+        </div>
+      )}
+      {/* Tab title bubble (Closing Notes pattern). */}
+      <div className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm">
+        <div className="flex items-center justify-between gap-3">
+          <h2 className="text-black text-lg font-bold tracking-tight">Documents</h2>
+          {archivedCount > 0 && (
+            <button
+              type="button"
+              onClick={() => setShowArchived(v => !v)}
+              className={cn(
+                'inline-flex items-center gap-1.5 px-3 py-1.5 rounded border text-sm font-medium transition-colors',
+                showArchived
+                  ? 'border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100'
+                  : 'border-gray-300 bg-white text-gray-600 hover:bg-gray-50'
+              )}
+              title={showArchived ? 'Hide older superseded reports' : 'Show older superseded reports'}
+            >
+              <Archive className="w-4 h-4" />
+              {showArchived ? `Hide archived (${archivedCount})` : `Show archived (${archivedCount})`}
+            </button>
+          )}
+        </div>
+      </div>
       {error && (
         <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm">{error}</div>
       )}
 
       {/* Toolbar */}
       <div className="flex items-center gap-3">
-        <label
-          {...getRootProps()}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded border border-gray-300 bg-white text-gray-700 text-sm font-medium hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer"
-          aria-disabled={uploading}
+        <button
+          type="button"
+          onClick={openFilePicker}
+          disabled={uploading}
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded border border-gray-300 bg-white text-gray-700 text-sm font-medium hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
         >
-          <input {...getInputProps()} />
           {uploading ? (
             <><Loader2 className="w-4 h-4 animate-spin" /> {uploadStatus ?? 'Uploading…'}</>
           ) : (
             <><Upload className="w-4 h-4" /> Upload</>
           )}
-        </label>
+        </button>
         {sorted.length > 0 && (
           <>
             {selectedCount > 0 && (
@@ -696,6 +903,29 @@ export function DocumentsTab({
                 <><Download className="w-4 h-4" /> Download all ({sorted.length})</>
               )}
             </button>
+            {/* Combine — merges 2+ selected PDFs/photos into one PDF in
+                selection order and files it to this claim. Hidden entirely
+                when the selection has nothing combinable; shown disabled
+                with a tooltip when only one combinable item is selected. */}
+            {combinableSelectedCount > 0 && (
+              <button
+                type="button"
+                onClick={handleCombine}
+                disabled={combinableSelectedCount < 2 || combining}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded border border-green-500 bg-green-500 text-white text-sm font-medium hover:bg-green-400 hover:border-green-400 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                title={
+                  combinableSelectedCount < 2
+                    ? 'Select 2 or more PDFs / photos to combine them into one PDF'
+                    : `Combine ${combinableSelectedCount} selected into one PDF (in selection order)`
+                }
+              >
+                {combining ? (
+                  <><Loader2 className="w-4 h-4 animate-spin" /> Combining…</>
+                ) : (
+                  <><Combine className="w-4 h-4" /> Combine ({combinableSelectedCount})</>
+                )}
+              </button>
+            )}
             {/* Bulk Admin Only toggle — right of Download all. Admin-only,
                 only when a selection exists. Flips every selected doc's
                 adminOnly flag based on whether any selected doc is public. */}
@@ -718,6 +948,47 @@ export function DocumentsTab({
                 </button>
               )
             })()}
+            {/* Bulk Archive / Unarchive toggle — right of the admin-only
+                toggle. Lets an admin manually archive a doc (hide from the
+                default list) or restore one. Shows "Archive" when any
+                selected doc is active, else "Unarchive". */}
+            {selectedCount > 0 && (() => {
+              const chosen = sorted.filter(d => selected.has(d.path))
+              const anyActive = chosen.some(d => !d.archived)
+              const next = anyActive
+              return (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onDocumentsChange(documents.map(d =>
+                      selected.has(d.path) ? { ...d, archived: next } : d
+                    ))
+                  }}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded border border-gray-300 bg-white text-gray-700 text-sm font-medium hover:bg-gray-50 transition-colors"
+                  title={next ? 'Move selected documents to Archive' : 'Restore selected documents from Archive'}
+                >
+                  {next ? 'Archive' : 'Unarchive'}
+                </button>
+              )
+            })()}
+            {/* Bulk delete — the only path for removing documents.
+                Visible only when a selection exists; opens a confirm dialog
+                before calling the storage API to avoid accidental purges. */}
+            {selectedCount > 0 && (
+              <button
+                type="button"
+                onClick={() => setPendingBulkDelete(true)}
+                disabled={bulkDeleting}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded border border-red-200 bg-white text-red-600 text-sm font-medium hover:bg-red-50 hover:border-red-300 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                title={`Delete ${selectedCount} selected`}
+              >
+                {bulkDeleting ? (
+                  <><Loader2 className="w-4 h-4 animate-spin" /> Deleting…</>
+                ) : (
+                  <><Trash2 className="w-4 h-4" /> Delete selected ({selectedCount})</>
+                )}
+              </button>
+            )}
           </>
         )}
       </div>
@@ -762,15 +1033,36 @@ export function DocumentsTab({
                   (doc.source === 'upload' || doc.source === 'labor-rates') ? 'document' : doc.source
 
                 return (
-                  <tr key={doc.path} className={`border-b border-gray-100 transition-colors ${isChecked ? 'bg-blue-50/40' : 'hover:bg-gray-50'}`}>
+                  <tr
+                    key={doc.path}
+                    className={cn(
+                      'border-b border-gray-100 transition-colors',
+                      isChecked ? 'bg-blue-50/40' : 'hover:bg-gray-50',
+                      // Archived rows are muted so the active list visually
+                      // dominates when the toggle is on.
+                      doc.archived && 'opacity-60 bg-gray-50/60',
+                    )}
+                  >
                     <td className="px-3 py-3">
-                      <input
-                        type="checkbox"
-                        aria-label={`Select ${doc.name}`}
-                        checked={isChecked}
-                        onChange={() => toggleOne(doc.path)}
-                        className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
-                      />
+                      <div className="flex items-center gap-1.5">
+                        <input
+                          type="checkbox"
+                          aria-label={`Select ${doc.name}`}
+                          checked={isChecked}
+                          onChange={() => toggleOne(doc.path)}
+                          className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                        />
+                        {/* Selection-order badge: shows the user's click
+                            order (1-based) once 2+ docs are selected, so
+                            Combine's input ordering is visible before they
+                            press the button. Hidden on single-select to
+                            avoid noise during normal download/delete flows. */}
+                        {isChecked && selectedCount >= 2 && (
+                          <span className="text-[10px] font-semibold text-blue-600 tabular-nums min-w-[14px] text-center">
+                            #{selectionOrder.get(doc.path)}
+                          </span>
+                        )}
+                      </div>
                     </td>
                     <td className="px-4 py-3">
                       {isEditing ? (
@@ -795,10 +1087,31 @@ export function DocumentsTab({
                           </button>
                         </div>
                       ) : (
-                        <button
-                          onClick={(e) => handleOpen(doc, e)}
+                        // Anchor with a real href (server redirect to a
+                        // short-lived signed URL) so native ctrl/cmd+click
+                        // opens the doc in a background tab — window.open
+                        // steals focus. On plain click we preventDefault
+                        // and open the in-tab preview modal when the file
+                        // type supports it. For non-previewable types we
+                        // let the anchor's natural _blank behavior fire.
+                        <a
+                          href={`/api/claims/${claimId}/documents/open?path=${encodeURIComponent(doc.path)}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={(e) => {
+                            if (e.ctrlKey || e.metaKey || e.shiftKey || e.button === 1) {
+                              // Browser handles it (background tab / new window).
+                              return
+                            }
+                            if (canPreviewInline(doc.name)) {
+                              e.preventDefault()
+                              setPreviewDoc(doc)
+                            }
+                            // Non-previewable + plain click → let the
+                            // anchor open naturally in a new tab.
+                          }}
                           className="flex items-center gap-2 text-gray-900 hover:text-blue-600 font-medium text-left"
-                          title="Click to preview here · Ctrl-click (⌘-click on Mac) to open in a new tab"
+                          title="Click to preview here · Ctrl-click (⌘-click on Mac) to open in a background tab"
                         >
                           {isPhoto ? (
                             <DocThumbnail doc={doc} />
@@ -806,7 +1119,7 @@ export function DocumentsTab({
                             <FileText className="w-4 h-4 text-blue-500 shrink-0" />
                           )}
                           {doc.name}
-                        </button>
+                        </a>
                       )}
                     </td>
                     <td className="px-4 py-3">
@@ -857,9 +1170,9 @@ export function DocumentsTab({
                             <button onClick={() => handleDownloadOne(doc)} className="text-gray-400 hover:text-blue-600 transition-colors p-1" title="Download">
                               <Download className="w-4 h-4" />
                             </button>
-                            <button onClick={() => setPendingDelete(doc)} className="text-gray-300 hover:text-red-500 transition-colors p-1" title="Delete">
-                              <Trash2 className="w-4 h-4" />
-                            </button>
+                            {/* Per-row delete removed — use the bulk Delete
+                                selected button in the toolbar after checking
+                                one or more rows. */}
                           </>
                         )}
                       </div>
@@ -884,6 +1197,18 @@ export function DocumentsTab({
         variant="danger"
         onConfirm={confirmDelete}
         onCancel={() => setPendingDelete(null)}
+      />
+
+      <ConfirmDialog
+        open={pendingBulkDelete}
+        title={`Delete ${selectedCount} document${selectedCount === 1 ? '' : 's'}?`}
+        message={
+          <>Remove <b>{selectedCount}</b> selected document{selectedCount === 1 ? '' : 's'} from this claim? This cannot be undone.</>
+        }
+        confirmLabel="Delete"
+        variant="danger"
+        onConfirm={confirmBulkDelete}
+        onCancel={() => setPendingBulkDelete(false)}
       />
 
       {/* In-app preview modal */}

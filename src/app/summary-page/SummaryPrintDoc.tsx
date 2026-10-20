@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import DOMPurify from "isomorphic-dompurify";
 import { SavedSummary } from "./lib";
+import { useActiveCompany } from "@/hooks/use-active-company";
 
 /**
  * Print-only rendering of a single summary. Hidden on screen; on print it
@@ -23,6 +24,15 @@ export function SummaryPrintDoc({ summary }: { summary: SavedSummary }) {
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => setMounted(true), []);
 
+  // Per-company logo (Modern Appraisers / Eagle View / etc.) — pulled from
+  // the active company switcher so a Modern Appraisers claim prints with the
+  // Modern Appraisers header, not the generic HamsPortal mark. Fallback to
+  // the Modern Appraisers logo if the company hook hasn't resolved yet;
+  // every historical claim predates multi-company and belongs to that brand.
+  const { activeCompany } = useActiveCompany();
+  const logoSrc = activeCompany?.logoPath || "/companies/modern-appraisers/logo.png";
+  const brandName = activeCompany?.name || "Modern Appraisers";
+
   const doc = (
     <div className="summary-print-portal">
       <table className="print-doc" aria-hidden="true">
@@ -32,9 +42,10 @@ export function SummaryPrintDoc({ summary }: { summary: SavedSummary }) {
               <div className="print-header-row">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
-                  src="/logo.jpg"
-                  alt="Modern Appraisers"
+                  src={logoSrc}
+                  alt={brandName}
                   className="print-logo"
+                  crossOrigin="anonymous"
                 />
                 <div className="print-tagline">
                   ONE-STOP-SHOP<br />
@@ -136,7 +147,17 @@ export function SummaryPrintDoc({ summary }: { summary: SavedSummary }) {
 
       <style jsx global>{`
         @media screen {
-          .summary-print-portal { display: none; }
+          /* Off-screen (not display:none) so the element still has layout
+             and loaded images — html2canvas needs real pixel dimensions to
+             capture the PDF, and a display:none element measures as 0x0. */
+          .summary-print-portal {
+            position: absolute;
+            left: -99999px;
+            top: 0;
+            width: 8.5in;
+            pointer-events: none;
+            z-index: -1;
+          }
         }
         @media print {
           /* Zero page margin so browser-default header (page title) and
@@ -145,9 +166,18 @@ export function SummaryPrintDoc({ summary }: { summary: SavedSummary }) {
           html, body { background: white !important; margin: 0 !important; }
 
           /* Hide the entire app; show only the portaled summary document.
-             Works no matter how deeply the trigger is nested. */
+             Works no matter how deeply the trigger is nested. Reset the
+             off-screen positioning used in screen mode so the print lands
+             on the page at normal coordinates. */
           body > :not(.summary-print-portal) { display: none !important; }
-          .summary-print-portal { display: block !important; }
+          .summary-print-portal {
+            display: block !important;
+            position: static !important;
+            left: auto !important;
+            top: auto !important;
+            width: auto !important;
+            z-index: auto !important;
+          }
           .no-print, .screen-only { display: none !important; }
 
           .print-doc {
@@ -178,15 +208,25 @@ export function SummaryPrintDoc({ summary }: { summary: SavedSummary }) {
             align-items: center;
           }
           .print-logo {
-            width: 3in;
+            /* Matches the historical Modern Appraisers summary letterhead
+               (~1.6in wide). The earlier 3in value turned the logo into a
+               half-page banner — regression noted on the 3917517 reference
+               docs Henry sent 2026-10-10. */
+            width: 1.6in;
             height: auto;
             object-fit: contain;
+            /* Modern Appraisers logo.png is the WHITE/light variant (used on
+               the dark app header). On white paper it would render invisible,
+               so flatten to solid black via brightness(0) — same trick the
+               assignment-sheet print doc uses. Preserves transparency; the
+               Eagle View variant renders fine under the same filter. */
+            filter: brightness(0);
           }
           .print-tagline {
             font-weight: bold;
-            font-size: 13pt;
+            font-size: 11pt;
             text-align: right;
-            line-height: 1.3;
+            line-height: 1.25;
           }
           .print-title {
             text-align: center;

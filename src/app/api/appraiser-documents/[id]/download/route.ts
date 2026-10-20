@@ -29,9 +29,13 @@ export async function GET(
     return NextResponse.json({ error: 'forbidden' }, { status: 403 })
   }
 
+  // `download: true` forces Content-Disposition: attachment on the signed
+  // URL response — so if an uploaded file ever slips past the mime guard
+  // (e.g. .html / .svg) the browser downloads instead of rendering it,
+  // closing the inline-XSS vector.
   const { data: signed, error: signErr } = await service.storage
     .from(BUCKET)
-    .createSignedUrl(row.storage_path, 60)
+    .createSignedUrl(row.storage_path, 60, { download: true })
   if (signErr || !signed?.signedUrl) {
     return NextResponse.json({ error: signErr?.message ?? 'sign failed' }, { status: 400 })
   }

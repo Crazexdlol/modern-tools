@@ -6,27 +6,31 @@
 
 export function SectionCard({
   title,
-  description,
+  // description prop is accepted for backwards-compat but intentionally not
+  // rendered — Henry asked to drop the "random explanations everywhere" look.
+  description: _description,
   children,
 }: {
   title: string
   description?: React.ReactNode
   children: React.ReactNode
 }) {
+  // reference the arg to satisfy no-unused-vars without rendering it
+  void _description
   return (
-    <section className="bg-white border border-gray-200 rounded-lg overflow-hidden">
-      <div className="px-6 py-4 border-b border-gray-100 bg-gray-50">
-        <h2 className="text-sm font-bold text-gray-900 uppercase tracking-wide">{title}</h2>
-        {description && <p className="text-xs text-gray-500 mt-1">{description}</p>}
+    <section className="hp-card overflow-hidden">
+      <div className="px-5 py-3.5 border-b border-slate-100">
+        <h2 className="text-[13px] font-semibold text-slate-900 tracking-tight">{title}</h2>
       </div>
-      <div className="px-6 py-4">{children}</div>
+      <div className="px-5 py-4">{children}</div>
     </section>
   )
 }
 
 export function ToggleRow({
   label,
-  description,
+  // description intentionally not rendered — same reason as SectionCard.
+  description: _description,
   value,
   onChange,
   loading,
@@ -39,22 +43,20 @@ export function ToggleRow({
   loading?: boolean
   disabled?: boolean
 }) {
+  void _description
   return (
-    <div className="flex items-start justify-between gap-6 py-3 first:pt-0 last:pb-0 border-t border-gray-100 first:border-t-0">
-      <div>
-        <div className="text-sm font-semibold text-gray-900">{label}</div>
-        {description && <p className="text-xs text-gray-500 mt-1">{description}</p>}
-      </div>
+    <div className="flex items-center justify-between gap-6 py-3 first:pt-0 last:pb-0 border-t border-slate-100 first:border-t-0">
+      <div className="text-[13.5px] font-medium text-slate-900">{label}</div>
       <button
         onClick={() => value !== null && onChange(!value)}
         disabled={value === null || loading || disabled}
-        className={`shrink-0 mt-1 relative inline-flex h-6 w-11 items-center rounded-full transition-colors disabled:opacity-50 ${
-          value ? 'bg-blue-600' : 'bg-gray-300'
+        className={`shrink-0 relative inline-flex h-5 w-9 items-center rounded-full transition-colors disabled:opacity-50 ${
+          value ? 'bg-slate-900' : 'bg-slate-300'
         }`}
       >
         <span
-          className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-            value ? 'translate-x-6' : 'translate-x-1'
+          className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform shadow-sm ${
+            value ? 'translate-x-5' : 'translate-x-0.5'
           }`}
         />
       </button>

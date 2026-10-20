@@ -8,7 +8,7 @@ import { cn } from '@/lib/utils'
 import type { ClaimInfo } from '@/lib/acv/types'
 import { formatCurrency } from '@/lib/acv/calculations'
 import type { DVVariant } from '@/lib/acv/dv-pdf-filler'
-import { savePdfWithPicker } from '@/lib/save-pdf'
+import { savePdfPickerFirst } from '@/lib/save-pdf'
 
 // Damage severity rubric — straight from the Modern Appraisers DV reports.
 export const DAMAGE_SEVERITY_SCALE = [
@@ -43,6 +43,14 @@ export function mileageModifierFor(miles: number): number {
   return 0.3
 }
 
+export function finalDvFor(dv: DVState, claimMileage: number): number {
+  const mileMod = dv.mileageModifier ?? mileageModifierFor(claimMileage)
+  const baselineLov = Math.max(0, dv.kbbHigh - dv.kbbLow)
+  const smLov = baselineLov * dv.damageSeverity * mileMod
+  const adjustedLov = smLov * (dv.priorLossPercent / 100)
+  return dv.withPriorLoss ? smLov - adjustedLov : smLov
+}
+
 // Per-claim DV state, stored as acv_history.dv jsonb via workspace auto-save.
 export interface DVState {
   reportType: 'attorney' | 'sedgwick'
@@ -59,6 +67,9 @@ export interface DVState {
   licensePlate: string
   licenseState: string
   adjusterEmail: string
+  // Date that prints on the DV report. Empty = fall back to today at
+  // PDF-generation time (same pattern as Closing Notes' date field).
+  reportDate?: string
 }
 
 export function defaultDVState(): DVState {
@@ -77,6 +88,7 @@ export function defaultDVState(): DVState {
     licensePlate: '',
     licenseState: '',
     adjusterEmail: '',
+    reportDate: '',
   }
 }
 
@@ -146,13 +158,15 @@ export function DVTab({
   claim: ClaimInfo
   dv: DVState | null
   onChange: (next: DVState) => void
-  onGenerated?: (blob: Blob, name: string) => void
+  onGenerated?: (blob: Blob, name: string) => Promise<void> | void
 }) {
   const state = dv ?? defaultDVState()
   const set = (patch: Partial<DVState>) => onChange({ ...state, ...patch })
 
   const [downloading, setDownloading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // Cover-page toggle. See /api/acv/generate-dv-pdf for the server-side strip.
+  const [includeCover, setIncludeCover] = useState(true)
 
   const mileMod = state.mileageModifier ?? mileageModifierFor(claim.mileage)
   const baselineLov = Math.max(0, state.kbbHigh - state.kbbLow)
@@ -169,14 +183,20 @@ export function DVTab({
   const downloadPdf = async () => {
     setDownloading(true)
     setError(null)
+    const name = `${claim.maNumber || 'claim'}-dvreport.pdf`
     try {
-      const res = await fetch('/api/acv/generate-dv-pdf', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          variant,
-          data: {
-            date: new Date().toISOString().split('T')[0],
+      await savePdfPickerFirst(
+        name,
+        async () => {
+          const res = await fetch('/api/acv/generate-dv-pdf', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              variant,
+              includeCover,
+              data: {
+            // Prefer the user-set report date; fall back to today when blank.
+            date: state.reportDate || new Date().toISOString().split('T')[0],
             claimNumber: claim.claimNumber,
             fileNumber: claim.maNumber,
             clientName: claim.insuredName,
@@ -207,18 +227,19 @@ export function DVTab({
             priorLossPercent: state.priorLossPercent,
             adjustedLov,
             finalDv,
-          },
-        }),
-      })
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}))
-        throw new Error(data.error || 'PDF generation failed')
-      }
-      const blob = await res.blob()
-      const name = `${claim.maNumber || 'claim'}-dvreport.pdf`
-      // Auto-file to Documents first, then prompt for local save location.
-      onGenerated?.(blob, name)
-      await savePdfWithPicker(blob, name)
+              },
+            }),
+          })
+          if (!res.ok) {
+            const data = await res.json().catch(() => ({}))
+            throw new Error(data.error || 'PDF generation failed')
+          }
+          return res.blob()
+        },
+        async (blob, filename) => {
+          await onGenerated?.(blob, filename)
+        },
+      )
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Print failed')
     } finally {
@@ -230,11 +251,13 @@ export function DVTab({
   const labelCls = 'block text-xs font-medium text-gray-500 mb-1'
 
   return (
-    <div className="space-y-6">
-      {/* Report type */}
+    <div className="space-y-3">
+      {/* Tab title + first content live in the SAME card (Closing Notes pattern). */}
       <Card className="bg-white border-gray-200 shadow-sm">
-        <CardHeader><CardTitle className="text-gray-900">Report Type</CardTitle></CardHeader>
-        <CardContent className="space-y-4">
+        <CardHeader className="py-3">
+          <CardTitle className="text-black text-lg font-bold tracking-tight">Diminished Value</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3 pt-0">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className={labelCls}>Client Type</label>
@@ -256,9 +279,9 @@ export function DVTab({
 
       {/* Values */}
       <Card className="bg-white border-gray-200 shadow-sm">
-        <CardHeader><CardTitle className="text-gray-900">Vehicle Values (KBB / J.D. Power)</CardTitle></CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <CardHeader className="py-3"><CardTitle className="text-gray-900 text-base">Vehicle Values (KBB / J.D. Power)</CardTitle></CardHeader>
+        <CardContent className="pt-0">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <MoneyInput label={highLabel} value={state.kbbHigh} onChange={(v) => set({ kbbHigh: v })} />
             <MoneyInput label={lowLabel} value={state.kbbLow} onChange={(v) => set({ kbbLow: v })} />
             <MoneyInput label="Prior Loss Vehicle Adjustments" value={state.priorLossAdjust} onChange={(v) => set({ priorLossAdjust: v })} />
@@ -274,15 +297,16 @@ export function DVTab({
 
       {/* Damage severity rubric */}
       <Card className="bg-white border-gray-200 shadow-sm">
-        <CardHeader><CardTitle className="text-gray-900">Damage Severity</CardTitle></CardHeader>
-        <CardContent className="space-y-2">
+        <CardHeader className="py-3"><CardTitle className="text-gray-900 text-base">Damage Severity</CardTitle></CardHeader>
+        <CardContent className="pt-0">
+          <div className="space-y-1.5">
           {DAMAGE_SEVERITY_SCALE.map((row) => (
             <button
               key={row.value}
               type="button"
               onClick={() => set({ damageSeverity: row.value })}
               className={cn(
-                'w-full flex items-start gap-3 px-3 py-2.5 rounded-lg border text-left transition-colors',
+                'w-full flex items-start gap-3 px-3 py-2 rounded-lg border text-left transition-colors',
                 state.damageSeverity === row.value
                   ? 'border-blue-500 bg-blue-50'
                   : 'border-gray-200 hover:border-gray-300'
@@ -292,20 +316,21 @@ export function DVTab({
               <span className="text-sm text-gray-700">{row.label}</span>
             </button>
           ))}
+          </div>
         </CardContent>
       </Card>
 
       {/* Mileage rubric */}
       <Card className="bg-white border-gray-200 shadow-sm">
-        <CardHeader>
-          <CardTitle className="text-gray-900">
+        <CardHeader className="py-3">
+          <CardTitle className="text-gray-900 text-base">
             Mileage Modifier
             <span className="ml-2 text-xs font-normal text-gray-400">
               Loss vehicle mileage: {claim.mileage ? claim.mileage.toLocaleString() : '—'} → auto {mileageModifierFor(claim.mileage).toFixed(2)}
             </span>
           </CardTitle>
         </CardHeader>
-        <CardContent className="space-y-2">
+        <CardContent className="space-y-2 pt-0">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
             {MILEAGE_SCALE.map((row) => {
               const selected = mileMod === row.value
@@ -332,8 +357,8 @@ export function DVTab({
       {/* Prior loss reduction (wLoss only) */}
       {state.withPriorLoss && (
         <Card className="bg-white border-gray-200 shadow-sm">
-          <CardHeader><CardTitle className="text-gray-900">Prior-Loss Reduction</CardTitle></CardHeader>
-          <CardContent className="space-y-3">
+          <CardHeader className="py-3"><CardTitle className="text-gray-900 text-base">Prior-Loss Reduction</CardTitle></CardHeader>
+          <CardContent className="space-y-2 pt-0">
             <p className="text-xs text-gray-500">
               −15% for observed pre-loss prior repairs / unrepaired unrelated damage over $1,000.
               −30% if the VIN check reveals prior claims, accidents, damage, theft, salvage title, or total-loss events.
@@ -357,15 +382,24 @@ export function DVTab({
 
       {/* Extra report fields not in Claim Info */}
       <Card className="bg-white border-gray-200 shadow-sm">
-        <CardHeader><CardTitle className="text-gray-900">Additional Report Fields</CardTitle></CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <CardHeader className="py-3"><CardTitle className="text-gray-900 text-base">Additional Report Fields</CardTitle></CardHeader>
+        <CardContent className="pt-0">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div>
+              <label className={labelCls}>Report Date</label>
+              <input
+                type="date"
+                className={inputCls}
+                value={state.reportDate ?? ''}
+                onChange={(e) => set({ reportDate: e.target.value })}
+              />
+            </div>
             <div>
               <label className={labelCls}>Policy Number</label>
               <input className={inputCls} value={state.policyNumber} onChange={(e) => set({ policyNumber: e.target.value })} />
             </div>
             <div>
-              <label className={labelCls}>Adjuster E-mail (defaults from Claim Info)</label>
+              <label className={labelCls}>Adjuster E-mail</label>
               <input className={inputCls} placeholder={claim.adjusterEmail || 'adjuster@insurer.com'} value={state.adjusterEmail} onChange={(e) => set({ adjusterEmail: e.target.value })} />
             </div>
             <div>
@@ -393,10 +427,21 @@ export function DVTab({
         </div>
       )}
 
-      <Button onClick={downloadPdf} disabled={downloading} className="bg-blue-600 hover:bg-blue-500 text-white font-bold">
-        {downloading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Printer className="w-4 h-4 mr-2" />}
-        Print DV Report ({state.reportType === 'attorney' ? 'Attorney' : 'Insurance'}{state.withPriorLoss ? ', w/ Prior Loss' : ''})
-      </Button>
+      <div className="flex items-center justify-end gap-3">
+        <label className="inline-flex items-center gap-2 text-[13px] text-slate-700 cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={includeCover}
+            onChange={(e) => setIncludeCover(e.target.checked)}
+            className="w-4 h-4 accent-blue-600"
+          />
+          Cover Page
+        </label>
+        <Button onClick={downloadPdf} disabled={downloading} className="bg-blue-600 hover:bg-blue-500 text-white font-bold">
+          {downloading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Printer className="w-4 h-4 mr-2" />}
+          Print Report
+        </Button>
+      </div>
     </div>
   )
 }

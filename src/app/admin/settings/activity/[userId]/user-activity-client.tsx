@@ -3,26 +3,57 @@
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { ChevronLeft } from 'lucide-react'
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from 'recharts'
 import { formatHoursMinutes, laCalendarDate, laMinusDays } from '@/lib/activity/formatters'
 
 interface Day { date: string; activeSeconds: number; lastTickAt: string | null }
-interface UserSummary { userId: string; name: string; email: string; isActive: boolean; days: Day[] }
+interface Session { startedAt: string; endedAt: string; activeSeconds: number }
+interface UserSummary {
+  userId: string
+  name: string
+  email: string
+  isActive: boolean
+  days: Day[]
+  sessions: Session[]
+  ticksForDate: string
+  ticks: string[]  // ISO strings, minute precision
+}
+
+type RangeMode = 30 | 90
 
 export function UserActivityClient({ userId }: { userId: string }) {
   const [data, setData] = useState<UserSummary | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [rangeMode, setRangeMode] = useState<RangeMode>(30)
+  const [timelineDate, setTimelineDate] = useState<string>(laCalendarDate())
 
   useEffect(() => {
     let cancelled = false
-    fetch(`/api/activity/summary/${userId}`)
-      .then(async r => {
-        if (!r.ok) throw new Error(`HTTP ${r.status}`)
-        return r.json()
-      })
-      .then((body: UserSummary) => { if (!cancelled) setData(body) })
-      .catch(e => { if (!cancelled) setError(e.message || 'Failed to load') })
-    return () => { cancelled = true }
-  }, [userId])
+    const q = timelineDate !== laCalendarDate() ? `?date=${timelineDate}` : ''
+    const load = () => {
+      fetch(`/api/activity/summary/${userId}${q}`)
+        .then(async r => {
+          if (!r.ok) throw new Error(`HTTP ${r.status}`)
+          return r.json()
+        })
+        .then((body: UserSummary) => { if (!cancelled) setData(body) })
+        .catch(e => { if (!cancelled) setError(e.message || 'Failed to load') })
+    }
+    load()
+    // Auto-refresh every 60 s so viewing a user's page while they're actively
+    // working shows new ticks without the admin having to hit reload. Matches
+    // the heartbeat cadence.
+    const id = setInterval(load, 60_000)
+    return () => { cancelled = true; clearInterval(id) }
+  }, [userId, timelineDate])
 
   const totals = useMemo(() => {
     if (!data) return null
@@ -40,8 +71,18 @@ export function UserActivityClient({ userId }: { userId: string }) {
     return { today: t, thisWeek: w, thisMonth: m, last6Months: s }
   }, [data])
 
-  const last30 = useMemo(() => build30DaySeries(data?.days ?? []), [data])
+  const sessionStats = useMemo(() => {
+    if (!data?.sessions) return null
+    const n = data.sessions.length
+    if (n === 0) return { count: 0, avgSeconds: 0, longestSeconds: 0 }
+    const totalSec = data.sessions.reduce((acc, s) => acc + s.activeSeconds, 0)
+    const longest = data.sessions.reduce((acc, s) => Math.max(acc, s.activeSeconds), 0)
+    return { count: n, avgSeconds: Math.round(totalSec / n), longestSeconds: longest }
+  }, [data])
+
+  const dailySeries = useMemo(() => buildDailySeries(data?.days ?? [], rangeMode), [data, rangeMode])
   const monthlyTotals = useMemo(() => build6MonthTotals(data?.days ?? []), [data])
+  const hourlySeries = useMemo(() => buildHourlySeries(data?.ticks ?? [], timelineDate), [data?.ticks, timelineDate])
 
   if (error) {
     return (
@@ -51,8 +92,6 @@ export function UserActivityClient({ userId }: { userId: string }) {
     )
   }
   if (!data || !totals) return <div className="text-sm text-gray-500">Loading…</div>
-
-  const maxSec = Math.max(1, ...last30.map(d => d.activeSeconds))
 
   return (
     <div>
@@ -71,25 +110,90 @@ export function UserActivityClient({ userId }: { userId: string }) {
         <Card label="Last 6 Months"   value={formatHoursMinutes(totals.last6Months)} />
       </div>
 
-      <h2 className="text-sm font-medium text-gray-700 mb-2">Last 30 days</h2>
+      {sessionStats && (
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-6">
+          <Card label="Sessions (last 30d)" value={String(sessionStats.count)} />
+          <Card label="Avg session length"  value={sessionStats.count ? formatHoursMinutes(sessionStats.avgSeconds) : '—'} />
+          <Card label="Longest session"     value={sessionStats.count ? formatHoursMinutes(sessionStats.longestSeconds) : '—'} />
+        </div>
+      )}
+
+      <div className="flex items-end justify-between mb-2 gap-3">
+        <h2 className="text-sm font-medium text-gray-700">Hours per day</h2>
+        <div className="inline-flex rounded-md border border-gray-200 bg-gray-50 p-0.5">
+          {([30, 90] as RangeMode[]).map(r => (
+            <button
+              key={r}
+              onClick={() => setRangeMode(r)}
+              className={`px-3 py-1 text-xs rounded ${rangeMode === r ? 'bg-white text-gray-900 shadow-sm font-semibold' : 'text-gray-600 hover:text-gray-900'}`}
+            >
+              Last {r} days
+            </button>
+          ))}
+        </div>
+      </div>
       <div className="mb-6 border border-gray-200 rounded p-3 bg-white">
-        <div className="flex items-end gap-1 h-32">
-          {last30.map(d => {
-            const heightPct = d.activeSeconds === 0 ? 2 : Math.max(4, (d.activeSeconds / maxSec) * 100)
-            return (
-              <div
-                key={d.date}
-                title={`${d.date}: ${formatHoursMinutes(d.activeSeconds)}`}
-                className="flex-1 bg-blue-500 rounded-t"
-                style={{ height: `${heightPct}%` }}
+        <ResponsiveContainer width="100%" height={240}>
+          <BarChart data={dailySeries} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb" />
+            <XAxis
+              dataKey="label"
+              tick={{ fontSize: 11, fill: '#6b7280' }}
+              interval={rangeMode === 30 ? 2 : 7}
+              tickLine={false}
+            />
+            <YAxis
+              tick={{ fontSize: 11, fill: '#6b7280' }}
+              tickFormatter={(v: number) => `${Math.round(v / 3600 * 10) / 10}h`}
+              tickLine={false}
+              axisLine={false}
+              width={40}
+            />
+            <Tooltip
+              contentStyle={{ fontSize: 12 }}
+              formatter={((v: unknown) => [formatHoursMinutes(Number(v)), 'Active']) as never}
+              labelFormatter={((l: unknown) => String(l)) as never}
+            />
+            <Bar dataKey="seconds" fill="#2563eb" radius={[3, 3, 0, 0]} />
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+
+      <div className="flex items-end justify-between mb-2 gap-3">
+        <h2 className="text-sm font-medium text-gray-700">When during the day</h2>
+        <input
+          type="date"
+          value={timelineDate}
+          max={laCalendarDate()}
+          onChange={(e) => setTimelineDate(e.target.value || laCalendarDate())}
+          className="text-xs border border-gray-200 rounded px-2 py-1 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+        />
+      </div>
+      <div className="mb-6 border border-gray-200 rounded p-3 bg-white">
+        {hourlySeries.every(h => h.minutes === 0) ? (
+          <div className="text-xs text-gray-400 italic py-8 text-center">No ticks recorded on {timelineDate}.</div>
+        ) : (
+          <ResponsiveContainer width="100%" height={180}>
+            <BarChart data={hourlySeries} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb" />
+              <XAxis dataKey="hour" tick={{ fontSize: 11, fill: '#6b7280' }} tickLine={false} />
+              <YAxis
+                tick={{ fontSize: 11, fill: '#6b7280' }}
+                tickFormatter={(v: number) => `${v}m`}
+                tickLine={false}
+                axisLine={false}
+                width={32}
+                domain={[0, 60]}
               />
-            )
-          })}
-        </div>
-        <div className="mt-1 flex justify-between text-[10px] text-gray-500">
-          <span>{last30[0]?.date}</span>
-          <span>{last30[last30.length - 1]?.date}</span>
-        </div>
+              <Tooltip
+                contentStyle={{ fontSize: 12 }}
+                formatter={((v: unknown) => [`${v} min`, 'Active']) as never}
+                labelFormatter={((l: unknown) => `${l}:00 PT`) as never}
+              />
+              <Bar dataKey="minutes" fill="#10b981" radius={[3, 3, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        )}
       </div>
 
       <h2 className="text-sm font-medium text-gray-700 mb-2">Monthly totals</h2>
@@ -121,9 +225,7 @@ function Card({ label, value }: { label: string; value: string }) {
   )
 }
 
-// Local: Monday-of-week for an LA date string. Duplicated here (rather than
-// importing) because the formatters module's laMondayOf is server-safe but
-// this file only needs the pure-string form.
+// Monday-of-week for an LA date string.
 function mondayOf(dateStr: string): string {
   const d = new Date(`${dateStr}T12:00:00-08:00`)
   const dow = d.getUTCDay()
@@ -132,15 +234,35 @@ function mondayOf(dateStr: string): string {
   return d.toISOString().slice(0, 10)
 }
 
-function build30DaySeries(days: Day[]): { date: string; activeSeconds: number }[] {
+// Build N-day daily series (today-N+1 ... today).
+function buildDailySeries(days: Day[], count: number): { date: string; label: string; seconds: number }[] {
   const byDate = new Map(days.map(d => [d.date, d.activeSeconds]))
   const today = laCalendarDate()
-  const out: { date: string; activeSeconds: number }[] = []
-  for (let i = 29; i >= 0; i--) {
+  const out: { date: string; label: string; seconds: number }[] = []
+  for (let i = count - 1; i >= 0; i--) {
     const d = laMinusDays(today, i)
-    out.push({ date: d, activeSeconds: byDate.get(d) ?? 0 })
+    const monthDay = d.slice(5)  // "MM-DD"
+    out.push({ date: d, label: monthDay, seconds: byDate.get(d) ?? 0 })
   }
   return out
+}
+
+// 24-hour bar: how many minutes of activity landed in each hour of the day.
+function buildHourlySeries(ticks: string[], _date: string): { hour: string; minutes: number }[] {
+  // Zero-fill all 24 hours.
+  const buckets = new Array<number>(24).fill(0)
+  for (const t of ticks) {
+    // Interpret the tick as LA wall-clock time.
+    const d = new Date(t)
+    // Pull the LA hour via Intl.
+    const hour = Number(new Intl.DateTimeFormat('en-US', {
+      timeZone: 'America/Los_Angeles',
+      hour: 'numeric',
+      hour12: false,
+    }).format(d))
+    if (hour >= 0 && hour <= 23) buckets[hour] += 1  // one minute per tick
+  }
+  return buckets.map((minutes, i) => ({ hour: String(i).padStart(2, '0'), minutes }))
 }
 
 function build6MonthTotals(days: Day[]): { label: string; seconds: number }[] {
@@ -149,7 +271,7 @@ function build6MonthTotals(days: Day[]): { label: string; seconds: number }[] {
     const key = d.date.slice(0, 7)  // YYYY-MM
     buckets.set(key, (buckets.get(key) ?? 0) + d.activeSeconds)
   }
-  const today = laCalendarDate()  // YYYY-MM-DD in LA
+  const today = laCalendarDate()
   const [yStr, mStr] = today.slice(0, 7).split('-')
   let year = parseInt(yStr, 10)
   let month = parseInt(mStr, 10)  // 1-12

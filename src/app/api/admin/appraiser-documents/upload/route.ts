@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/service'
-import { requireAdmin } from '@/lib/auth/require-admin'
+import { requireAdmin, assertCanTargetUser } from '@/lib/auth/require-admin'
+import { validateUploadedFile } from '@/lib/appraiser-doc-upload'
 
 export const runtime = 'nodejs'
 
@@ -21,6 +22,12 @@ export async function POST(request: NextRequest) {
   if (!(file instanceof File)) {
     return NextResponse.json({ error: 'file required' }, { status: 400 })
   }
+  const validation = validateUploadedFile(file)
+  if (!validation.ok) {
+    return NextResponse.json({ error: validation.error }, { status: 400 })
+  }
+  const guard = await assertCanTargetUser(userId, caller!)
+  if (guard) return guard
 
   const service = createServiceClient()
   const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_')

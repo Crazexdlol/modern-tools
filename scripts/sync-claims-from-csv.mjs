@@ -368,8 +368,8 @@ log('\n=== APPLYING CHANGES ===')
 let applied = { add: 0, reopen: 0, reassign: 0, phase: 0, close: 0 }
 let errors = []
 
-// helper: merge handlingAppraiser into existing claim jsonb without touching other keys
-const withHandling = (claim, name) => ({ ...(claim ?? {}), handlingAppraiser: name })
+// helper: merge negotiatingAppraiser into existing claim jsonb without touching other keys
+const withHandling = (claim, name) => ({ ...(claim ?? {}), negotiatingAppraiser: name })
 
 // ADD
 for (const x of plan.add) {
@@ -381,7 +381,7 @@ for (const x of plan.add) {
   const claimJson = {
     maNumber: x.ma,
     claimNumber: trim(r[idx.claim_number]),
-    handlingAppraiser: x.csvHandlingName || '',
+    negotiatingAppraiser: x.csvHandlingName || '',
     dateReceived: normDate(r[idx.date_created]),
     dateOfLoss: normDate(r[idx.date_of_loss]),
     clientType: 'Insured',

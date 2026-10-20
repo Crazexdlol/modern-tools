@@ -7,8 +7,13 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-sans);
-  --font-mono: var(--font-geist-mono);
+  /* HARD RULE: Times New Roman is the global font for HamsPortal. Setting
+     --font-sans here means every `font-sans` utility (and the Tailwind
+     base, which uses it) resolves to Times New Roman. */
+  --font-sans: "Times New Roman", Times, serif;
+  --font-serif: "Times New Roman", Times, serif;
+  /* Hard rule: no monospace either — every utility collapses to TNR. */
+  --font-mono: "Times New Roman", Times, serif;
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -122,10 +127,18 @@
   }
   body {
     @apply bg-background text-foreground;
+    /* Force Times New Roman as the computed font for every element —
+       belt-and-suspenders on top of --font-sans so inline components with
+       stray font-family declarations still inherit TNR. */
+    font-family: "Times New Roman", Times, serif;
   }
   html {
     @apply font-sans;
     scrollbar-gutter: stable;
+    font-family: "Times New Roman", Times, serif;
+  }
+  input, select, textarea, button {
+    font-family: inherit;
   }
 }
 
@@ -134,4 +147,316 @@
   .summary-print-root * {
     font-family: "Times New Roman", Times, serif !important;
   }
+}
+
+/* ──────────────────────────────────────────────────────────────────────
+   HamsPortal design tokens — Operator Grade
+   Refined, confident, operator-focused. No gradients, no glassmorphism,
+   no caps text decoration. Strict 4px grid. Hairline borders.
+   Tabular numerals everywhere a count appears.
+   ────────────────────────────────────────────────────────────────────── */
+:root {
+  /* numbers always align */
+  --hp-ff-tabular: "Times New Roman", Times, serif;
+  /* two shadow levels total — anything deeper looks like Material 2017 */
+  --hp-elev-1: 0 1px 0 rgb(0 0 0 / 0.02), 0 1px 2px rgb(0 0 0 / 0.04);
+  --hp-elev-pop: 0 8px 24px rgb(0 0 0 / 0.08), 0 2px 6px rgb(0 0 0 / 0.04);
+  /* hairline rules + confident focus ring */
+  --hp-rule: rgb(226 232 240);         /* slate-200 */
+  --hp-rule-strong: rgb(203 213 225);  /* slate-300 */
+  --hp-ring: rgb(15 23 42 / 0.14);     /* slate-900 @ 14% */
+}
+
+/* All numeric displays — counts, badges, claim#, VINs, timestamps — line up. */
+.hp-num,
+.hp-badge-num,
+button [class*="count"],
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+}
+
+/* Primary button — the one confident shape used everywhere. Replaces the
+   stacked shadow-sm fills. Height 36px, hairline focus ring. */
+.hp-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 36px;
+  padding: 0 14px;
+  border-radius: 8px;
+  font-size: 13.5px;
+  font-weight: 600;
+  letter-spacing: -0.005em;
+  transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease, box-shadow 120ms ease;
+  white-space: nowrap;
+  user-select: none;
+}
+.hp-btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px white, 0 0 0 4px var(--hp-ring);
+}
+.hp-btn-sm { height: 30px; padding: 0 11px; font-size: 12.5px; border-radius: 7px; }
+.hp-btn-lg { height: 42px; padding: 0 18px; font-size: 14px; border-radius: 9px; }
+
+/* Variants — primary stays BLUE (Henry's constraint: no palette change).
+   The refinement is in the shape, weight, and absence of drop-shadow. */
+.hp-btn-primary {
+  background: rgb(37 99 235);   /* blue-600 */
+  color: white;
+}
+.hp-btn-primary:hover { background: rgb(29 78 216); }   /* blue-700 */
+.hp-btn-primary:active { background: rgb(30 64 175); }  /* blue-800 */
+
+/* Dark variant — reserved for confirmation CTAs, workflow-advance buttons,
+   headers, and controls on a dark surface. Not the dashboard primary. */
+.hp-btn-dark {
+  background: rgb(15 23 42);
+  color: white;
+}
+.hp-btn-dark:hover { background: rgb(30 41 59); }
+
+.hp-btn-secondary {
+  background: white;
+  color: rgb(15 23 42);
+  box-shadow: inset 0 0 0 1px var(--hp-rule);
+}
+.hp-btn-secondary:hover { box-shadow: inset 0 0 0 1px var(--hp-rule-strong); background: rgb(248 250 252); }
+
+.hp-btn-ghost {
+  background: transparent;
+  color: rgb(71 85 105);  /* slate-600 */
+}
+.hp-btn-ghost:hover { background: rgb(241 245 249); color: rgb(15 23 42); }
+
+.hp-btn-danger {
+  background: rgb(220 38 38);  /* red-600 */
+  color: white;
+}
+.hp-btn-danger:hover { background: rgb(185 28 28); }
+
+/* Card — the one container shape. 12px radius, hairline, elev-1 */
+.hp-card {
+  background: white;
+  border: 1px solid var(--hp-rule);
+  border-radius: 12px;
+  box-shadow: var(--hp-elev-1);
+}
+
+/* Pill (counts, chips) — 20px tall, tabular numerals */
+.hp-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Section eyebrow — the small uppercase label above a heading */
+.hp-eyebrow {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgb(100 116 139);  /* slate-500 */
+}
+
+/* Display heading — single confident size for h1 */
+.hp-display {
+  font-size: 28px;
+  line-height: 32px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: rgb(15 23 42);
+}
+
+/* Section heading */
+.hp-section {
+  font-size: 18px;
+  line-height: 24px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: rgb(15 23 42);
+}
+
+/* ─── Form controls ──────────────────────────────────────────────────── */
+.hp-input,
+.hp-textarea,
+.hp-select {
+  display: inline-flex;
+  align-items: center;
+  width: 100%;
+  height: 36px;
+  padding: 0 12px;
+  background: white;
+  border: 1px solid var(--hp-rule);
+  border-radius: 8px;
+  font-size: 13.5px;
+  color: rgb(15 23 42);
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+.hp-textarea {
+  height: auto;
+  min-height: 80px;
+  padding: 10px 12px;
+  line-height: 1.5;
+  resize: vertical;
+}
+.hp-input::placeholder,
+.hp-textarea::placeholder { color: rgb(148 163 184); }  /* slate-400 */
+.hp-input:hover,
+.hp-textarea:hover,
+.hp-select:hover { border-color: var(--hp-rule-strong); }
+.hp-input:focus,
+.hp-textarea:focus,
+.hp-select:focus {
+  outline: none;
+  border-color: rgb(15 23 42);
+  box-shadow: 0 0 0 3px rgb(15 23 42 / 0.07);
+}
+.hp-input:disabled,
+.hp-textarea:disabled,
+.hp-select:disabled {
+  background: rgb(248 250 252);
+  color: rgb(100 116 139);
+  cursor: not-allowed;
+}
+
+/* Label pair above a form field */
+.hp-label {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: rgb(51 65 85);  /* slate-700 */
+  margin-bottom: 6px;
+  letter-spacing: -0.005em;
+}
+
+/* Chip — a small informational tag inside dense content (next to a title,
+   under a status indicator). Different from .hp-pill (counts) in that chips
+   lead with a label; pills lead with a number. */
+.hp-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 20px;
+  padding: 0 7px;
+  border-radius: 6px;
+  background: rgb(241 245 249);  /* slate-100 */
+  color: rgb(51 65 85);
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.005em;
+  white-space: nowrap;
+}
+.hp-chip-strong {
+  background: rgb(15 23 42);
+  color: white;
+}
+
+/* Hyperlink inside body copy — subtle underline on hover only. */
+.hp-link {
+  color: rgb(37 99 235);  /* blue-600 */
+  font-weight: 500;
+  text-decoration: none;
+  transition: color 120ms ease;
+}
+.hp-link:hover {
+  color: rgb(29 78 216);  /* blue-700 */
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* Tab pill group container — matches the dashboard tabs look so navigation
+   feels unified across the app (workspace tabs, negotiations detail, etc.). */
+.hp-tabbar {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  background: rgb(241 245 249);
+  padding: 4px;
+  border-radius: 10px;
+}
+.hp-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 30px;
+  padding: 0 12px;
+  border-radius: 7px;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: -0.005em;
+  color: rgb(71 85 105);
+  transition: background-color 120ms ease, color 120ms ease, box-shadow 120ms ease;
+  white-space: nowrap;
+}
+.hp-tab:hover { color: rgb(15 23 42); background: rgb(255 255 255 / 0.6); }
+.hp-tab-active {
+  background: white;
+  color: rgb(15 23 42);
+  box-shadow: 0 1px 0 rgb(0 0 0 / 0.02), 0 1px 2px rgb(0 0 0 / 0.05);
+}
+
+/* Divider — 1px slate-200 line, matches rule tokens. */
+.hp-divider {
+  border: 0;
+  border-top: 1px solid var(--hp-rule);
+  margin: 16px 0;
+}
+
+/* Flatten descendant shadcn Cards so a container with .flat-cards shows
+   its sub-sections as part of a single unified bubble (no inner borders /
+   shadows / separate backgrounds). Used by the Summary tab so the entire
+   editor renders as one Card like Closing Notes / Award. */
+.flat-cards [data-slot="card"] {
+  background: transparent !important;
+  box-shadow: none !important;
+  --tw-ring-shadow: 0 0 #0000 !important;
+  --tw-ring-offset-shadow: 0 0 #0000 !important;
+  border: 0 !important;
+  padding: 0 !important;
+  /* Header → content breathing room inside each flattened sub-section. 0.5rem
+     ran the section title into its first field. */
+  gap: 0.75rem !important;
+  overflow: visible !important;
+  /* NOTE: no margin override here. space-y-* on the parent uses margin-top
+     on siblings — an !important margin:0 would nuke it and jam the sections
+     together (which it did, until 2026-10-09). Leave margins free. */
+}
+.flat-cards [data-slot="card-header"] {
+  padding: 0 !important;
+}
+.flat-cards [data-slot="card-content"] {
+  padding: 0 !important;
+}
+
+/* Message composer contenteditable placeholder. :empty won't match if the
+   browser inserts a <br> on focus, so we also check for <br>-only via :has
+   (modern browsers). Fallback: once the user types anything the pseudo
+   disappears because the element is no longer empty. */
+.hp-msg-editor:empty::before {
+  content: attr(data-placeholder);
+  color: rgb(156 163 175);
+  pointer-events: none;
+}
+
+/* Empty state wrapper */
+.hp-empty {
+  padding: 40px 24px;
+  text-align: center;
+  color: rgb(100 116 139);
+  font-size: 13.5px;
+}
+.hp-empty strong {
+  display: block;
+  font-size: 15px;
+  font-weight: 600;
+  color: rgb(51 65 85);
+  margin-bottom: 4px;
 }

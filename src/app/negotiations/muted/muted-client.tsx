@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import type { MutedSenderRow } from '@/app/api/negotiations/mute/route'
+import { confirmDialog } from '@/components/ui/dialog-service'
 
 export function MutedClient() {
   const [entries, setEntries] = useState<MutedSenderRow[] | null>(null)
@@ -20,7 +21,7 @@ export function MutedClient() {
   useEffect(() => { load() }, [])
 
   const unmute = async (id: string) => {
-    if (!window.confirm('Unmute? Future emails will show up in triage again. Already-muted threads stay in spam.')) return
+    if (!(await confirmDialog({ title: 'Unmute sender?', message: 'Future emails will show up in triage again. Already-muted threads stay in spam.', confirmLabel: 'Unmute' }))) return
     const res = await fetch(`/api/negotiations/mute/${id}`, { method: 'DELETE' })
     if (!res.ok) {
       setError(`Unmute failed (${res.status})`)

@@ -25,6 +25,7 @@ import {
   DEFAULT_ADDITIONAL_INFO,
   genId,
 } from "./lib";
+import { confirmDialog } from "@/components/ui/dialog-service";
 
 /**
  * Editable Summary Page form. Shared between the standalone /summary-page/[id]
@@ -35,10 +36,20 @@ export function SummaryFields({
   summary,
   onChange,
   resetKey = 0,
+  viewerId,
+  viewerName,
+  isAdmin = false,
 }: {
   summary: SavedSummary;
   onChange: (next: SavedSummary) => void;
   resetKey?: number;
+  // Current user's profile id + name — used to stamp new statuses with an
+  // author and to gate the per-row delete button. Both optional so the
+  // standalone /summary-page route can still mount this component without
+  // profile wiring (admins always see delete there via isAdmin fallback).
+  viewerId?: string;
+  viewerName?: string;
+  isAdmin?: boolean;
 }) {
   const [showInfoMenu, setShowInfoMenu] = useState(false);
   const [dragStatusIndex, setDragStatusIndex] = useState<number | null>(null);
@@ -49,9 +60,31 @@ export function SummaryFields({
 
   // Status handlers
   const addStatus = () =>
-    update("statuses", [...summary.statuses, { id: genId(), date: "", text: "" }]);
-  const removeStatus = (sid: string) =>
-    update("statuses", summary.statuses.filter((s) => s.id !== sid));
+    update("statuses", [
+      ...summary.statuses,
+      { id: genId(), date: "", text: "", authorId: viewerId, authorName: viewerName },
+    ]);
+  // Appraisers can delete only statuses they created (authorId match); admins
+  // can delete any status. Status entries from before authorId existed are
+  // admin-deletable only.
+  const canDeleteStatus = (s: StatusEntry): boolean => {
+    if (isAdmin) return true;
+    if (!viewerId || !s.authorId) return false;
+    return s.authorId === viewerId;
+  };
+  const removeStatus = async (sid: string) => {
+    const s = summary.statuses.find((x) => x.id === sid);
+    if (!s) return;
+    if (!canDeleteStatus(s)) return;
+    const ok = await confirmDialog({
+      title: "Delete this status?",
+      message: s.text ? `"${s.text.slice(0, 80)}${s.text.length > 80 ? "…" : ""}" will be removed.` : "This status entry will be removed.",
+      confirmLabel: "Delete",
+      variant: "danger",
+    });
+    if (!ok) return;
+    update("statuses", summary.statuses.filter((x) => x.id !== sid));
+  };
   const updateStatus = (sid: string, patch: Partial<StatusEntry>) =>
     update("statuses", summary.statuses.map((s) => (s.id === sid ? { ...s, ...patch } : s)));
   const reorderStatuses = (from: number, to: number) => {
@@ -88,18 +121,23 @@ export function SummaryFields({
     update("stateLaws", summary.stateLaws.map((l) => (l.id === lid ? { ...l, ...patch } : l)));
 
   return (
+    // Spacing is intentionally generous — each flattened sub-section inside
+    // the single outer bubble needs breathing room (padding:0 on inner Cards
+    // via globals.css .flat-cards means margin is the only visible separator).
+    // Previous space-y-3 made Opposing Appraiser visually touch the Vehicle
+    // row above it.
     <div className="space-y-6">
       {/* Claim Identification */}
       <Card>
-        <CardHeader className="pb-3">
+        <CardHeader className="py-3">
           <div className="flex items-center gap-2">
             <ClipboardList className="w-4 h-4 text-indigo-600" />
-            <CardTitle className="text-sm font-medium text-gray-700">
+            <CardTitle className="text-[15px] font-bold text-black tracking-tight">
               Claim Identification
             </CardTitle>
           </div>
         </CardHeader>
-        <CardContent>
+        <CardContent className="pt-0">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <Field label="Date" type="date" value={summary.date} onChange={(v) => update("date", v)} />
             <Field label="Claim Number" value={summary.claimNumber} onChange={(v) => update("claimNumber", v)} placeholder="e.g. 26PAZ-00010386" />
@@ -111,17 +149,20 @@ export function SummaryFields({
         </CardContent>
       </Card>
 
+      {/* Visual divider: separates Claim Identification from OA Contact. */}
+      <hr className="border-t border-gray-200" />
+
       {/* OA Contact */}
       <Card>
-        <CardHeader className="pb-3">
+        <CardHeader className="py-3">
           <div className="flex items-center gap-2">
             <User className="w-4 h-4 text-indigo-600" />
-            <CardTitle className="text-sm font-medium text-gray-700">
+            <CardTitle className="text-[15px] font-bold text-black tracking-tight">
               Opposing Appraiser (OA)
             </CardTitle>
           </div>
         </CardHeader>
-        <CardContent>
+        <CardContent className="pt-0">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <Field label="Name" value={summary.opposingAppraiser} onChange={(v) => update("opposingAppraiser", v)} placeholder="First Last" />
             <Field label="Company" value={summary.oaCompany} onChange={(v) => update("oaCompany", v)} placeholder="Firm / appraisal company" icon={Building2} />
@@ -129,17 +170,20 @@ export function SummaryFields({
         </CardContent>
       </Card>
 
+      {/* Visual divider: separates OA Contact from Receipt & Initial Contact. */}
+      <hr className="border-t border-gray-200" />
+
       {/* Dates */}
       <Card>
-        <CardHeader className="pb-3">
+        <CardHeader className="py-3">
           <div className="flex items-center gap-2">
             <Calendar className="w-4 h-4 text-indigo-600" />
-            <CardTitle className="text-sm font-medium text-gray-700">
+            <CardTitle className="text-[15px] font-bold text-black tracking-tight">
               Receipt & Initial Contact
             </CardTitle>
           </div>
         </CardHeader>
-        <CardContent>
+        <CardContent className="pt-0">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <Field label="Date Received Claim" type="date" value={summary.dateReceivedClaim} onChange={(v) => update("dateReceivedClaim", v)} />
             <Field label="Initial Contact Date" type="date" value={summary.initialContactDate} onChange={(v) => update("initialContactDate", v)} />
@@ -150,11 +194,11 @@ export function SummaryFields({
 
       {/* Status Log */}
       <Card>
-        <CardHeader className="pb-3">
+        <CardHeader className="py-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <User className="w-4 h-4 text-indigo-600" />
-              <CardTitle className="text-sm font-medium text-gray-700">
+              <CardTitle className="text-[15px] font-bold text-black tracking-tight">
                 Status Log
               </CardTitle>
             </div>
@@ -163,7 +207,7 @@ export function SummaryFields({
             </Button>
           </div>
         </CardHeader>
-        <CardContent>
+        <CardContent className="pt-0">
           <div className="space-y-2">
             {summary.statuses.length === 0 && (
               <p className="text-xs text-gray-400 italic">No status entries yet.</p>
@@ -195,31 +239,43 @@ export function SummaryFields({
                   type="date"
                   value={s.date}
                   onChange={(e) => updateStatus(s.id, { date: e.target.value })}
-                  className="rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent shrink-0"
+                  className="rounded-md border border-gray-200 bg-white px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent shrink-0"
                 />
                 <input
                   type="text"
                   value={s.text}
                   onChange={(e) => updateStatus(s.id, { text: e.target.value })}
                   placeholder="What happened on this date..."
-                  className="flex-1 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent placeholder:text-gray-400"
+                  className="flex-1 rounded-md border border-gray-200 bg-white px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent placeholder:text-gray-400"
                 />
-                <button type="button" onClick={() => removeStatus(s.id)} className="p-1.5 mt-0.5 text-gray-400 hover:text-red-600 opacity-60 group-hover:opacity-100 transition-opacity shrink-0" title="Remove">
-                  <X className="w-3.5 h-3.5" />
-                </button>
+                {canDeleteStatus(s) ? (
+                  <button
+                    type="button"
+                    onClick={() => removeStatus(s.id)}
+                    className="p-1.5 mt-0.5 text-gray-400 hover:text-red-600 opacity-60 group-hover:opacity-100 transition-opacity shrink-0"
+                    title={isAdmin ? "Remove (admin)" : "Remove — only yours"}
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                ) : (
+                  <span className="w-7 shrink-0" aria-hidden />
+                )}
               </div>
             ))}
           </div>
         </CardContent>
       </Card>
 
+      {/* Visual divider: separates Status Log from Additional Claim Information. */}
+      <hr className="border-t border-gray-200" />
+
       {/* Additional Claim Information */}
       <Card>
-        <CardHeader className="pb-3">
+        <CardHeader className="py-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <FileText className="w-4 h-4 text-indigo-600" />
-              <CardTitle className="text-sm font-medium text-gray-700">
+              <CardTitle className="text-[15px] font-bold text-black tracking-tight">
                 Additional Claim Information
               </CardTitle>
             </div>
@@ -228,7 +284,7 @@ export function SummaryFields({
             </Button>
           </div>
         </CardHeader>
-        <CardContent>
+        <CardContent className="pt-0">
           {showInfoMenu && (
             <div className="mb-3 rounded-lg border border-gray-200 bg-gray-50/60">
               <div className="flex items-center justify-between px-3 py-2 border-b border-gray-100">
@@ -268,7 +324,7 @@ export function SummaryFields({
                   onChange={(e) => updateInfo(entry.id, e.target.value)}
                   rows={1}
                   placeholder="Additional claim detail..."
-                  className="flex-1 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent placeholder:text-gray-400 resize-y min-h-[38px]"
+                  className="flex-1 rounded-md border border-gray-200 bg-white px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent placeholder:text-gray-400 resize-y min-h-[34px]"
                 />
                 <div className="flex items-center gap-0.5 opacity-60 group-hover:opacity-100 transition-opacity">
                   <button type="button" onClick={() => moveInfo(entry.id, -1)} disabled={i === 0} className="p-1.5 text-gray-400 hover:text-gray-700 disabled:opacity-30 disabled:cursor-not-allowed" title="Move up">
@@ -289,11 +345,11 @@ export function SummaryFields({
 
       {/* State Laws */}
       <Card>
-        <CardHeader className="pb-3">
+        <CardHeader className="py-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Scale className="w-4 h-4 text-indigo-600" />
-              <CardTitle className="text-sm font-medium text-gray-700">
+              <CardTitle className="text-[15px] font-bold text-black tracking-tight">
                 State Laws
               </CardTitle>
             </div>
@@ -302,7 +358,7 @@ export function SummaryFields({
             </Button>
           </div>
         </CardHeader>
-        <CardContent>
+        <CardContent className="pt-0">
           <div className="space-y-4">
             {summary.stateLaws.map((law) => (
               <div
@@ -361,19 +417,19 @@ function Field({
   icon?: typeof User;
 }) {
   return (
-    <label className="block">
-      <span className="text-xs font-medium text-gray-600 mb-1 block">{label}</span>
+    <label className="block max-w-sm">
+      <span className="text-[12px] font-medium text-slate-500 tracking-tight mb-1 block">{label}</span>
       <div className="relative">
         {Icon && (
-          <Icon className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+          <Icon className="w-4 h-4 text-gray-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
         )}
         <input
           type={type}
           value={value}
           onChange={(e) => onChange(e.target.value)}
           placeholder={placeholder}
-          className={`w-full rounded-md border border-gray-300 bg-white py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent placeholder:text-gray-400 ${
-            Icon ? "pl-9 pr-3" : "px-3"
+          className={`w-full rounded-md border border-gray-200 bg-white py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent placeholder:text-gray-400 ${
+            Icon ? "pl-8 pr-2.5" : "px-2.5"
           }`}
         />
       </div>
@@ -465,7 +521,7 @@ function RichField({
           onInput={emit}
           onBlur={emit}
           style={{ minHeight }}
-          className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm leading-relaxed focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent whitespace-pre-wrap"
+          className="w-full rounded-md border border-gray-200 bg-white px-2.5 py-1.5 text-sm leading-relaxed focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent whitespace-pre-wrap"
         />
         {isEmpty && placeholder && (
           <span className="absolute top-2 left-3 text-sm text-gray-400 pointer-events-none select-none">

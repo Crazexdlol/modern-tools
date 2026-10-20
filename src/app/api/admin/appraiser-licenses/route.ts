@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/service'
-import { requireAdmin } from '@/lib/auth/require-admin'
+import { requireAdmin, assertCanTargetUser } from '@/lib/auth/require-admin'
 
 export const runtime = 'nodejs'
 
 export async function POST(request: NextRequest) {
-  const { errorResponse } = await requireAdmin()
+  const { caller, errorResponse } = await requireAdmin()
   if (errorResponse) return errorResponse
 
   const body = await request.json().catch(() => null) as {
@@ -21,6 +21,8 @@ export async function POST(request: NextRequest) {
   if (!body?.userId || !body?.state || !body?.licenseNumber || !body?.expirationDate) {
     return NextResponse.json({ error: 'userId, state, licenseNumber, expirationDate required' }, { status: 400 })
   }
+  const guard = await assertCanTargetUser(body.userId, caller!)
+  if (guard) return guard
 
   const service = createServiceClient()
   const { data, error } = await service.from('appraiser_licenses').insert({

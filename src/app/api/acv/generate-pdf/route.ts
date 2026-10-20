@@ -6,6 +6,7 @@ import { requireAuth } from '@/lib/auth/require-admin'
 import { sanitizeFilename } from '@/lib/sanitize-filename'
 import { getCompanySlug } from '@/lib/pdf/company-slug'
 import { NoTemplateError, NO_TEMPLATE_CODE } from '@/lib/pdf/template-path'
+import { stripCoverPage } from '@/lib/pdf/strip-cover'
 
 // pdf-lib + fs.readFileSync require the Node runtime; keep this explicit
 // so a future edge default flip doesn't silently break the route.
@@ -24,7 +25,11 @@ export async function POST(request: NextRequest) {
 
     const companySlug = await getCompanySlug(caller!.activeCompanyId)
     const result = calculateACV(comps, adjustments)
-    const pdfBytes = await fillACVPdf(companySlug, claim, comps, adjustments, result)
+    let pdfBytes = await fillACVPdf(companySlug, claim, comps, adjustments, result)
+    // Cover-page toggle. Default (undefined/true) ships the full report;
+    // explicit false drops page 1. Backwards-compat for any caller not
+    // sending the flag.
+    if (body.includeCover === false) pdfBytes = await stripCoverPage(pdfBytes)
     const buffer = Buffer.from(pdfBytes)
 
     return new NextResponse(buffer, {

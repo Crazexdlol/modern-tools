@@ -135,10 +135,21 @@ export function TicketsClient() {
                 <div className="flex items-start gap-3">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
+                      {ticket.number !== null && (
+                        <span className="text-xs font-bold text-gray-400 tabular-nums">#{ticket.number}</span>
+                      )}
                       <span className="text-sm font-semibold text-gray-800">{ticket.subject}</span>
                       <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium border ${STATUS_STYLES[ticket.status]}`}>
                         {TICKET_STATUS_LABELS[ticket.status]}
                       </span>
+                      {/* Reopened signal: user flipped a resolved ticket back to open.
+                          Detected by (status=open AND resolution_note is set) — the
+                          admin's prior resolution note is preserved on reopen. */}
+                      {ticket.status === 'open' && ticket.resolutionNote && (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium border bg-amber-50 text-amber-800 border-amber-200">
+                          Reopened by user
+                        </span>
+                      )}
                     </div>
                     <div className="text-xs text-gray-500 mt-0.5">
                       {ticket.submitterName}

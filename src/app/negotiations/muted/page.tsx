@@ -8,15 +8,12 @@ export const dynamic = 'force-dynamic'
 export default async function MutedSendersPage() {
   await requireNegotiationsAccessOrNotFound()
   return (
-    <>
+    <div className="min-h-screen bg-slate-50 text-slate-900">
       <AppHeader />
-      <main className="max-w-3xl mx-auto p-6">
-        <h1 className="text-2xl font-semibold text-gray-900 mb-1">Muted senders</h1>
-        <p className="text-sm text-gray-500 mb-6">
-          Senders and domains listed here are automatically marked spam and never appear in triage.
-        </p>
+      <main className="max-w-3xl mx-auto px-6 py-8">
+        <h1 className="hp-display mb-5">Muted senders</h1>
         <MutedClient />
       </main>
-    </>
+    </div>
   )
 }

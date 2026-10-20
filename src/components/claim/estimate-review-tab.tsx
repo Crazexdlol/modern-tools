@@ -18,7 +18,7 @@ import type {
   TaxFinding,
   VinFinding,
 } from "@/lib/estimate-review/types";
-import { savePdfWithPicker } from "@/lib/save-pdf";
+import { savePdfPickerFirst } from "@/lib/save-pdf";
 import { extractLossState } from "@/lib/claim-state";
 import { captureReviewPdf, reviewPdfFileName } from "@/lib/estimate-review/pdf";
 import type { ClaimDocument } from "@/lib/supabase/documents";
@@ -929,7 +929,7 @@ function PrintableReview({
         zIndex: -1,
         width: '816px',
         background: '#fff',
-        fontFamily: 'sans-serif',
+        fontFamily: '"Times New Roman", Times, serif',
         padding: '32px',
         boxSizing: 'border-box',
       }}
@@ -976,7 +976,7 @@ function PrintableReview({
             <tbody>
               {checkedVins.map((f, i) => (
                 <tr key={i} style={{ borderBottom: '1px solid #f3f4f6', background: f.matches ? 'transparent' : '#fef2f2' }}>
-                  <td style={{ padding: '8px 12px', fontFamily: 'monospace' }}>{f.foundVin}</td>
+                  <td style={{ padding: '8px 12px', fontFamily: '"Times New Roman", Times, serif' }}>{f.foundVin}</td>
                   <td style={{ padding: '8px 12px', color: '#6b7280' }}>{f.source}</td>
                   <td style={{ padding: '8px 12px', fontWeight: 600, color: f.matches ? '#15803d' : '#dc2626' }}>
                     {f.matches ? '✓ Match' : '✗ MISMATCH'}
@@ -1286,36 +1286,33 @@ export function EstimateReviewTab({
   const handlePrint = async (review: EstimateReview) => {
     setPrintingReviewId(review.id);
     setPrintError(null);
-    // Defer one tick so React has committed any pending renders.
-    await new Promise((r) => setTimeout(r, 150));
+    const fileName = reviewPdfFileName(review.reviewNumber, review.fileName);
     try {
-      const el = printRefs.current[review.id];
-      if (!el) {
-        setPrintError("Print element not ready — try again.");
-        return;
-      }
-      // Temporarily make element visible off-screen for capture.
-      // visibility:hidden prevents html2canvas from rendering content.
-      el.style.visibility = 'visible';
-      el.style.position = 'fixed';
-      el.style.left = '-9999px';
-      el.style.top = '0';
-      el.style.zIndex = '9999';
-      const blob = await captureReviewPdf(el);
-      el.style.visibility = 'hidden';
-      el.style.position = 'absolute';
-      el.style.left = '-9999px';
-      el.style.top = '-9999px';
-      el.style.zIndex = '-1';
-      if (!blob) {
-        setPrintError("PDF capture returned empty — please try again.");
-        return;
-      }
-      const fileName = reviewPdfFileName(review.reviewNumber, review.fileName);
-      await savePdfWithPicker(blob, fileName);
-      if (onDocumentSaved) {
-        onDocumentSaved(blob, fileName, "estimate-review");
-      }
+      await savePdfPickerFirst(
+        fileName,
+        async () => {
+          // Defer one tick so React has committed any pending renders.
+          await new Promise((r) => setTimeout(r, 150));
+          const el = printRefs.current[review.id];
+          if (!el) throw new Error("Print element not ready — try again.");
+          el.style.visibility = 'visible';
+          el.style.position = 'fixed';
+          el.style.left = '-9999px';
+          el.style.top = '0';
+          el.style.zIndex = '9999';
+          const blob = await captureReviewPdf(el);
+          el.style.visibility = 'hidden';
+          el.style.position = 'absolute';
+          el.style.left = '-9999px';
+          el.style.top = '-9999px';
+          el.style.zIndex = '-1';
+          if (!blob) throw new Error("PDF capture returned empty — please try again.");
+          return blob;
+        },
+        (blob, name) => {
+          if (onDocumentSaved) onDocumentSaved(blob, name, "estimate-review");
+        },
+      );
     } catch (err) {
       console.error("Failed to print review PDF:", err);
       setPrintError(err instanceof Error ? err.message : String(err));
@@ -1328,8 +1325,12 @@ export function EstimateReviewTab({
   const handlePrintAll = async () => {
     setPrinting(true);
     setPrintError(null);
-    await new Promise((r) => setTimeout(r, 150));
+    const fileName = `estimate-dispute-all-${new Date().toISOString().slice(0, 10)}.pdf`;
     try {
+      await savePdfPickerFirst(
+        fileName,
+        async () => {
+      await new Promise((r) => setTimeout(r, 150));
       const { jsPDF } = await import("jspdf");
       const html2canvas = (await import("html2canvas-pro")).default;
 
@@ -1385,17 +1386,15 @@ export function EstimateReviewTab({
       }
 
       if (firstPage) {
-        // Nothing was captured (all reviews had errors).
-        setPrintError("No reviews to print.");
-        return;
+        throw new Error("No reviews to print.");
       }
 
-      const blob = pdf.output("blob");
-      const fileName = `estimate-dispute-all-${new Date().toISOString().slice(0, 10)}.pdf`;
-      await savePdfWithPicker(blob, fileName);
-      if (onDocumentSaved) {
-        onDocumentSaved(blob, fileName, "estimate-review");
-      }
+      return pdf.output("blob");
+        },
+        (blob, name) => {
+          if (onDocumentSaved) onDocumentSaved(blob, name, "estimate-review");
+        },
+      );
     } catch (err) {
       console.error("Failed to print all reviews:", err);
       setPrintError(err instanceof Error ? err.message : String(err));
@@ -1406,32 +1405,29 @@ export function EstimateReviewTab({
 
   return (
     <div className="space-y-5">
-      {!showUpload && reviews.length > 0 && (
-        <div className="flex flex-col gap-2">
-          <div className="flex justify-end gap-2">
-            <Button
-              onClick={handlePrintAll}
-              disabled={reviews.length === 0 || printing}
-              className="bg-blue-600 hover:bg-blue-500 text-white font-bold"
-            >
-              {printing ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Printer className="w-4 h-4 mr-2" />}
-              Print
-            </Button>
+      {/* Single title bubble that ALSO contains the top action row —
+          Estimate Dispute title + "Review Another Estimate" button live in
+          the same card header. Matches the Closing Notes / Award layout. */}
+      <div className="bg-white border border-gray-200 rounded-xl p-5 shadow-sm">
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <h2 className="text-black text-lg font-bold tracking-tight">Estimate Dispute</h2>
+          {!showUpload && reviews.length > 0 && (
             <Button
               onClick={() => setShowUpload(true)}
               className="bg-blue-600 hover:bg-blue-500 text-white font-bold"
+              size="sm"
             >
               + Review Another Estimate
             </Button>
-          </div>
-          {printError && (
-            <div className="flex items-start gap-2 p-3 rounded-lg bg-red-50 border border-red-200 text-red-600 text-sm self-end max-w-md">
-              <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
-              <span>Print failed: {printError}</span>
-            </div>
           )}
         </div>
-      )}
+        {printError && (
+          <div className="mt-3 flex items-start gap-2 p-3 rounded-lg bg-red-50 border border-red-200 text-red-600 text-sm">
+            <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
+            <span>Print failed: {printError}</span>
+          </div>
+        )}
+      </div>
 
       {showUpload && (
         <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-6 space-y-5">
@@ -1666,6 +1662,20 @@ export function EstimateReviewTab({
               </Fragment>
             );
           })}
+        </div>
+      )}
+
+      {/* Primary action — bottom-right, outside the content bubbles. */}
+      {!showUpload && reviews.length > 0 && (
+        <div className="flex justify-end">
+          <Button
+            onClick={handlePrintAll}
+            disabled={reviews.length === 0 || printing}
+            className="bg-blue-600 hover:bg-blue-500 text-white font-bold"
+          >
+            {printing ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Printer className="w-4 h-4 mr-2" />}
+            Print Report
+          </Button>
         </div>
       )}
 

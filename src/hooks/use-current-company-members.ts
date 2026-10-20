@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 
 // Returns the set of userIds who have access to the caller's currently-
 // active company. Used by ClaimWorkspace + claims-table to filter the
-// Handling Appraiser + Reassign lists so cross-company appraisers don't
+// Negotiating Appraiser + Reassign lists so cross-company appraisers don't
 // appear in company-specific pickers.
 //
 // While loading OR if the server returned an empty list (pre-migration or

@@ -18,7 +18,7 @@ import {
   type ReferenceAttachment,
 } from '@/lib/estimate-review/prompt'
 import type { EstimateReview, Flag, VinFinding } from '@/lib/estimate-review/types'
-import { requireAuth } from '@/lib/auth/require-admin'
+import { requireClaimAccess } from '@/lib/auth/require-claim-access'
 import { rateLimit } from '@/lib/rate-limit'
 import { createClient as createServerClient } from '@/lib/supabase/server'
 import { createServiceClient } from '@/lib/supabase/service'
@@ -311,30 +311,47 @@ async function processInBatches<T, R>(
 }
 
 export async function POST(request: NextRequest) {
-  const { caller, errorResponse } = await requireAuth()
-  if (errorResponse) return errorResponse
-  const limit = rateLimit(`review-estimate:${caller!.userId}`, 500, 3600)
-  if (!limit.ok) {
-    console.warn(`[review-estimate] rate limit tripped for ${caller!.userId}, retry in ${limit.resetInSeconds}s`)
-    return NextResponse.json(
-      { error: `Rate limit exceeded, try again in ${limit.resetInSeconds} seconds` },
-      { status: 429 },
-    )
-  }
   try {
     // Accept JSON body with document IDs referencing the claim's Documents tab.
-    const body = await request.json() as {
+    const body = await request.json().catch(() => null) as {
       estimateDocId?: string
       supportingDocIds?: string[]
       claimId?: string
       claimState?: string
       claimVin?: string
       nextReviewNumber?: number
+    } | null
+    if (!body) {
+      return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
+    }
+
+    const claimId = typeof body.claimId === 'string' ? body.claimId.trim() : ''
+    if (!claimId) {
+      return NextResponse.json(
+        { error: 'claimId is required' },
+        { status: 400 },
+      )
+    }
+
+    // Access gate — the body carries a claimId used to download arbitrary
+    // files from the claim-documents bucket via the service client. Must
+    // require admin OR assignee access to that specific claim; otherwise
+    // any authenticated appraiser could exfiltrate another company's docs
+    // via the Anthropic review path.
+    const { caller, errorResponse } = await requireClaimAccess(claimId)
+    if (errorResponse) return errorResponse
+
+    const limit = rateLimit(`review-estimate:${caller!.userId}`, 500, 3600)
+    if (!limit.ok) {
+      console.warn(`[review-estimate] rate limit tripped for ${caller!.userId}, retry in ${limit.resetInSeconds}s`)
+      return NextResponse.json(
+        { error: `Rate limit exceeded, try again in ${limit.resetInSeconds} seconds` },
+        { status: 429 },
+      )
     }
 
     const estimateDocId = typeof body.estimateDocId === 'string' ? body.estimateDocId.trim() : ''
     const supportingDocIds: string[] = Array.isArray(body.supportingDocIds) ? body.supportingDocIds : []
-    const claimId = typeof body.claimId === 'string' ? body.claimId.trim() : ''
     const claimState = typeof body.claimState === 'string' ? body.claimState.trim().toUpperCase() : ''
     const claimVin = typeof body.claimVin === 'string' ? body.claimVin.trim().toUpperCase() : ''
     const nextNumber = typeof body.nextReviewNumber === 'number' ? body.nextReviewNumber : 1
@@ -342,12 +359,6 @@ export async function POST(request: NextRequest) {
     if (!estimateDocId) {
       return NextResponse.json(
         { error: 'An estimate document must be selected' },
-        { status: 400 },
-      )
-    }
-    if (!claimId) {
-      return NextResponse.json(
-        { error: 'claimId is required' },
         { status: 400 },
       )
     }

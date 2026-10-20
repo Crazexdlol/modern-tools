@@ -14,7 +14,7 @@ import {
   pickInvoiceVariant,
 } from '@/lib/invoice/types'
 import { InvoiceFormFields, InvoiceLineItemsEditor, InvoiceSummary } from '@/components/invoice/invoice-fields'
-import { savePdfWithPicker } from '@/lib/save-pdf'
+import { savePdfPickerFirst } from '@/lib/save-pdf'
 
 export default function StandaloneInvoicePage() {
   const [data, setData] = useState(emptyInvoiceFormData)
@@ -25,24 +25,25 @@ export default function StandaloneInvoicePage() {
   const downloadPdf = async () => {
     setDownloading(true)
     setError(null)
+    const name = `invoice${data.invoiceNumber ? `-${data.invoiceNumber}` : ''}.pdf`
     try {
-      const subtotal = formatInvoiceMoneyWithSign(invoiceSubtotal(data.lineItems))
-      const variant = pickInvoiceVariant(data.lineItems.length)
-      const res = await fetch('/api/invoices/generate-pdf', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          variant,
-          data: { ...data, lineItems: formatLineItemsForPdf(data.lineItems), subtotal },
-        }),
+      await savePdfPickerFirst(name, async () => {
+        const subtotal = formatInvoiceMoneyWithSign(invoiceSubtotal(data.lineItems))
+        const variant = pickInvoiceVariant(data.lineItems.length)
+        const res = await fetch('/api/invoices/generate-pdf', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            variant,
+            data: { ...data, lineItems: formatLineItemsForPdf(data.lineItems), subtotal },
+          }),
+        })
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}))
+          throw new Error(body.error || 'PDF generation failed')
+        }
+        return res.blob()
       })
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}))
-        throw new Error(body.error || 'PDF generation failed')
-      }
-      const blob = await res.blob()
-      const name = `invoice${data.invoiceNumber ? `-${data.invoiceNumber}` : ''}.pdf`
-      await savePdfWithPicker(blob, name)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Print failed')
     } finally {
@@ -51,16 +52,16 @@ export default function StandaloneInvoicePage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 text-gray-900">
+    <div className="min-h-screen bg-slate-50 text-slate-900">
       <AppHeader />
 
-      <main className="max-w-4xl mx-auto px-6 py-8">
-        <div className="flex items-center gap-4 mb-6">
-          <Link href="/reports" className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-600 hover:text-gray-900 text-sm font-medium transition-colors">
-            <ArrowLeft className="w-4 h-4" />
+      <main className="max-w-4xl mx-auto px-6 py-7">
+        <div className="flex items-center gap-3 mb-5">
+          <Link href="/reports" className="hp-btn hp-btn-sm hp-btn-ghost">
+            <ArrowLeft className="w-3.5 h-3.5" />
             Reports
           </Link>
-          <h1 className="text-2xl font-bold text-gray-900">Invoice</h1>
+          <h1 className="hp-display">Invoice</h1>
         </div>
 
         <div className="space-y-6">
@@ -83,7 +84,7 @@ export default function StandaloneInvoicePage() {
 
           <Button onClick={downloadPdf} disabled={downloading} className="bg-blue-600 hover:bg-blue-500 text-white font-bold">
             {downloading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Printer className="w-4 h-4 mr-2" />}
-            Print Invoice
+            Print Report
           </Button>
         </div>
       </main>

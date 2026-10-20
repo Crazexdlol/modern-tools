@@ -1,9 +1,10 @@
 "use client"
 
 import { useMemo, useState } from 'react'
-import { Loader2, Plus, Trash2 } from 'lucide-react'
+import { Loader2, Plus, Printer, Trash2 } from 'lucide-react'
 import type { ClaimInfo, StorageLine, StorageState } from '@/lib/acv/types'
 import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 
 // Fresh row helper — new lines get qty=1, everything else empty. React
 // keys use `id` so re-ordering / deleting doesn't remount other rows.
@@ -59,7 +60,7 @@ export function StorageTab({
   claim: ClaimInfo
   state: StorageState
   onChange: (next: StorageState) => void
-  onDocumentSaved?: (blob: Blob, name: string) => void
+  onDocumentSaved?: (blob: Blob, name: string) => Promise<void> | void
   readOnly?: boolean
 }) {
   const [generating, setGenerating] = useState(false)
@@ -94,7 +95,7 @@ export function StorageTab({
       }
       const blob = await res.blob()
       const name = `${claim.maNumber || 'claim'}-storagereport.pdf`
-      onDocumentSaved?.(blob, name)
+      await onDocumentSaved?.(blob, name)
       // Also trigger a save-to-disk so the user gets it right away.
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
@@ -112,27 +113,17 @@ export function StorageTab({
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-bold text-gray-900">Storage Charges</h2>
-          <p className="text-sm text-gray-500 mt-0.5">Line-item calculator for storage-related billing.</p>
-        </div>
-        <Button
-          onClick={handleGenerate}
-          disabled={generating || readOnly || state.lines.every(l => (Number(l.hours) || 0) === 0 && (Number(l.rate) || 0) === 0)}
-          className="bg-emerald-600 hover:bg-emerald-500 text-white"
-        >
-          {generating ? (<><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Generating…</>) : 'Generate PDF'}
-        </Button>
-      </div>
-
-      {error && (
-        <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm">{error}</div>
-      )}
-
-      <fieldset disabled={readOnly} className="border-0 p-0 m-0 min-w-0 space-y-6">
-        <div className="bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden">
+    <div className="space-y-4">
+      <Card className="bg-white border-gray-200 shadow-sm">
+        <CardHeader className="py-3">
+          <CardTitle className="text-black text-lg font-bold tracking-tight">Storage Charges</CardTitle>
+        </CardHeader>
+        <CardContent className="pt-0 space-y-5">
+          {error && (
+            <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm">{error}</div>
+          )}
+          <fieldset disabled={readOnly} className="border-0 p-0 m-0 min-w-0 space-y-5">
+        <div className="border border-gray-200 rounded-lg overflow-hidden">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-gray-200 bg-gray-50">
@@ -228,7 +219,7 @@ export function StorageTab({
               className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
-          <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-4 space-y-3">
+          <div className="border border-gray-200 rounded-lg p-4 space-y-3">
             <div className="flex items-center justify-between">
               <span className="text-sm text-gray-600">Subtotal</span>
               <span className="text-sm font-semibold text-gray-900 tabular-nums">{formatCurrency(totals.subtotal)}</span>
@@ -256,7 +247,21 @@ export function StorageTab({
             </div>
           </div>
         </div>
-      </fieldset>
+          </fieldset>
+        </CardContent>
+      </Card>
+
+      {/* Primary action lives bottom-right, outside the Card. */}
+      <div className="flex justify-end">
+        <Button
+          onClick={handleGenerate}
+          disabled={generating || readOnly || state.lines.every(l => (Number(l.hours) || 0) === 0 && (Number(l.rate) || 0) === 0)}
+          className="bg-blue-600 hover:bg-blue-500 text-white font-bold"
+        >
+          {generating ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Printer className="w-4 h-4 mr-2" />}
+          Print Report
+        </Button>
+      </div>
     </div>
   )
 }

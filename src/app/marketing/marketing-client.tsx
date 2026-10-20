@@ -7,6 +7,7 @@ import {
   fetchAllClients,
   fetchClientClaimStats,
   CLIENT_TYPE_LABELS,
+  SELECTABLE_CLIENT_TYPES,
   type Client,
   type ClientClaimStats,
   type ClientType,
@@ -30,10 +31,14 @@ function todayISO(): string {
 // Avatar background per type — muted, matches pin colors so the list ↔ map
 // visual connection is obvious without shouting.
 const AVATAR_STYLE: Record<ClientType, string> = {
-  adjuster:          'bg-blue-100 text-blue-700 ring-blue-200',
+  tpa:               'bg-blue-100 text-blue-700 ring-blue-200',
   body_shop:         'bg-emerald-100 text-emerald-700 ring-emerald-200',
   attorney:          'bg-slate-200 text-slate-700 ring-slate-300',
   insurance_company: 'bg-slate-200 text-slate-700 ring-slate-300',
+  referral:          'bg-violet-100 text-violet-700 ring-violet-200',
+  other:             'bg-amber-100 text-amber-800 ring-amber-200',
+  // Legacy — kept so any un-migrated 'adjuster' row still renders.
+  adjuster:          'bg-blue-100 text-blue-700 ring-blue-200',
 }
 
 function avatarInitials(name: string): string {
@@ -166,7 +171,7 @@ export function MarketingClient() {
             <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value as ClientType | 'all')}
                     className="border border-gray-200 rounded-full pl-3 pr-6 py-1.5 bg-white text-gray-600 focus:outline-none">
               <option value="all">All types</option>
-              {(Object.keys(CLIENT_TYPE_LABELS) as ClientType[]).map(t => (
+              {SELECTABLE_CLIENT_TYPES.map(t => (
                 <option key={t} value={t}>{CLIENT_TYPE_LABELS[t]}</option>
               ))}
             </select>

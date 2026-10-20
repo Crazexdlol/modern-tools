@@ -4,6 +4,7 @@ import { requireAuth } from '@/lib/auth/require-admin'
 import { getCompanySlug } from '@/lib/pdf/company-slug'
 import { NoTemplateError, NO_TEMPLATE_CODE } from '@/lib/pdf/template-path'
 import { sanitizeFilename } from '@/lib/sanitize-filename'
+import { stripCoverPage } from '@/lib/pdf/strip-cover'
 
 export const runtime = 'nodejs'
 
@@ -19,7 +20,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid DV report variant' }, { status: 400 })
     }
     const companySlug = await getCompanySlug(caller!.activeCompanyId)
-    const bytes = await fillDVPdf(companySlug, variant, body.data as DVPdfData)
+    let bytes = await fillDVPdf(companySlug, variant, body.data as DVPdfData)
+    // Cover-page toggle: see /api/acv/generate-pdf for the matching logic.
+    if (body.includeCover === false) bytes = await stripCoverPage(bytes)
     // Prefer MA# from the data (fileNumber is set to claim.maNumber by
     // dv-tab.tsx). Client also sets the picker filename to <MA#>-dvreport.pdf,
     // this header is the fallback.

@@ -1,21 +1,24 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 
-export const TICKET_SUBJECTS = [
+// Suggested subject examples shown as placeholder guidance in the composer.
+// Subjects are now free-text (migration-tickets-free-subject, 2026-10-15),
+// so this list is purely cosmetic and not enforced anywhere.
+export const SUGGESTED_TICKET_SUBJECTS = [
   'ACV Report',
   'Diminished Value',
   'Estimate Review',
   'Dashboard',
   'Claim Info',
   'Documents',
-  'Other',
 ] as const
-export type TicketSubject = typeof TICKET_SUBJECTS[number]
+export const MAX_TICKET_SUBJECT_LEN = 120
 export type TicketStatus = 'open' | 'in_progress' | 'resolved' | 'dismissed'
 
 export interface Ticket {
   id: string
+  number: number | null  // null before migration-tickets-number lands
   submittedBy: string
-  subject: TicketSubject
+  subject: string
   description: string
   status: TicketStatus
   resolutionNote: string | null
@@ -39,8 +42,9 @@ export const TICKET_STATUS_LABELS: Record<TicketStatus, string> = {
 export function rowToTicket(row: any): Ticket {
   return {
     id: row.id,
+    number: typeof row.number === 'number' ? row.number : null,
     submittedBy: row.submitted_by,
-    subject: row.subject as TicketSubject,
+    subject: row.subject as string,
     description: row.description,
     status: row.status as TicketStatus,
     resolutionNote: row.resolution_note ?? null,
@@ -59,10 +63,12 @@ export function rowToTicketWithSubmitter(row: any): TicketWithSubmitter {
 }
 
 // Client-side helper: calls the server route so auth is handled server-side.
+// `number` is the user-facing ticket id (`#1234`) when the server returns it
+// (post migration-tickets-number); undefined on older deploys.
 export async function submitTicketViaApi(input: {
-  subject: TicketSubject
+  subject: string
   description: string
-}): Promise<{ ok: boolean; error?: string }> {
+}): Promise<{ ok: boolean; error?: string; number?: number }> {
   try {
     const res = await fetch('/api/tickets', {
       method: 'POST',
@@ -71,7 +77,8 @@ export async function submitTicketViaApi(input: {
     })
     const data = await res.json().catch(() => ({}))
     if (!res.ok) return { ok: false, error: data.error ?? `Request failed (${res.status})` }
-    return { ok: true }
+    const number = typeof data.number === 'number' ? data.number : undefined
+    return { ok: true, number }
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : String(err) }
   }

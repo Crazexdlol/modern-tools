@@ -13,6 +13,7 @@ import { createPortal } from 'react-dom'
 import html2canvas from 'html2canvas-pro'
 import { jsPDF } from 'jspdf'
 import type { ClaimInfo, ClaimType } from '@/lib/acv/types'
+import { alertDialog } from '@/components/ui/dialog-service'
 import { formatCurrency } from '@/lib/acv/calculations'
 import { mileageModifierFor, type DVState } from '@/components/claim/dv-tab'
 import { savePdfWithPicker } from '@/lib/save-pdf'
@@ -87,7 +88,7 @@ export function AssignmentSheet({ data }: { data: AssignmentSheetData }) {
   const vehicle = [claim.year || '', claim.make, claim.model, claim.trim].filter(Boolean).join(' ')
   const mileageStr = claim.mileage ? claim.mileage.toLocaleString() : '0'
   const vehicleLine = [vehicle || '—', claim.vin || '—', mileageStr].join(' · ')
-  const handling = claim.handlingAppraiser || assignedToName || 'Unassigned'
+  const negotiating = claim.negotiatingAppraiser || assignedToName || 'Unassigned'
   const opposing = opposingAppraiserName
     ? `${opposingAppraiserName}${opposingAppraiserCompany ? ` · ${opposingAppraiserCompany}` : ''}`
     : '—'
@@ -175,7 +176,7 @@ export function AssignmentSheet({ data }: { data: AssignmentSheetData }) {
         <section className="section">
           <h3>Appraisers</h3>
           <div className="grid-2">
-            <Row label="Handling (Us)" value={handling} />
+            <Row label="Handling (Us)" value={negotiating} />
             <Row label="Opposing (IA)" value={opposing} />
           </div>
         </section>
@@ -296,7 +297,7 @@ export async function triggerAssignmentSheetPrint(fileName: string): Promise<voi
   try {
     const el = document.querySelector('.assignment-sheet') as HTMLElement | null
     if (!el) {
-      alert('Assignment sheet not ready yet — reload the page and try again.')
+      await alertDialog({ title: 'Not ready', message: 'Assignment sheet not ready yet — reload the page and try again.' })
       return
     }
 
@@ -337,13 +338,13 @@ export async function triggerAssignmentSheetPrint(fileName: string): Promise<voi
     if (!win) {
       // Popup blocked. Fall back to the OS Save-As dialog so the user still
       // gets the file — better than a silent failure.
-      alert('Popup blocked. Saving the PDF instead — pick a folder in the dialog.')
+      await alertDialog({ title: 'Popup blocked', message: 'Saving the PDF instead — pick a folder in the dialog.' })
       await savePdfWithPicker(blob, fileName)
     }
     // Free the blob URL after the tab has had a moment to load.
     setTimeout(() => URL.revokeObjectURL(url), 60_000)
   } catch (err) {
     console.error('Assignment sheet print failed:', err)
-    alert(`Print failed: ${err instanceof Error ? err.message : String(err)}`)
+    await alertDialog({ title: 'Print failed', message: err instanceof Error ? err.message : String(err), variant: 'danger' })
   }
 }

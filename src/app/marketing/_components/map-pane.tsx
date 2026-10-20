@@ -10,10 +10,14 @@ import { CLIENT_TYPE_LABELS, type Client, type ClientType } from '@/lib/supabase
 // single config object". Attorneys + insurance companies get neutral gray for
 // now; adjust here to change palette.
 const PIN_COLOR: Record<ClientType, string> = {
-  adjuster:          '#2563eb', // blue-600
+  tpa:               '#2563eb', // blue-600
   body_shop:         '#059669', // emerald-600
   attorney:          '#6b7280', // gray-500
   insurance_company: '#6b7280',
+  referral:          '#8b5cf6', // violet-500
+  other:             '#d97706', // amber-600
+  // Legacy 'adjuster' kept for pre-migration rows; same color as tpa.
+  adjuster:          '#2563eb',
 }
 
 // Las Vegas — default center per Henry.

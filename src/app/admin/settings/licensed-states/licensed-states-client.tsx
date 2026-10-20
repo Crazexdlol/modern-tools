@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { Plus, Trash2, Save, X } from 'lucide-react'
 import { fetchLicensedStates, type LicensedState } from '@/lib/supabase/licensed-states'
 import { US_STATES } from '@/lib/us-states'
+import { confirmDialog } from '@/components/ui/dialog-service'
 
 interface Draft {
   state: string
@@ -60,7 +61,7 @@ export function LicensedStatesClient() {
   }
 
   const remove = async (state: string) => {
-    if (!confirm(`Remove ${state} from the licensed states list?`)) return
+    if (!(await confirmDialog({ title: 'Remove licensed state?', message: `Remove ${state} from the licensed states list?`, confirmLabel: 'Remove', variant: 'danger' }))) return
     setBusy(true); setError(null)
     const res = await fetch(`/api/admin/licensed-states/${state}`, { method: 'DELETE' })
     setBusy(false)

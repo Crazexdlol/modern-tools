@@ -1,7 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  serverExternalPackages: ["tesseract.js", "pdf-lib"],
+  serverExternalPackages: ["tesseract.js", "pdf-lib", "imapflow", "mailparser"],
   productionBrowserSourceMaps: false,
   // Vercel's serverless bundler (nft) only ships files it can trace from
   // source. AcroForm PDF templates in public/ are traced because their exact

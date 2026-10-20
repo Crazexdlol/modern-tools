@@ -1,0 +1,224 @@
+COST OF REPAIR DISPUTES — FREQUENTLY ASKED QUESTIONS (Version 2)
+Modern Appraisers | Independent Third-Party Appraiser Network
+
+===
+
+SECTION A: FLAGS & CORRECTIONS
+================================
+
+Q#3 / Original: "New York (Insurance Law §2507) requires it."
+Correction: While New York auto policies typically include appraisal clauses via regulation (11 NYCRR 216.7), the statute citation §2507 is not the primary source; the appraisal clause is required by New York's Department of Financial Services rules for motor vehicle physical damage claims. The regulation ensures appraisal is available when parties disagree on actual cash value, amount of loss, or cost of repair.
+
+Q#4 / Original: "Massachusetts (MGL c. 175 §110L) mandates appraisal."
+Correction: Massachusetts does mandate appraisal, but the correct statutory section is M.G.L. c. 175, §191A, not §110L. Section 191A requires that if the insured and carrier fail to agree on the amount of loss within 60 days of proof-of-loss receipt, either party may invoke appraisal; each side selects an appraiser, and if appraisers disagree, they select an umpire whose decision is binding. The statute also requires reinspection on high-cost claims ($4,000+).
+
+Q#16 / Original: "SCRS publishes an annual labor rate survey based on direct input from hundreds of shops."
+Correction: SCRS conducts surveys on collision repair industry topics (labor rates, technician satisfaction, common issues), but the search for SCRS's "official annual labor rate survey" publication is complex — SCRS advocates for fair labor rates and participates in labor-rate discussions, but other entities (CAA in California, regional insurers, NADA, CDI) also publish labor rate surveys. The FAQ's claim should be more cautious: "SCRS and other industry organizations track labor rates; regional labor rate surveys are available from state-specific bodies and insurance organizations." Appraisers rely on these sources, not exclusively SCRS.
+
+Q#28 / Original: "OEM1Stop is a subscription service that aggregates repair procedures and labor times from multiple manufacturers."
+Correction: OEM1Stop itself (oem1stop.com) is a FREE gateway/directory portal operated collaboratively by automakers; it does not charge a subscription. However, OEM1Stop directs users to each manufacturer's individual repair information site, and THOSE sites may require daily, weekly, monthly, or annual paid subscriptions (typically $20–100/day or $500–3,000/year depending on the OEM). The portal is the directory; the OEM sites behind it are paid.
+
+Q#51 / Original: "CCC (CCC Audatex) is a widely used estimating database."
+Note: CCC explicitly reaffirms (as of 2025) that it does NOT conduct labor rate surveys or report prevailing rates. Labor time data in CCC comes from MOTOR. This doesn't invalidate the use of CCC for estimating, but the FAQ should clarify CCC's role: it is an estimating tool that uses third-party data for labor times, not an originating source of labor rate surveys.
+
+===
+
+CORE QUESTIONS 1–45 (ORIGINAL CONTENT — UNCHANGED)
+===
+
+1. Q: What is a cost of repair dispute?
+A: A cost of repair dispute occurs when the vehicle owner, repair shop, or insured disagrees with the carrier's damage estimate. Common disagreements involve labor rates, labor hours, the choice of parts (OEM vs. aftermarket), the necessity of supplements, or the discovery of hidden damage during repairs. The dispute is resolved through the appraisal clause in the insurance policy.
+
+2. Q: How does the appraisal clause work?
+A: Most auto insurance policies include an appraisal clause that allows either party (carrier or insured) to demand an independent appraisal when there is a material disagreement on repair cost. Each party appoints an appraiser, the two appraisers select an umpire, and the umpire reviews the evidence. The umpire's ruling is binding on both parties and settles the dispute.
+
+3. Q: Which states require an appraisal clause for repair costs?
+A: Massachusetts (M.G.L. c. 175, §191A), New York (via 11 NYCRR 216.7), Texas (effective 2026), and Illinois (effective July 2027) have statutory or regulatory requirements for appraisal clauses in auto policies. Washington also requires appraisal effective January 1, 2026. Many other states recommend or commonly include appraisal clauses in collision/comprehensive policies, though availability varies. Always review your specific policy language.
+
+4. Q: What is Massachusetts M.G.L. c. 175 §191A?
+A: This Massachusetts statute requires all auto insurance policies to include an appraisal clause for disputes on the cost of repair, replacement, or loss. If the insured and carrier cannot agree on the amount of loss within 60 days of proof of loss, either party may demand appraisal by submitting a written request with an appraiser's appraisal of repair costs. Each side selects an appraiser; if they disagree, they jointly select an umpire whose decision is binding. Massachusetts also requires reinspection on claims where estimated repairs exceed $4,000 (for at least 75% of such claims) or are $4,000 or less (for at least 25% of such claims).
+
+5. Q: What is a supplement in collision repair?
+A: A supplement is a written request by the repair shop for additional payment when unforeseen damage is discovered during teardown or disassembly. The shop documents the new damage with photos, labor hours, and parts costs, and submits it to the carrier for approval. Supplements are normal in collision work—initial estimates often miss hidden structural or mechanical damage.
+
+6. Q: Why do shops submit supplements?
+A: Shops submit supplements because once they begin disassembly of the damaged vehicle, they often discover damage not visible in the initial estimate. Examples include frame rust that requires replacement, collision-damaged components hidden behind trim, or mechanical systems damaged in the crash. Submitting a supplement is the only ethical way to bill for legitimate additional work.
+
+7. Q: Can a carrier deny a supplement?
+A: Yes, but only if the requested work is not legitimate or not causally related to the loss. A carrier can deny a supplement if the damage was pre-existing, negligently caused by the shop, or is unrelated to the insured loss. However, a carrier cannot deny a supplement simply because the total repair cost exceeds the vehicle's market value (the policy limit still applies, but the supplement itself is a separate line item for newly discovered damage).
+
+8. Q: Why does the carrier's estimate sometimes cost less than the shop's estimate?
+A: Carriers and shops often use different valuation tools (Mitchell, CCC Audatex, RepairLink), labor-rate databases, and parts-sourcing assumptions. Carriers may apply default labor rates for a region, while the shop quotes its actual labor rate. Carriers may default to aftermarket parts, while the shop proposes OEM parts. The appraiser's role is to reconcile these differences with factual data.
+
+9. Q: What is OEM vs. aftermarket parts?
+A: OEM (Original Equipment Manufacturer) parts are made by the vehicle's manufacturer and match the original factory specification exactly. Aftermarket parts are made by third parties and may be equivalent in function but are often less expensive. Insurance policies typically allow the use of aftermarket parts "of like kind and quality" — the appraisal process determines whether a specific aftermarket part meets that standard.
+
+10. Q: What is "like kind and quality"?
+A: "Like kind and quality" is a legal standard in most insurance policies requiring that replacement parts must be equivalent in function, durability, and fit. A part of like kind and quality does not have to be OEM, but it must perform the same job reliably. An appraiser evaluates whether a specific aftermarket part meets this threshold for the damaged vehicle.
+
+11. Q: Can an insurance carrier force me to use aftermarket or recycled parts?
+A: Policies typically allow carriers to use aftermarket parts of like kind and quality or recycled parts from salvage vehicles, subject to the insured's right to challenge the choice through appraisal. If you believe a proposed part does not meet the like-kind standard, the appraisal process is your remedy. Recycled parts must be from similar vehicles in good condition. Six states (Rhode Island, Illinois, Indiana, and three others) require written consent from the vehicle owner before non-OEM parts are used; thirty-one states require disclosure of non-OEM parts on the repair estimate.
+
+12. Q: What is CAPA and NSF certification?
+A: CAPA (Certified Automotive Parts Association) and NSF (NSF International) are third-party certifications that verify aftermarket parts meet OEM performance and fitment standards. Parts are tested for material composition, strength, fit, finish, and function to ensure they meet or exceed OEM equivalents. A CAPA or NSF-certified part provides objective evidence that an aftermarket choice meets the "like kind and quality" threshold. Many appraisers and insurers accept certified aftermarket parts without challenge.
+
+13. Q: What are labor rates and why do they vary?
+A: A labor rate is the hourly charge for repair technician work, typically quoted in dollars per hour. Labor rates vary by geographic region, shop credentials, technician experience, and shop overhead (rent, tools, insurance, training). A body shop in an urban area will have a higher rate than one in a rural area. The appraisal process determines what rate applies to a specific vehicle and loss.
+
+14. Q: What is the prevailing labor rate in my area?
+A: Labor rates are tracked regionally by state-specific survey bodies, insurance companies, NADA, and tools like Mitchell CCC Audatex which display area-weighted labor rates by zip code, typically updated quarterly. You can ask your appraiser or repair shop for the current prevailing rate in your area. In some states (Rhode Island, Massachusetts), carriers are required to conduct labor rate surveys. In others, rates are determined by direct negotiation or third-party surveys. Rates are public and tied to local market conditions.
+
+15. Q: Why does the carrier use a different labor rate than my shop?
+A: Carriers often use a default regional rate for estimating, while your shop may be negotiating a higher rate based on I-CAR training, specialized tools, or union membership. The appraisal process compares the two rates against objective market data (state labor rate surveys, NADA, CCC, Mitchell, or local negotiated rates). The umpire decides which rate is reasonable for the loss.
+
+16. Q: What is SCRS and what labor rate information does it provide?
+A: SCRS (Society of Collision Repair Specialists) is a national trade association for collision repair professionals, founded in 1982. SCRS conducts surveys on technician compensation, labor rate disputes, and industry challenges, and it has advocated for fair labor rate practices. However, SCRS does not publish a single definitive "official annual labor rate survey" in the way that some regional or state bodies do. Appraisers rely on SCRS advocacy positions, regional labor rate surveys from state insurance departments or third-party bodies (such as CDI in California), and the labor-rate tables in estimating software (Mitchell, CCC, Audatex) to verify prevailing rates.
+
+17. Q: What are P-pages?
+A: P-pages are reference pages in collision repair databases (Mitchell, CCC Audatex) that show repair labor times for specific parts of a vehicle. "P" stands for "procedure." A P-page lists the hours required to remove, repair, or replace a component, written by OEM repair engineers or sourced from OEM data (CCC's labor times come from MOTOR, a third-party data provider). P-pages are the foundation of labor-hour estimates and specify which operations are "included" (bundled into a primary repair) and which are "not included" (separate line items).
+
+18. Q: How are labor hours estimated?
+A: Labor hours are estimated using OEM repair procedures (P-pages, OEM manuals, or databases like Mitchell CCC Audatex). A technician sums up the P-page hours for each damaged component, adjusts for the specific vehicle (some vehicles require extra disassembly to access parts), and adds overlap or deduction times. The total hours × the labor rate = the labor cost.
+
+19. Q: What is "included operations" vs. "not included"?
+A: In collision repair estimating, "included operations" are labor tasks bundled into the primary repair (e.g., removing a door includes removing the trim and glass). "Not included operations" are separate line items (e.g., repainting a door that is not being replaced). Appraisers must verify that labor is not double-counted across these categories by consulting the P-pages specific to the damaged areas.
+
+20. Q: What's the difference between Mitchell CCC Audatex times and my shop's estimate?
+A: Mitchell CCC Audatex publishes standard labor times based on OEM procedures and industry averages. Your shop's estimate may differ because of: (a) differences in the vehicle's specific configuration, (b) additional disassembly required in your shop due to rust or damage, (c) overhead or contingency built into the shop's proposal, or (d) actual shop experience that deviates from the published standard. An appraiser reconciles these via visual inspection and discussion.
+
+21. Q: What is ADAS and why does it matter in appraisals?
+A: ADAS stands for Advanced Driver Assistance Systems — camera-based, radar, and sensor systems that help vehicles avoid collisions (lane-keeping, forward-collision warning, adaptive cruise, parking assists). When these systems are damaged or when the vehicle is structural-repaired, they often require recalibration. ADAS is now standard on most new vehicles, and appraisers must account for calibration costs. ADAS calibration is required after frame damage, suspension work, bumper replacement, alignment, windshield replacement (many vehicles have a forward-facing camera in the windshield frame), or when cameras or radar sensors are damaged.
+
+22. Q: What is ADAS calibration and how much does it cost?
+A: ADAS calibration is a diagnostic procedure that re-aims and verifies that the vehicle's sensors, cameras, and radar are functioning within OEM tolerances after repair. Calibration is required after frame damage, suspension work, bumper replacement, windshield replacement, hood or fender replacement (may contain cameras), or any damage to the area where cameras or radar sensors are mounted. Costs typically range from $300 to $1,500+ depending on the ADAS systems involved and whether the procedure is static (using calibration targets), dynamic (a test drive), or scan-only.
+
+23. Q: Does my vehicle need ADAS calibration?
+A: If your vehicle's repair involves any of the following, it likely needs calibration: (a) frame or structural repair, (b) suspension or steering service, (c) bumper replacement or alignment, (d) windshield replacement, (e) hood or fender replacement (may contain cameras), or (f) any damage to the area where cameras or radar sensors are mounted. Each OEM (Honda, Toyota, GM, etc.) has specific calibration requirements documented in their repair procedures. Check your vehicle's manual, OEM repair documentation via the I-CAR RTS portal, or ask your appraiser.
+
+24. Q: What is a three-stage paint process?
+A: Three-stage paint is basecoat-clearcoat-UV protection. Stage 1 is the basecoat (color pigment). Stage 2 is clearcoat (a protective layer of clear polyurethane). Stage 3 is UV protection additive. Modern vehicle finishes use this system to provide durability, gloss, and longevity. Repainting requires all three stages to match the original finish.
+
+25. Q: What is a "blend" or "blend operation" in paint work?
+A: A blend operation is feather-sanding the new paint into the adjacent OEM finish to hide the repair line. Instead of a sharp edge, the painter gradually tapers the new paint so it transitions invisibly into the old. Blends are standard practice on single-panel repairs and are included in industry labor rates. Appraisers verify that blends were quoted when necessary.
+
+26. Q: Why does paint cost so much?
+A: Paint labor is expensive because: (a) surface prep (sanding, priming, sealing) is time-intensive and must be done perfectly, (b) multiple coats are applied and dried between coats, (c) high-quality paint materials (basecoat, clearcoat, hardeners) are expensive, (d) environmental controls (temperature, humidity, dust) are critical, and (e) skilled technicians with years of training command premium wages. A single-panel repaint often costs $500-$1,500+ depending on the vehicle.
+
+27. Q: What is an OEM repair procedure?
+A: An OEM repair procedure is the vehicle manufacturer's published instructions for repairing a specific component. Procedures are found in the manufacturer's service manual, on the manufacturer's repair information portal (such as Honda Info, Toyota's TIS, or GM's GM Global), or in industry repair databases. They specify the exact steps, special tools required, torque specifications, and labor hours. Appraisers use OEM procedures to verify that proposed repairs are done correctly and that labor times are accurate.
+
+28. Q: What are the I-CAR portal and OEM1Stop?
+A: The I-CAR Repairability Technical Support (RTS) Portal (rts.i-car.com) is a free resource operated by the Inter-Industry Conference on Auto Collision Repair that provides repair procedures, technical guidance, and real-time "Ask I-CAR" support for collision repair professionals. OEM1Stop (oem1stop.com) is a free, collaborative gateway created by automakers that aggregates links to each manufacturer's individual repair information portal. OEM1Stop itself requires no subscription, but the OEM sites it links to may require daily, weekly, monthly, or annual subscriptions ($20–$100/day or $500–$3,000/year). Both resources are widely used by appraisers to verify repair procedures and labor times.
+
+29. Q: What is the role of an independent appraiser?
+A: An independent appraiser (also called an umpire appraiser) reviews the dispute, inspects the vehicle, compares the two damage estimates, and issues a written ruling. The appraiser is neutral and appointed by mutual agreement or, in some cases, by a court. The appraiser's job is to reconcile the estimates using objective data (market labor rates, OEM procedures, parts pricing) and issue a binding award.
+
+30. Q: Does an independent appraiser work for me or the carrier?
+A: An independent appraiser works for neither party. The appraiser is a neutral third party, typically selected through the appraisal process (each party appoints an appraiser, those two select an umpire). The umpire is bound by the appraisal clause to make a decision based on facts and industry standards, not to favor either side. The appraiser's fee is usually split between the carrier and insured.
+
+31. Q: How long does an estimate audit or appraisal take?
+A: A typical appraisal process takes 2-4 weeks from the date the appraisal is demanded to the umpire's award. Visual inspection of the vehicle usually takes 2-4 hours. The appraiser then reviews the estimates, gathers data, and prepares a written award. Appraisals on routine damage may be quicker; complex vehicle structures or multi-system damage can take longer.
+
+32. Q: What does an independent audit of an estimate cover?
+A: An estimate audit examines: (a) completeness of the damage list, (b) accuracy of labor hours against OEM/industry standards, (c) reasonableness of the labor rate for the geographic area, (d) appropriateness of parts choices (OEM vs. aftermarket), (e) pricing accuracy against current market rates, (f) compliance with OEM repair procedures, and (g) necessary but missing items (ADAS calibration, paint blends, structural repair). The audit produces a detailed report with line-item comments.
+
+33. Q: What is the difference between an "appraisal" and an "audit"?
+A: An appraisal is a formal, binding process under the insurance policy's appraisal clause, involving appointed appraisers and an umpire. An audit is an informal, non-binding review of an estimate. Some estimates are audited by the carrier's staff appraiser or a third party before the claim is finalized; others proceed to formal appraisal only if a dispute arises.
+
+34. Q: What is an "over-write" in an estimate?
+A: An over-write is when a claim is later discovered to have cost more to repair than the original estimate. This typically happens when supplements are submitted and approved, or when the actual repair work uncovers additional damage. Over-writes reduce the insurer's profit on the claim and may trigger the appraisal process if the final cost exceeds the policy's repair limits.
+
+35. Q: What is a "shortage" in an estimate?
+A: A shortage is when the estimate exceeds the actual cost of repair (parts cost less than quoted, labor takes fewer hours than estimated, or some items are not needed). Shortages benefit the carrier but may indicate that the estimate was overly conservative or included unnecessary work.
+
+36. Q: What are "hidden damage" disputes?
+A: Hidden damage is damage not visible until the vehicle is disassembled (rust beneath the bumper, collision-deformed beams inside the door, damaged wiring under the trim). When the shop discovers hidden damage during teardown, it submits a supplement. If the carrier denies the supplement, the dispute may go to appraisal. The appraiser must inspect the damage and determine if it is causally related to the insured loss.
+
+37. Q: Does the repair shop have to accept the carrier's estimate?
+A: No. The shop can reject the estimate and refuse to do the work at the quoted rate. However, if the insured has selected that shop and paid the deductible, the insured may be obligated to have repairs done within a reasonable cost. The appraisal clause protects both the insured and the shop from being forced into an unreasonable deal.
+
+38. Q: Can I choose my own repair shop?
+A: Yes. In most states, you have the right to choose your own repair shop, even if the carrier prefers a network shop. The carrier may attempt to manage cost by negotiating with preferred shops, but it cannot legally force you to use a specific shop. If the shop's quote differs significantly from the carrier's estimate, the appraisal clause is your remedy.
+
+39. Q: What is a diminished value claim?
+A: A diminished value claim is a request for compensation for the loss in resale value of a vehicle after an accident, even if the repairs are completed to pre-loss condition. Some states allow diminished value claims (Georgia, South Carolina); others do not (California, New York). Your insurance policy and your state's laws determine whether you can claim diminished value.
+
+40. Q: What are the types of diminished value?
+A: There are typically three: (1) Inherent diminished value — the natural loss in value due to a vehicle's history (applies in most states that allow DV), (2) Repair-related diminished value — loss of value if repairs are substandard, and (3) Stigma diminished value — loss of value due to consumer perception of prior damage. Georgia and South Carolina recognize inherent DV. Other states recognize only repair-related DV if repairs are poor.
+
+41. Q: Who determines whether the damage is "total loss"?
+A: The carrier and the insured review the repair estimate. If the total repair cost exceeds a certain threshold (often 70-80% of the vehicle's actual cash value), the vehicle is declared a "total loss," and the carrier pays the ACV minus the deductible rather than paying for repairs. If you dispute whether the vehicle is truly total loss (or dispute the ACV), appraisal is available.
+
+42. Q: What is actual cash value (ACV)?
+A: ACV is the fair market value of the vehicle immediately before the loss, accounting for the vehicle's year, make, model, condition, mileage, and regional market rates. The carrier typically uses industry valuation tools (Kelley Blue Book, NADA Guides, Manheim) to estimate ACV. If you believe the ACV is too low, you can dispute it and, in some cases, invoke appraisal.
+
+43. Q: Do I have to follow the carrier's estimate or repair estimate?
+A: You are entitled to hire a shop of your choice and have it perform repairs. If the shop's actual repair costs exceed the carrier's estimate, you can dispute the difference and pursue appraisal. You do not have to accept the carrier's estimate, but the policy limits and deductible still apply.
+
+44. Q: How is the appraisal award decided if the two appraisers disagree?
+A: If the two appraisers (one chosen by the carrier, one by the insured) disagree on the cost, they jointly select an umpire. The umpire reviews both appraisals, conducts an independent inspection, and issues a ruling. The umpire's award is typically binding on both parties. If the umpire rules, say, that the repair cost is $28,000, the carrier pays that amount.
+
+45. Q: What should I do if I disagree with the carrier's estimate?
+A: (1) Request an itemized copy of the estimate and ask the carrier to explain specific line items, (2) Have an independent appraiser inspect the vehicle and provide a second opinion, (3) Consult your policy's appraisal clause and review your state's insurance regulations, (4) Contact the carrier's claims manager or appeals department, and (5) If informal resolution fails, formally invoke the appraisal process by submitting a written request. An independent appraiser or attorney can guide you through appraisal.
+
+===
+
+SECTION B: NEW QUESTIONS (46–62)
+================================
+
+46. Q: What is the difference between a first-party and third-party cost of repair claim?
+A: A first-party claim is one you file against your own insurance company under your collision or comprehensive coverage. You have a direct contract with your insurer, which gives you specific contractual rights, including the right to invoke the appraisal clause if you disagree on repair costs. A third-party claim is against the at-fault driver's insurance company. You do NOT have a direct contract with their insurer, and their primary obligation is to their own policyholder, not you. Third-party claims typically offer fewer procedural protections and no automatic right to appraisal.
+
+47. Q: Can I invoke appraisal on a third-party claim?
+A: Appraisal rights vary by state and policy. On a first-party claim, appraisal is generally available under your policy's appraisal clause. On a third-party claim, the at-fault party's insurer has more discretion and may not be bound by an appraisal clause that benefits you. In a third-party dispute, you may need to negotiate, obtain multiple estimates, or pursue legal action. Some states have mediation or arbitration procedures for third-party disputes, but true appraisal (binding umpire decision) is primarily a first-party remedy.
+
+48. Q: Do I need to pay my deductible before the appraisal process begins?
+A: Deductibles typically apply at the time of repair, not at the time of appraisal. However, the timing depends on your policy and state law. In some cases, if the appraisal umpire awards a higher repair cost than the carrier estimated, the deductible is applied to the new award amount (so you may owe additional out-of-pocket). Clarify with your carrier when the deductible is deducted and whether it applies to the initial estimate or the final appraisal award.
+
+49. Q: What if the shop and the carrier both agree on the estimate but I disagree with it?
+A: If both the shop and carrier agree, the appraisal clause may not be available because there is no "material disagreement" between the two parties to the policy. However, you may still have grounds to dispute the estimate if: (a) you believe the repair cost is unreasonably low and would result in a vehicle that does not meet pre-loss condition, (b) the estimate omits necessary repairs (ADAS calibration, paint blends, structural work), or (c) you have expert evidence (from another appraiser or engineer) that the estimate is deficient. In such cases, consult a local appraiser or attorney to determine your rights.
+
+50. Q: What happens if my repair shop discovers damage during the repair that the initial estimate missed?
+A: Once the shop begins disassembly, they may discover hidden damage (rust, hidden structural deformation, collision-damaged interior components). The shop must document this damage with photos and a description, and submit a written supplement request to the carrier for approval. The carrier may approve the supplement, deny it if the damage appears pre-existing or unrelated to the loss, or request an appraiser to inspect. If denied, you can dispute the supplement denial through appraisal if you believe the damage was caused by the insured loss.
+
+51. Q: Can an appraiser require the repair shop to tear down the vehicle during appraisal?
+A: Yes. During an appraisal, the umpire appraiser may request that the repair shop continue with partial or full disassembly so the appraiser can visually inspect hidden areas and verify damage. The cost of this teardown is typically a shared expense or may be borne by the carrier if the appraiser's inspection reveals substantial supplemental damage that justifies the additional cost. The appraiser uses this inspection to make an informed ruling.
+
+52. Q: What OEM documentation should I have before my repair begins?
+A: Before repair begins, request that your repair shop provide: (a) the OEM repair procedure for each damaged component (obtainable via I-CAR RTS Portal, OEM1Stop, or the manufacturer's repair information portal), (b) the specific labor times for your vehicle's model year and configuration from the estimating database (Mitchell, CCC Audatex), (c) documentation of any ADAS calibration requirements if your vehicle has cameras, radar, or sensors, and (d) the P-page for "included operations" so you understand what labor is bundled versus what is a separate line item. Having this documentation in advance helps prevent disputes and supports your position in appraisal.
+
+53. Q: Are there states that do NOT allow appraisal for cost of repair disputes?
+A: Most states allow appraisal as an optional remedy available through policy language, though it is not mandated in all states. However, a growing number of states are requiring appraisal clauses by statute or regulation: Massachusetts (§191A), New York (11 NYCRR 216.7), Texas (effective 2026), Washington (effective January 1, 2026), and Illinois (effective July 1, 2027). If your state is not listed here, appraisal may still be available under your policy; check your policy language or contact your state's Department of Insurance. No state has abolished appraisal; all U.S. states recognize it in some form.
+
+54. Q: What if I suspect the appraiser is biased toward the carrier?
+A: The umpire appraiser is supposed to be neutral and impartial; bias toward either party violates their professional duty and the terms of the appraisal process. If you believe the umpire's decision was biased or unreasonable, you have limited remedies: (a) request a written explanation of the umpire's reasoning (you are entitled to this); (b) consult an attorney to determine if the award is subject to legal challenge on grounds of fraud or obvious mistake; (c) in some states, insurance regulators may review complaints about biased appraisers if reported promptly. However, appraisal awards are generally binding and difficult to overturn. Prevention is key: verify that the umpire has no financial relationship with either party's appraiser before the appraisal begins.
+
+55. Q: Can recycled parts be used instead of OEM parts, and does that reduce the repair cost?
+A: Yes, recycled (salvage) parts from collision-damaged vehicles of the same model year and condition may be used with the insured's consent or via the appraisal process if you challenge the choice. Recycled parts are typically less expensive than OEM or aftermarket parts. However, a recycled part must be from a vehicle in good condition and must function reliably; the "like kind and quality" standard still applies. An appraiser evaluates whether a proposed recycled part is appropriate for the damaged vehicle. Using recycled parts can reduce repair costs, but quality verification is essential.
+
+56. Q: What is "blue book" or valuation software used for in repair disputes?
+A: "Blue book" refers to Kelley Blue Book (KBB), NADA Guides, and Manheim, which are industry-standard resources for estimating the Actual Cash Value (ACV) of a vehicle. These tools factor in the vehicle's year, make, model, mileage, condition, and regional market rates. In an appraisal, if the dispute involves the total-loss threshold or the ACV, the umpire appraiser references these valuation tools to determine fair market value. However, these tools provide estimates, not exact values; an appraiser may adjust these values based on specific vehicle condition, regional demand, or comparable vehicle sales.
+
+57. Q: What should I ask my appraiser to clarify before the appraisal inspection?
+A: Before the inspection, ask your appraiser to clarify: (a) whether they will require vehicle teardown or only visual inspection, (b) what specific line items they plan to examine (e.g., paint blend necessity, ADAS calibration requirements, labor hours for a specific component), (c) which data sources they will use for labor rates and OEM procedures, (d) the timeline for their written award, (e) whether they will allow you or a representative to be present during the inspection, (f) how they will handle disagreements between the two parties' damage assessments, and (g) what documentation you should provide (repair shop photos, OEM repair procedures, previous repair history). Clear communication upfront prevents surprises in the award.
+
+58. Q: If the umpire rules in my favor, does the carrier have to pay immediately?
+A: Once the umpire issues a binding award, the carrier is obligated to pay according to the award amount and your insurance policy's terms. However, the timeline for payment depends on state law and policy language. Generally, carriers must pay within 30 days of the award, though some states require faster payment for undisputed amounts. If the carrier delays payment after an appraisal award, you may file a complaint with your state's Department of Insurance or seek legal action for breach of contract. Always confirm the payment timeline and delivery method with the carrier in writing.
+
+59. Q: What is the "included operations" doctrine and how does it affect my repair estimate?
+A: The "included operations" doctrine holds that certain labor tasks are bundled into a primary repair and should not be billed separately. For example, removing a door "includes" removing its trim, glass, and hardware; separately charging for trim removal would be double-counting. The P-pages in estimating databases specify which operations are included and which are not. Appraisers verify that labor hours are not duplicated across included operations. If you suspect double-counting in your estimate, ask your appraiser to compare the shop's line items to the P-page for the damaged component.
+
+60. Q: Are there federal standards for ADAS calibration, or does it vary by manufacturer?
+A: There are no single federal ADAS calibration standard; instead, each vehicle manufacturer publishes its own calibration requirements. Honda, Toyota, GM, Subaru, and others specify whether calibration is "static" (using calibration targets on a flat surface), "dynamic" (a test drive), or "scan-only" (a diagnostic scan without targets or driving). Requirements depend on the vehicle's model year, specific ADAS systems, and the type of repair. The I-CAR RTS Portal and OEM1Stop provide searchable databases by year, make, and model. Your appraiser and repair shop should consult these resources to ensure the correct calibration type is included in the estimate.
+
+61. Q: Can a dispute over ADAS calibration costs go to appraisal?
+A: Yes. If the carrier's estimate omits ADAS calibration and you or your shop believe it is necessary based on the OEM requirements and the type of repair performed, you can dispute the omission through appraisal. The umpire appraiser will review the OEM repair documentation (from I-CAR RTS, OEM1Stop, or the manufacturer's service manual) to determine whether calibration is required. If required, the appraiser will award the calibration cost. ADAS calibration disputes are increasingly common as these systems become standard on new vehicles.
+
+62. Q: What is my recourse if the appraiser's written award contains obvious errors or ambiguities?
+A: Once the umpire's award is issued, it is generally final and binding; appraisers have limited authority to modify or clarify their decisions. However, if the award contains: (a) a clear arithmetic error (e.g., the line items don't add up to the stated total), (b) an obvious omission (e.g., the appraiser acknowledges that ADAS calibration is required but neglected to include it in the award), or (c) an unambiguous violation of the appraisal clause's terms, you may request a written clarification or correction from the appraiser. If they refuse, consult an attorney to determine if the award is subject to legal challenge on grounds of "manifest error" or breach of the appraisal process. Such challenges are difficult and rarely successful; the award's finality is a core principle of the appraisal process.
+
+===
+
+Modern Appraisers provides independent third-party appraisals for cost of repair disputes across the United States. We serve vehicle owners, insurance carriers, repair shops, and attorneys with neutral, expert analysis based on industry standards and objective data.
+
+For more information or to request an appraisal, contact Modern Appraisers.

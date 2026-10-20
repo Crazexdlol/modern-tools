@@ -18,6 +18,791 @@ Read `CLAUDE.md` first if you haven't. Then read the top entry here before touch
 
 ---
 
+## 2026-10-20 — Licensed-state flag fixes + folder cleanup + GitHub resync
+
+**Worked on:** Two unrelated tracks in one session.
+
+1. **Licensed-state flag audit + fixes (HAMS).** Walked Henry through how the licensed-state system works (two Supabase tables `licensed_states` + `appraiser_licenses`; three surfaces — dashboard dot, workspace top badge, Negotiating Appraiser inline summary; loss state pulled from `claim.ownerAddress` via regex). Identified and shipped three fixes:
+   - **Dashboard dot now keys off NEGOTIATING APPRAISER** (not `assignedTo`) so it agrees with the in-claim top badge. Previously these could disagree on claims where the assignee and the negotiating appraiser are different people.
+   - **State-code regex is now case-insensitive** — lowercase addresses like `"fl 33101"` used to silently return null and hide the badge entirely. Now uppercased on match.
+   - **Deleted dead `state-licensing-panel.tsx`** — defined, never imported.
+   - Also made `fetchAllLicenses` the universal fetch on the dashboard (replacing the admin-vs-non-admin split) so non-admins get the correct dot color for the negotiating appraiser's licenses, not just their own.
+   - Deferred: owner-address-vs-loss-location is a known semantic gap (`extractLossState` reads the insured's address, not where the loss occurred). Henry chose to keep ownerAddress — not a bug for Modern Appraisers' current workflow. Also deferred the brittle-name-match concern (negotiating appraiser is a `<select>` so stored values are canonical by construction).
+
+2. **Folder cleanup + GitHub resync.** HAMS working directory had accumulated ~70 one-off scripts, 9 Sept-2026 log files, orphan CSV reconcile artifacts, backfill-plan JSONs, old FAQ markdowns at root, and 36MB of stale backups. Did a full audit and cleanup:
+   - **Pre-cleanup backup:** `backups/hams-pre-cleanup-2026-10-20.tar.gz` (122MB — excludes node_modules/.next/old-backups).
+   - **Deleted (verified unreferenced in all code paths):** 9 `cleanup-post-sync-*.log` / `csv-sync-*.log` at root; CSV reconcile artifacts (`csv-reconcile-review.csv/.html/.pdf`, `csv-reconcile-report.json`, `completed-reconcile-report.json`); backfill plans (`oa-backfill-plan.json`, `owner-backfill-plan.json`); `design-preview.html`; 43 one-off `scripts/` files (`inspect-*.mjs` × 15, `dump-*.mjs` × 4, `probe-*.mjs` × 3, `neg-*.mjs` × 8, `test-mirror`, `fix-acv-quadding`, `make-eagleview-on-dark`, `extract-p-pages`, `proof-award-estimate`, `proof-notes-label`, etc.); `scripts/_cover-extract/` (docx guts from one-off Word extraction); `scripts/_tmp-ma-number-audit.mjs`; test PDFs (`_dv-test.pdf`, `_out-lou-days.pdf`, `_out-lou-hours.pdf`); dump JSON/MD files (`filtered*.json`, `sec*.{json,md}`, `henry-{list,remove-list,remove-list-2}.txt`).
+   - **Moved (reorganized, path references updated):** 8 FAQ markdowns + 2 cost-of-repair txt files from HAMS root and HAMS `public/` → `modernappraisers/docs/faq-source/`. Updated `modernappraisers/scripts/build-faqs.mjs` to read from the new location. Verified build still outputs the correct count. Rationale: these were modernappraisers content living in HAMS tree; the user wanted no cross-project leakage.
+   - **Moved:** `acv-formula-final.md` → `docs/reference/` (HAMS internal methodology doc, kept but out of root).
+   - **Deleted:** `backups/debug-2026-09-17/` and `backups/pre-hamsportal-2026-09-16/` (stale backups replaced by today's).
+   - **Post-cleanup backup:** `backups/hams-post-cleanup-2026-10-20.tar.gz` (110MB).
+   - **Verified both apps build clean** post-cleanup: `npx tsc --noEmit` + `npm run build` on both HAMS and modernappraisers, zero errors.
+   - **GitHub resynced** — repo had been 337 commits behind local since Aug 13. Pushed all catch-up commits + today's cleanup commit. Added `.claude/` to `.gitignore` (per-machine permissions file, shouldn't be in a shared repo).
+
+**Changed (HAMS code — track 1):**
+- `src/lib/claim-state.ts` — regex case-insensitive, uppercase on match.
+- `src/components/claims-table.tsx` — `getLicenseBadge` now resolves via `claim.negotiatingAppraiser` → profile → licenses (was `entry.assignedTo` lookup).
+- `src/app/dashboard-client.tsx` — unconditional `fetchAllLicenses` (removed admin-vs-user split); dropped `fetchUserLicenses` import.
+- `src/components/claim/state-licensing-panel.tsx` — deleted (dead code).
+
+**Changed (folder structure — track 2):**
+- 60+ files deleted from `scripts/` and root; 10 FAQ sources moved under `modernappraisers/docs/faq-source/`; `acv-formula-final.md` → `docs/reference/`.
+- `modernappraisers/scripts/build-faqs.mjs` — path references updated.
+- `.gitignore` — added `.claude/`.
+
+**Deploy status:**
+- **HAMS: live.** `dpl_BuTSFjVEiVFeVF5jPntdgo2qK7k9` — alias `www.hamsportal.com` / `hamsportal.com` / `modern-tools-rho.vercel.app` all flipped and verified Ready. Rollback: `npx vercel promote https://modern-tools-3d0zqzywx-henry-as-projects-88caed67.vercel.app --scope henry-as-projects-88caed67 --yes` (deploy `dpl_DJJZCiKRboJ9oFWNGaGgcErBHejb`, prior good).
+- **modernappraisers.com: unchanged this session.** Still on Oct 19 production state.
+
+**In progress / broken / unknowns:**
+- The v2 FAQ markdowns in `modernappraisers/docs/faq-source/` (`acv-faq-v2.md`, `DV_FAQ_v2.md`, `LOU_FAQ_v2.md`, `STORAGE_FAQ_v2.md`) are improved research content that was never swapped into the FAQ build pipeline. `build-faqs.mjs` still reads the v1 variants. If/when Henry wants richer FAQ content live, swap the paths in `build-faqs.mjs` to the `-v2` files and rerun the script.
+- The current `src/lib/faq-content.ts` (322 base Q&As + 95 extras = 417 total) was restored from the pre-cleanup backup after I accidentally overwrote it via a verification run of `build-faqs.mjs`. The committed state is the known-good 417-Q&A version. Running `build-faqs.mjs` right now would regenerate it as 215 Q&As (v1 totals) — so DO NOT re-run that script without first either (a) wiring v2 paths or (b) accepting the 215-Q&A regression.
+
+**Next:**
+1. Decide on v2 FAQ swap (one-line change in `build-faqs.mjs` + rerun) — would deliver richer content on modernappraisers.com FAQ.
+2. Keep an eye on the licensed-state dot/badge agreement on the dashboard — the two surfaces now share logic, so if either regresses they'll both regress visibly.
+
+---
+
+## 2026-10-19 — modernappraisers.com polish + HAMS claim-intake relay (live)
+
+**Worked on:** Mostly modernappraisers.com (dark-theme marketing site at `C:\XSFA\Modern Tools Official\modernappraisers\`). HAMS change was one additive endpoint plus one env var — surgically scoped so nothing existing could break. Order of work:
+
+1. **FAQ expansion (modernappraisers).** +95 beginner-level Q&As under two new topics — Insurance Basics (65: first-party vs third-party, subrogation, deductibles/premiums, coverage types, adjusters, appraisal-clause explained from zero, umpires, salvage/rebuilt titles, bad-faith claims, etc.) and Commercial Vehicles (30: fleet valuation, business interruption vs loss of use, owner-operator revenue claims, DOT inspection, specialty attachments, NTL / MCS-90 / cargo, rideshare layered coverage). Totals went 322→417 Q&As across 5→7 topics.
+2. **FAQ picker simplification.** Shortened the row from "All + 7 topic cards" to "All + 5 primary + Other" — the Other button is a flat filter that shows every Q&A not in the primary 5 (basics + commercial grouped under it, no sub-buttons). Browser grid went `lg:grid-cols-6` → `lg:grid-cols-7`.
+3. **Three legal pages.** New `/terms` (26-clause Terms of Service — Nevada law, mandatory arbitration with class-action waiver and 30-day opt-out, liability capped at greater of 12-month fees or $1,000, TCPA consent language), new `/privacy-policy` (16-clause, CCPA + multi-state coverage, 7-year retention, no sale/no sharing), new `/fulfillment-policy` (12-clause with per-service-type turnaround windows, cancellation refund schedule, no-contingency rule, 30-day refund window). Footer now links all three; both previously-linked policies had been 404s.
+4. **Vercel Analytics.** Installed `@vercel/analytics` (needed `--legacy-peer-deps` for a transient SvelteKit peer in the dep graph) and wired `<Analytics />` into `src/app/layout.tsx`. Cookieless first-party analytics, no banner required — picks up automatically once modernappraisers.com has its first prod deploy.
+5. **HAMS ↔ modernappraisers claim-intake relay.** The big one. New HAMS endpoint `src/app/api/intake/route.ts` accepts POSTs with an `X-Intake-Secret` header, service-role-inserts into `acv_history` with `workflow_stage='main'` + `assigned_to=null` (lands on **New Assignments** dashboard tab per Henry's spec), attributes `user_id` to the oldest admin profile (auto-resolved + cached, no env config needed). MA# comes from the DB trigger. Optional freeform message gets appended as an auto-message on the claim thread. Shared-secret auth uses `timingSafeEqual`. On the modernappraisers side, `src/app/api/claims/route.ts` is the server-side relay that keeps the secret off the browser. `src/app/submitaclaim/page.tsx` rewritten as a client component with success state that shows the returned MA#.
+6. **HAMS deployed to prod** so the intake endpoint is live. Deploy `dpl_4SJ3BM5rWRN5v9zMW4T7k9ow7vSN` aliased to `www.hamsportal.com`. `curl POST /api/intake` without the header returns 401 as expected. `INTAKE_SHARED_SECRET` set on HAMS prod env via `vercel env add`.
+7. **Insurance carriers marquee + home page restructure (modernappraisers).** 12 carrier logos (GEICO, State Farm, Allstate, Progressive, The Hartford, AAA, Travelers, Country Financial, Westfield, First Chicago, Bluefire, Bristol West) stripped of white backgrounds via new `scripts/strip-logo-bg.mjs` (sharp, 245 hard-cut / 225 fade-start thresholds) and rendered in a pure-CSS infinite-scroll marquee via `src/components/carriers-marquee.tsx`. Home page sections reordered to: Hero → What We Do → Carriers → Evaluation → Contact form (dropped the 3 metric cards; MetricCard function removed). Hero image swapped to a license-free charcoal Porsche 992 on a mountain road (Unsplash by Nader Saremi), previous image backed up as `car-hero-pixabay-dune.jpg.bak`.
+8. **Inline fillable contact form on home page.** New `src/components/home-contact-form.tsx` client component replaces the bottom-of-page CTA strip; posts to existing `/api/contact` (Resend). Service picker gets prepended into the message body so admin sees it inline.
+9. **Years-of-experience reframing.** Henry clarified "27+ years" is appraiser experience, NOT business founding. Reworded every `since 1999` across about / contact / layout / terms / footer to "27+ years of combined independent appraisal experience" phrasing. Zero remaining "1999" references.
+
+**Changed (HAMS):**
+- `src/app/api/intake/route.ts` (new) — only HAMS file touched. Public endpoint, shared-secret auth, service-role insert into acv_history with new-assignment defaults, auto-resolves attributing admin user. No existing HAMS code modified.
+- `.env.local` — appended `INTAKE_SHARED_SECRET`.
+
+**Changed (modernappraisers):** many — grouped:
+- Legal: `src/app/terms/page.tsx` (new), `src/app/privacy-policy/page.tsx` (new), `src/app/fulfillment-policy/page.tsx` (new), `src/components/site-footer.tsx` (added Terms link + reworded tagline).
+- FAQ: `src/lib/faq-content-extra.ts` (new, 95 Q&As), `src/lib/faq-content.ts` (type union + TOPIC_LABELS + TOPIC_ORDER updated, merged export), `src/app/faq/_faq-browser.tsx` (Other-as-flat-filter UI), `src/app/faq/page.tsx` (metadata description refreshed).
+- Intake relay: `src/app/api/claims/route.ts` (new), `src/app/submitaclaim/page.tsx` (rewrote as client with success state).
+- Carriers marquee: `scripts/strip-logo-bg.mjs` (new sharp-based processor), `src/components/carriers-marquee.tsx` (new), `src/app/globals.css` (added `@keyframes carriers-marquee` + reduced-motion fallback), `public/logos/insurance/raw/*.png,svg` (12 originals), `public/logos/insurance/*.png,svg` (processed outputs).
+- Home: `src/app/page.tsx` (section reorder, metric cards removed, carriers + contact form wired in), `public/car-hero.jpg` (new hero image), `public/car-hero-pixabay-dune.jpg.bak` (backup of previous).
+- Analytics: `src/app/layout.tsx` (added `<Analytics />` + updated metadata title).
+- Contact form: `src/components/home-contact-form.tsx` (new).
+- Years-reframe: `src/app/about/page.tsx`, `src/app/contact/page.tsx`, `src/app/terms/page.tsx`, `src/app/layout.tsx`, `src/components/site-footer.tsx`.
+- `.env.local` — appended `HAMS_INTAKE_URL=http://localhost:3000` + `INTAKE_SHARED_SECRET` (matches HAMS value).
+- `package.json` / `package-lock.json` — added `@vercel/analytics` + `sharp`.
+
+**Deploy status:**
+- **HAMS: live.** `dpl_4SJ3BM5rWRN5v9zMW4T7k9ow7vSN` promoted — `www.hamsportal.com` + `hamsportal.com` + `modern-tools-rho.vercel.app` all flipped and verified Ready. `/api/intake` returns 401 without secret header (correct). `INTAKE_SHARED_SECRET` set on prod env. Rollback: `npx vercel promote https://modern-tools-7mde3ld34-henry-as-projects-88caed67.vercel.app --scope henry-as-projects-88caed67 --yes` (deploy `dpl_DkG3czNEnN9C2kK9TXybA92os8XW`, Oct 18 15:42).
+- **modernappraisers: NOT deployed.** Project doesn't exist on Vercel yet. `vercel link` from the folder was blocked by the sandbox (new-public-surface creation needs a direct command), and Henry hadn't run it as of session end. Everything is working locally via `npm run dev` on :3100.
+
+**In progress / broken / unknowns:**
+- modernappraisers Vercel project needs to be created. Henry runs `! cd "C:\XSFA\Modern Tools Official\modernappraisers" && npx vercel link --project modernappraisers --scope henry-as-projects-88caed67 --yes` (or the plain `npx vercel` interactive flow) to create it. Once linked, I set the three env vars (`HAMS_INTAKE_URL=https://www.hamsportal.com`, `INTAKE_SHARED_SECRET=<same hex as HAMS>`, `RESEND_API_KEY=<Henry needs to provision Resend first>`) and run `vercel --prod`.
+- `RESEND_API_KEY` is NOT set anywhere. Without it, `/api/contact` logs to the server console and returns `{ok:true}` — form submissions won't bounce in dev, but no email actually sends. Needs a Resend account signup; the home contact form + /contact page + /submitaclaim free-form submissions all depend on it.
+- Allstate wordmark SVG on Wikimedia Commons returned 404 (file renamed/removed). Current `allstate.png` is the Allstate hands+wordmark Henry dropped on desktop and I processed via the stripper. If a crisper SVG surfaces, drop it in `public/logos/insurance/raw/` and re-run `node scripts/strip-logo-bg.mjs`.
+- The web intake relay is tested only in theory — I verified the HAMS endpoint responds 401 without the secret, but no end-to-end "submit a claim on modernappraisers.com, see it appear in HAMS" smoke test ran because modernappraisers isn't deployed yet. Will exercise once it's live.
+- Several times Henry asked to use Porsche hero images from editorial sites (Car and Driver, Road and Track, Reddit, KBB, stuttcars, autoevolution, Porsche configurator, 4kwallpapers, Art Heroes). I declined each — all copyrighted editorial / configurator renders / wallpaper-aggregator scrapes without commercial licenses. Settled on the Unsplash charcoal 992 (#2 of the 6 free options I pulled). If a hero image swap comes up again, point Henry at Unsplash/Pexels/Pixabay or offer the Shutterstock-license route (~$50–150).
+
+**Next:**
+1. `vercel link` modernappraisers (Henry runs the command).
+2. Set `HAMS_INTAKE_URL`, `INTAKE_SHARED_SECRET`, and `RESEND_API_KEY` on modernappraisers Vercel prod env.
+3. `vercel --prod` first-time deploy of modernappraisers.
+4. End-to-end smoke test: submit a dummy claim on live modernappraisers.com → see it on HAMS **New Assignments** tab with the auto-message populated.
+5. (Optional) Add Allstate SVG if a cleaner source surfaces. Any new carrier is a one-liner: drop a PNG in `public/logos/insurance/raw/`, run `node scripts/strip-logo-bg.mjs`, add one line to the `CARRIERS` array in `carriers-marquee.tsx`.
+6. (Optional, deferred) Reminders channel still awaits a Resend account + cron scheduler per `project_reminders_pending.md` — unrelated to this session but will unblock when `RESEND_API_KEY` lands.
+
+---
+
+## 2026-10-18 — Documents tab: Combine selected into one PDF
+
+**Worked on:** New feature in the claim Documents tab — a Combine button that merges 2+ selected PDFs / photos into a single PDF in selection order and files it to the claim. Available on every account (not admin-gated).
+
+**Changed:**
+- `src/lib/pdf-combine.ts` (new) — client-side helper. `combineDocsToPdf(docs)` dynamically imports pdf-lib, fetches each doc via its signed URL, copy-pastes PDF pages into a new PDFDocument, and embeds images as full-size pages after routing them through `<canvas>` → JPEG so EXIF orientation is baked in and HEIC/WebP decode goes via the browser's native image pipeline. Images are capped at 2400 px longest side at 0.85 JPEG quality — keeps output comfortably inside the 25 MB upload cap even on 20+ page combines. Returns `{ blob, skipped }` so the caller can surface files that couldn't be merged. Encrypted PDFs pass through pdf-lib with `ignoreEncryption: true`; truly unparseable files land in `skipped`. `canCombineDoc` is a small predicate used by the tab to decide which selected docs count toward the combinable total.
+- `src/components/claim/documents-tab.tsx` — added `combining` state, `selectionOrder` memo (1-based position from the `selected` Set's insertion order, which `toggleOne` already preserves), `combinableSelectedCount` memo (iterates `documents` not `sorted` so visibility toggles don't lie about the count), and `handleCombine` which iterates `selected` in Set order so the output stacks in exactly the sequence the user clicked. The resulting file is uploaded via the existing `uploadClaimDocument(..., 'document')` path and appended via `onDocumentsChange` (auto-save picks it up). Output name is `combined-YYYY-MM-DD-HHmm.pdf`. New toolbar button sits right after Download all, hidden when nothing combinable is selected, disabled when < 2 combinable are selected. Checkbox cell now shows a small blue `#N` badge next to each checked row when 2+ docs are selected so the user can verify the stack order before pressing the button. Imported `Combine` icon from lucide-react.
+
+**Deploy status:** Live. `dpl_3LGMdd91PnMzwwPAojKeWMWqZKYo` promoted — alias `modern-tools-rho.vercel.app` / `hamsportal.com` / `www.hamsportal.com` all flipped and verified Ready. `npx tsc --noEmit` + `npm run build` both clean before deploy. Rollback: `npx vercel promote modern-tools-b6bh1hhvb-henry-as-projects-88caed67.vercel.app --scope henry-as-projects-88caed67 --yes`.
+
+**In progress / broken / unknowns:** None known. Design decisions worth noting:
+- Combine files the output to the claim; it does NOT also open a save-as dialog. Henry can download it via the Documents tab's existing Download button if a local copy is wanted.
+- Non-combinable files in the selection (docx / xlsx / etc.) are ignored silently — the error banner only lists docs that fetched but couldn't be merged (e.g. a corrupt PDF, a HEIC on a Chrome build without decoder support).
+- Selection clears after a successful combine so the order badges disappear and the user has a clean slate.
+- pdf-lib stays out of the main client bundle via dynamic `import('pdf-lib')` — only loads when the user actually presses the button.
+
+**Next:** nothing queued for this feature. If Henry wants a reorder-after-select UI (drag handles instead of click-order), that's a future tweak — current flow is "click in the order you want them".
+
+---
+
+## 2026-10-17 — Dashboard column redesign + CLAUDE.md refresh + weekend-safe status requests
+
+**Worked on:** Three distinct chunks of work plus a long tangent on the separate `comp-scraper` project (nothing HAMS-side).
+
+1. **CLAUDE.md refresh via /init** — added three HARD RULES (pre-migration DB column tolerance via 42703/PGRST204 fallback, `normalizeCompanyKey` for all client/company name matching, workflow buttons redirect to origin dashboard tab). Updated migrations table with recent additions. Fixed stale `ClaimWorkspace.tsx` line-count estimate (3600 → ~6800). Added new subsections: Cross-cutting subsystems (DialogRoot / ActivityHeartbeat / HenryFloatingLauncher / RemindersPushBootstrap), Umpire tracking, Claim-creation required-fields validator.
+
+2. **Dashboard column redesign** — rewrote `src/components/claims-table.tsx` and `src/components/claim/phase-selector.tsx` so the table fits a ~1,400 px viewport without horizontal scroll on all surfaces that use `<ClaimsTable>` (main dashboard, All Claims page, lockout fallback dashboard, every appraiser account). Changes:
+   - Body font: `text-[15px]` → `text-[14px]`. VIN kept at `font-mono text-xs` (12 px mono).
+   - "Days" column → "Created Date" (shows `MM/DD/YY` from `entry.createdAt`, no more ticking counter). Internal sort key renamed `daysOpen` → `created`, compare uses `createdAt` ISO.
+   - New **Assigned Date** column (admin only, after Assigned To). Reads existing `assigned_at` — already updated on every reassign by `/api/claims/[id]/assign`, zero backend work needed.
+   - Column widths shrunk, `line-clamp-2 break-words` wrap applied to Owner / Client / Vehicle / Ins. Co. / Assigned To so long values clamp to 2 lines with ellipsis.
+   - Row height fixed at `h-[72px]` for visual consistency regardless of wrap.
+   - Phase cell: switched from oval `rounded-full` pill to `rounded-md` stacked bubble with label on line 1 and age on line 2. `min-h-[48px]` matched between phased and "No Status" variants so every phase cell is identical height. Admin `PhaseSelector size="lg"` variant updated to match; `size="sm"` (workspace toolbar) unchanged.
+   - Columns reordered: State → Labels → **Ins. Co. → Created Date → Assigned Date → Assigned To** → Phase (dates grouped together, Assigned Date right next to Assigned To). "ASSIGNED DATE PHASE" header overlap fixed via `whitespace-nowrap` on Phase header and `px-4` padding parity.
+   - "Rough Numbers" label pill shortened to "Rough" in `src/components/claim/ClaimLabelPills.tsx` to fit within the Labels column.
+
+3. **Status-request weekend fix** (`src/lib/status-requests/run.ts`) — Henry got a flood of status-request emails on a Saturday morning. Root cause: non-paused claims counted silence in CALENDAR days, so weekends ticked the counter and Saturday fired the 3-day nag. Fix: switched the default (non-paused) branch from `calendarDaysBetween` to `businessDaysBetween` (matches the Hold/Pending-Repairs/Pending-Information/Rough-Numbers branch that was already business-days). Also added an `isWeekendET(now)` early-return at the top of `runStatusRequests()` so the whole function skips with `{skipped:'weekend'}` on Sat/Sun — belt-and-suspenders. Thresholds unchanged (3/4/5 business days default, 10/1/1 for paused phases). Nag emails now pause over weekends and resume Monday without any Monday blast (the clock pauses, not just the sending).
+
+**Changed:**
+- `CLAUDE.md` — three new HARD RULES, updated migrations table, bumped ClaimWorkspace line-count, added subsystems/umpire/validator sections.
+- `src/components/claims-table.tsx` (large rewrite) — font-size, column widths, Days→Created Date column, new Assigned Date column, line-clamp-2 wrap, fixed row height, phase bubble, column reorder, header overlap fix.
+- `src/components/claim/phase-selector.tsx` — `size="lg"` variant switched to `rounded-md` stacked bubble with `min-h-[48px]`.
+- `src/components/claim/ClaimLabelPills.tsx` — "Rough Numbers" display → "Rough" (tooltip keeps full text).
+- `src/lib/status-requests/run.ts` — early-return weekend guard + business-day accounting for the default nag branch + updated inline comments. `calendarDaysBetween` import removed (function still exists in `src/lib/business-days.ts`, just unused in run.ts now).
+- `docs/scraper-*.md` (4 files) — scraper-related prompts for the SEPARATE `C:\XSFA\comp-scraper` project. Added during a long diagnostic/planning tangent, then deleted at session end at Henry's request (not HAMS-related, don't belong in this repo).
+
+**Deploy status:** Live. Final deploy: `dpl_7tiLpMqjWyvHGj8Xpz9EEZfPQbzJ` (`modern-tools-b6bh1hhvb-henry-as-projects-88caed67.vercel.app`), alias confirmed on `www.hamsportal.com`. Rollback to the pre-weekend-fix state: `npx vercel promote https://modern-tools-640nwhwxx-henry-as-projects-88caed67.vercel.app --scope henry-as-projects-88caed67 --yes` (dpl_Bhvt6S5wAdpW8g5wUkBpozTTZKK2).
+
+**In progress / broken / unknowns:**
+- Four Supabase migrations still flagged for Henry to run manually (unchanged from yesterday's entry): `migration-tickets-number.sql`, `migration-tickets-free-subject.sql`, `migration-activity-ticks-and-sessions.sql`, `migration-claim-proceeded-to-umpire.sql`. Code tolerates pre-migration state in every path.
+- Weekend-safe status requests: the cron will next fire Sunday 14:00 UTC and will skip with `{skipped:'weekend'}`. First real run under the new business-day rules is Monday morning. Worth confirming Monday's email volume is lower / more reasonable than Saturday was.
+- Comp-finder design conversation (nationwide + server-side distance filter for the downgraded MC plan) is paused. Henry explicitly said "no don't do anything in HAMS, I just wanted to discuss first." No code changes landed. See `scripts/comp-tester.mjs` + `comp-tester.html` — standalone localhost testing tool that still exists in the repo (HAMS-adjacent: tests HAMS's own `/api/acv/search-comps` endpoint).
+
+**Next:**
+1. Monitor Monday morning for the first business-day-cadence nag run. Confirm email count is reasonable vs. the weekend blast.
+2. Nudge Henry on the four pending migrations if the related features start getting user traffic.
+3. If / when Henry revives the comp-finder design conversation, implement the "nationwide + haversine distance filter + lazy early-stop pagination" strategy we scoped (notes in session transcript, not in code).
+
+---
+
+## 2026-10-16 — Dashboard redesign + tickets v2 + umpire tracking + stage-alerts routing fix
+
+**Worked on:** Multi-topic session, bundled by rapid context switches from Henry. Themes:
+1. **Ticket system v2** — user-facing ticket history, draggable floating launcher, compact rows, Open/Resolved sub-tabs, reopen-escape-hatch, ticket numbers (`#1234`), free-text subjects.
+2. **Claim-level Umpire tracking** — `proceeded_to_umpire` + `umpire_agreement` columns, phase sync, "Award Amount → Umpire Ruling Award" rename, Settlement Analytics filter. UI iterations: big SectionCard → pill → left-side mini-card (final).
+3. **Create Claim validator** — VIN must be 17 chars (skipped on Specialty), Ins. Co. Offer + Opposing Appraiser required for ACV/DV/Est (bypassed on rough-numbers). Live `⚠ Missing:` helper next to the button.
+4. **Workflow buttons redirect to origin dashboard tab** — Advance / Submit / Complete Report / Send Back / Complete / Cancel all now `router.push('/?tab=${previousStage}')`. Reopen is a deliberate exception.
+5. **Stage-alerts per-client override bug** — Henry's "claim solution" → Maeli override never fired because the DB has three spellings (`CLAIMSOLUTION`, `ClaimSolution Inc.`, `Claim Solution`). New `normalizeCompanyKey` helper collapses all to the same bucket; resolver scans legacy keys for back-compat.
+6. **Dashboard column redesign** — body font 15→14 (VIN kept at mono text-xs), `Days` column → `Created Date` (actual MM/DD/YY, no more ticking), new `Assigned Date` column (reads existing `assigned_at`), shrunk widths with `line-clamp-2` wrap for consistent 72px row height, phase cell switched from oval pill to rectangular bubble (`rounded-md`) with label on line 1 and age stacked on line 2, columns reordered to **State → Labels → Ins. Co. → Created Date → Assigned Date → Assigned To → Phase**. "Rough Numbers" label shortened to "Rough" to fit the Labels column.
+7. **Messages tab tinted** — `bg-gray-50` on the thread area so white message cards sit on a subtle contrast instead of blending into the parent card.
+8. **Floating ticket launcher cleanup** — Y/N toggle inside Umpire card is iOS-style blue slider (not the orange Y/N buttons I first shipped).
+
+**Changed:**
+- `supabase/migration-tickets-number.sql` + rollback (NEW) — `tickets.number` short ID + sequence + backfill. Flagged for Henry.
+- `supabase/migration-tickets-free-subject.sql` + rollback (NEW) — drops the fixed-enum CHECK on `tickets.subject` so subjects are free-text (≤120 char). Flagged for Henry.
+- `supabase/migration-claim-proceeded-to-umpire.sql` + rollback (NEW) — adds `acv_history.proceeded_to_umpire` + `umpire_agreement` booleans with backfill (existing umpire-phased claims get the flag). Flagged for Henry.
+- `src/app/api/tickets/route.ts` — added GET endpoint for user's own tickets (RLS does the filter), POST returns `{ ok, number }` so client shows "Ticket #1234" on success.
+- `src/app/api/tickets/[id]/reopen/route.ts` (NEW) — submitter-only reopen of a resolved/dismissed ticket. Preserves admin's resolution note so admin sees "status=open + resolution_note set" = reopened signal.
+- `src/app/api/admin/tickets/[id]/route.ts` — unchanged, used by admin to patch status/note.
+- `src/lib/supabase/tickets.ts` — switched `subject` to free-text `string` (was `TicketSubject` enum). Added `number`, `MAX_TICKET_SUBJECT_LEN`, `SUGGESTED_TICKET_SUBJECTS` (placeholder only).
+- `src/components/henry-floating-launcher.tsx` — rewritten: draggable to any corner (localStorage persisted), two tabs (Submit / My tickets), compact rows (~30px each), Open/Resolved sub-tabs with count badges, click-to-expand description + resolution note, "Not actually fixed — reopen" button, 30s auto-refresh. Fixed-size popover with max-h-480px scrollable list.
+- `src/app/admin/settings/tickets/tickets-client.tsx` — shows `#N` prefix on each ticket + "Reopened by user" amber pill when status=open AND resolution_note is set.
+- `src/components/claim/ClaimLabelPills.tsx` — shortened "Rough Numbers" label → "Rough" to fit Labels column; full text stays in tooltip.
+- `src/app/api/claims/[id]/umpire/route.ts` (NEW) — admin OR assigned appraiser can toggle `proceeded_to_umpire` + `umpire_agreement`. Auto-phases to `umpire` or `court_umpire`; clears phase when flipped off.
+- `src/app/api/claims/[id]/phase/route.ts` — when admin manually changes phase via dropdown, syncs `proceeded_to_umpire`/`umpire_agreement` to match (true + agreement=true for umpire, true + agreement=false for court_umpire, false otherwise). 42703/PGRST204 fallback strips umpire cols pre-migration.
+- `src/app/api/admin/settlement-analytics/route.ts` — passes `proceededToUmpire` per row, 42703 fallback for pre-migration.
+- `src/app/admin/settings/settlement-analytics/settlement-analytics-client.tsx` — new "Exclude umpire claims" checkbox next to the Ins. Co. filter.
+- `src/lib/supabase/history.ts` — added `proceededToUmpire` + `umpireAgreement` to `ACVHistoryEntry` type + `rowToEntry` + `colsFull`; defaults safely pre-migration.
+- `src/components/claim/ClaimWorkspace.tsx` (large) — added umpire state + `onUmpireChange` handler, Umpire mini-card in header (left mirror of Negotiating Appraiser card, gated to ACV/DV/Est/Specialty claim types), "Umpire Ruling Award" label rename in Closing Notes + Summary, Vehicle Location "Same as owner" button, Create Claim required-fields validator with live `⚠ Missing:` helper, all workflow buttons (handleAdvance, handleCompleteReport, runWorkflow for submit+approve, sendBackTo) now redirect to `/?tab=${previousStage}`.
+- `src/components/claims-table.tsx` (large) — Dashboard redesign: `text-[15px]` → `text-[14px]`, Days column → Created Date column, new Assigned Date column (admin only, reads `assigned_at`), shrunk column widths (~1836 → ~1450 px total), `line-clamp-2 break-words` wrap on Owner/Client/Vehicle/Ins. Co./Assigned To, fixed `h-[72px]` rows, phase cell switched to stacked `rounded-md` bubble with `min-h-[48px]`, reordered to Ins. Co. → Created Date → Assigned Date → Assigned To → Phase. Internal sort key `daysOpen` renamed to `created`; sort compare uses `createdAt` ISO string. Phase header `whitespace-nowrap` + `px-4` for consistent spacing.
+- `src/components/claim/phase-selector.tsx` — `size="lg"` variant switched from `rounded-full` pill to `rounded-md` stacked bubble with `min-h-[48px]`. `size="sm"` (claim workspace toolbar) unchanged.
+- `src/components/claim/messages-tab.tsx` — stripped all hyperlinks: deleted `LinkifiedBody` + `isLikelyHtml` dispatch, single `MessageBody` renderer runs everything through DOMPurify with `<a>` removed from `ALLOWED_TAGS`. Added `bg-gray-50` tint to the thread container so white message cards contrast.
+- `src/lib/email/claim-notifications.ts` — `resolveAdminFromMapOrDefault` uses `normalizeCompanyKey` and scans legacy map keys for back-compat. `getSubmissionAdminForClaim` refactored to use shared resolver (was duplicated).
+- `src/lib/company-match.ts` — new `normalizeCompanyKey` helper (= `normalizeCompanyName` + strip whitespace); fixes per-client routing matching across `Claim Solution` / `CLAIMSOLUTION` / `ClaimSolution Inc.` variants.
+- `src/app/admin/settings/notifications/notifications-client.tsx` — `persistOverrides` normalizes saved keys with `normalizeCompanyKey`.
+- `src/hooks/use-user-dashboards.ts` — swapped `All` and `New Assignments` order; `All` is now first + default landing tab for admins.
+- `src/app/api/claims/[id]/reopen` references + flow — not touched this session; left as-is.
+- `CLAUDE.md` — added three HARD RULES (pre-migration DB tolerance, `normalizeCompanyKey` for client matching, workflow buttons redirect to origin tab), updated migrations table, bumped stale ClaimWorkspace line count (3600 → ~6800), added Cross-cutting subsystems / Umpire tracking / Claim-creation required-fields sections.
+
+**Deploy status:** Live. Final deploy: `dpl_Bhvt6S5wAdpW8g5wUkBpozTTZKK2` (`modern-tools-640nwhwxx-henry-as-projects-88caed67.vercel.app`), alias confirmed on `www.hamsportal.com`. Instant-reverse command to roll back to the dashboard-redesign-era UI (post-ticket, post-umpire, pre-dashboard-redesign): `npx vercel promote https://modern-tools-k38e9m33i-henry-as-projects-88caed67.vercel.app --scope henry-as-projects-88caed67 --yes`.
+
+**In progress / broken / unknowns:** Four migrations flagged for Henry to run manually in Supabase SQL editor — may still be pending:
+- `supabase/migration-tickets-number.sql` — adds `#N` numbers; UI tolerates null `number` so ticket submission still works pre-migration.
+- `supabase/migration-tickets-free-subject.sql` — drops the fixed-enum CHECK on `tickets.subject`; without it, custom subjects fail at insert with a CHECK violation.
+- `supabase/migration-activity-ticks-and-sessions.sql` — unlocks hourly chart + session stats + Online Now roster.
+- `supabase/migration-claim-proceeded-to-umpire.sql` — unlocks umpire toggle (currently returns 503 "migration pending" via the dedicated endpoint if run before the migration lands).
+
+Also: the Messages queue page (`/messages`) has its own inline table with different columns (no Days/Phase/Assigned Date) — did NOT update it in the dashboard redesign. Henry's "ALL DASHBOARDS" ask was interpreted as "every table that uses `<ClaimsTable>`" (main dashboard, All Claims, lockout dashboard, every tab, every appraiser account) — the messages queue was out of scope since its schema doesn't match. If Henry wants that table modernized too, needs a separate pass.
+
+**Next:**
+1. Confirm Henry ran the four pending migrations (ticket numbers, free-text subjects, activity ticks + sessions, umpire tracking).
+2. If he wants the Messages queue (`/messages`) table normalized to the dashboard's font/row style, do a scoped pass on `src/app/messages/messages-queue-client.tsx`.
+3. Watch for any report of header overflow at narrower viewports — the 14px font + shrunk column widths target ~1400px viewports; smaller displays may still scroll.
+4. If Henry wants the "Submitted" column (only shown on certain tabs) to also pick up the new date-column styling, verify it still fits with the reorder.
+
+---
+
+## 2026-10-15 — Activity tracking: ticks + sessions + per-user charts
+
+**Worked on:** Henry asked for the activity page to replace the hand-rolled daily bars with proper charts, show hours per day, average session length, and a "when during the day" view, plus an audit of flaws in the current heartbeat tracking. He explicitly rejected an explicit login-event table ("I rather start tracking at 7:30 if they don't do anything until 7:30") — implicit start on first heartbeat is the design.
+
+**Changed:**
+- `supabase/migration-activity-ticks-and-sessions.sql` (NEW) — adds `user_activity_ticks (user_id, tick_minute)` and `user_sessions (id, user_id, started_at, ended_at, active_seconds)` with RLS (super-admin SELECT, service-role writes).
+- `supabase/migration-activity-ticks-and-sessions-rollback.sql` (NEW) — matching rollback.
+- `src/app/api/activity/heartbeat/route.ts` — after the existing daily CAS, now inserts a tick row (ON CONFLICT 23505 swallowed) and extends the latest session or opens a new one when the gap > `SESSION_GAP_MS` (5 min). Race-safe via `.select('user_id')` to detect lost CAS.
+- `src/components/activity-heartbeat.tsx` — `IDLE_MS` 2 min → 5 min to match server-side session gap. Long emails / PDF reviews stopped under-counting activity.
+- `src/app/api/activity/summary/route.ts` — adds `avgSessionSeconds` + `sessions30d` per user over the last 30 days. Gracefully returns null fields when `user_sessions` doesn't exist yet (42P01).
+- `src/app/api/activity/summary/[userId]/route.ts` — accepts `?date=YYYY-MM-DD`, returns `days`, `sessions` (last 30d), and minute-granularity `ticks` for the requested LA calendar day.
+- `src/app/admin/settings/activity/[userId]/user-activity-client.tsx` — rewritten with recharts `BarChart` for "Hours per day" (30d/90d toggle) + "When during the day" hourly chart (date picker). Session stat cards: Sessions / Avg session / Longest session. Recharts v3 Tooltip typing worked around with `(v: unknown) => ... as never` casts.
+- `src/app/admin/settings/activity/activity-client.tsx` — new "Online Now" roster at the top (users whose last heartbeat landed within 2 min), new "Avg Session (30d)" column, 60s auto-refresh.
+- `package.json` / `package-lock.json` — added `recharts`.
+
+**Deploy status:** Live. `dpl_6s3J9hHdBVjknkXhxguNjHvRaMF9` → `modern-tools-10701zcgg-henry-as-projects-88caed67.vercel.app`, alias confirmed on `modern-tools-rho.vercel.app`. Rollback: `npx vercel promote https://modern-tools-4n5jvjr6r-henry-as-projects-88caed67.vercel.app --scope henry-as-projects-88caed67 --yes`.
+
+**In progress / broken / unknowns:** Henry must run `supabase/migration-activity-ticks-and-sessions.sql` in the Supabase SQL editor before new UI panels (hourly timeline, session stats, online-now) populate — until then the queries hit 42P01 and the APIs return empty / nulls so the page stays alive. Everything else (daily totals + hours-per-day chart) uses the existing `user_activity_daily` table and will work immediately.
+
+**Next:** confirm Henry ran the migration; verify a day of real ticks shows the hourly chart filling in; then revisit the remaining heartbeat flaws (DST handling for cross-boundary sessions, dedup across tabs is server-side CAS only — not a problem but worth documenting).
+
+---
+
+## 2026-10-14 — Submission routing: client autocomplete
+
+**Worked on:** Henry asked that the per-client override input on Admin → Settings → Notifications → Submission routing suggest clients as he types so he can't accidentally mistype a client name.
+
+**Changed:**
+- `src/app/admin/settings/notifications/notifications-client.tsx` — added `fetchAllClients` fetch at the parent, piped `clients` prop into `SubmissionTab`, replaced the free-text `<input>` for each row's Client name with a new `ClientNameAutocomplete` subcomponent. Dropdown shows up to 8 matches (case-insensitive substring on client name), arrow-keys + Enter to pick, Esc to dismiss, click to pick. Hides when the typed value exactly matches an existing client. Still allows free-text if no match (so legacy / off-table client names continue to work — the key is still normalized to `trim().toLowerCase()` on persist, matched against claim.client case-insensitively).
+
+**Deploy status:** Live. Hotfix deploy `dpl_325v8TtmhhiJJDdLin1SK9SbSMKY` — `modern-tools-cvtn6aauc-henry-as-projects-88caed67.vercel.app`. Alias verified. (Previous deploy `dpl_GSNR5CmGg2eeQnS6ojsbY2LH3qK2` had the autocomplete logic correct but the dropdown was clipped by the row list's `overflow-hidden` parent — fixed by switching the dropdown to `position: fixed` anchored to the input's bounding rect. Also: open-on-focus now shows all 8 clients even with an empty query, and a "no matching client — will save as free-text" hint renders when the typed string doesn't match.) Rollback: `npx vercel promote https://modern-tools-eui3fdkiq-henry-as-projects-88caed67.vercel.app --scope henry-as-projects-88caed67 --yes`.
+
+**In progress / broken / unknowns:** None.
+
+**Next:** Nothing queued for this feature.
+
+---
+
+## 2026-10-14 — Closing Notes: notesType-aware value field + Repair Shop Value on Claim Info + editable preview
+
+**Worked on:** Henry reported that on estimate dispute claims, the OA Value and MA Value entered on Claim Info weren't showing up in Closing Notes. He also wanted a new "Repair Shop Value" field on Claim Info (linked to the same field in Closing Notes) and the ability to manually edit the Closing Notes preview text at the bottom. All three in one shot.
+
+**Changed:**
+- `src/components/claim/ClaimWorkspace.tsx` (Closing Notes "Our Appraised Value" input, ~line 2854) — the input was unconditionally bound to `notesData.maValueNum`, which meant estimate disputes (whose MA Value lives in `notesData.estValueNum`) and DV claims (where it lives in `notesData.dvValueNum`) showed a blank/stale value here. Now the input is notesType-aware: reads/writes `estValueNum` for `estimate`/`estimate-umpire`, `dvValueNum` for `dv`/`dv-umpire`, and `maValueNum` for ACV. Display falls back to `maValueNum` for legacy claims that stored their value there before the typed-specific fields existed; new writes go to the typed field.
+- `src/components/claim/ClaimWorkspace.tsx` (Claim Info Valuations block, ~line 5762) — added a "Repair Shop Value" InlineEditCurrency row that renders when `showEst` is true (claim type includes `estimate`). Binds to `reportsState.notesData.repairShopAmountNum`, the same field already edited inside the Closing Notes "Repair Shop" section, so changing either place keeps both in sync. Narrative already references this amount via `buildNotesComments`, so no PDF changes needed.
+- `src/components/claim/ClaimWorkspace.tsx` (Closing Notes preview, ~line 2982) — replaced the read-only `<div>` with an editable `<textarea>` bound to a new optional field `notesData.commentsOverride`. When the user types in it, their text is stored in `commentsOverride` and used verbatim for both the on-screen preview and the printed PDF narrative. A "Reset to auto" button appears when the override is non-empty — clearing it falls back to the auto-built narrative (so future field edits start flowing back in). The field is optional on the type for legacy-row deserialization safety.
+- `src/components/claim/ClaimWorkspace.tsx` (ReportsState / `defaultReportsState`, ~lines 1928, 1986) — added `commentsOverride?: string` to the `notesData` type, defaulted to `''` on new claims.
+- `src/components/claim/ClaimWorkspace.tsx` (`downloadNotesPdf`, ~line 2191) — renamed the auto-built narrative local to `autoComments`, then set `const comments = commentsOverride.trim().length > 0 ? commentsOverride : autoComments` so the printed PDF honors the user's manual edits.
+
+**Save flow:** unchanged. `notesData` already auto-saves to `reports_state` jsonb on every change via the existing `onReportsStateChange` → debounced `saveACVHistory` path; the new `commentsOverride` field just rides along in that same JSONB blob.
+
+**Printed PDF:** unchanged for everyone who hasn't edited the preview (auto-built narrative is the default). Users who edit the preview get their verbatim text printed instead — the PDF filler itself (`generate-notes-pdf` + `notes-pdf-filler.ts`) takes `comments` as a string so no backend changes needed.
+
+**Deploy status:** Live. `dpl_94Gd8zLaT2BBXc3XGkBaKXR6p57V` — `modern-tools-ak90el6sd-henry-as-projects-88caed67.vercel.app`. Rollback: `npx vercel promote https://modern-tools-c7nwxuiyn-henry-as-projects-88caed67.vercel.app --scope henry-as-projects-88caed67 --yes`.
+
+**In progress / broken / unknowns:** None known. Legacy rows that stored a DV/Est value under `maValueNum` keep rendering correctly via the fallback-to-maValueNum display logic; the first new edit on such a claim writes to the typed-specific field going forward.
+
+**Next:** Henry retests estimate-dispute claims — Repair Shop Value on Claim Info should round-trip into Closing Notes, and preview edits should carry into the printed PDF.
+
+---
+
+## 2026-10-14 — Documents ZIP download: picker-first fix + MA#-folder.zip filename + empty-zip guard
+
+**Worked on:** Henry reported selecting documents on a claim, clicking Download, and getting no zip file. Classic Chrome user-gesture-expiry bug: the previous `downloadZip` fetched every doc, built the archive, and only then called `showSaveFilePicker` — by that time Chrome has invalidated the activation and the picker throws (silently in some cases), and the anchor fallback also no-ops without a fresh gesture. Project already had a `saveFilePickerFirst` helper for exactly this pattern (used by every PDF print path); Documents never adopted it. After the picker-first ship Henry reported two follow-ups: (1) the zip filename should be `MA#-folder.zip` so his team can tell claims apart in a crowded Downloads folder, and (2) the zip he DID get was empty inside — some fetches were silently failing and we were still writing a 0-entry zip over the picked handle.
+
+**Changed:**
+- `src/components/claim/documents-tab.tsx` — split the old `downloadZip` into a pure `buildZipBlob(docs)` that returns `{ blob, errors }` without touching the disk. Added a `runZipDownload` helper that wraps `saveFilePickerFirst(name, 'application/zip', 'zip', fetchBlob)` so the OS Save-As dialog opens on the live click gesture, the fetch + zip runs after the user has chosen a folder, and the resulting blob is written to the picked handle. On Firefox / Safari where the picker API isn't present, it falls through to the anchor-download fallback. New `maNumber` prop on DocumentsTab drives the filename as `${maNumber}-folder.zip` (falls back to claimId for brand-new unassigned-MA claims). Fetch failures are now (a) surfaced in a readable UI error ("N documents missing from zip: foo, bar, baz…") and (b) **throw before `saveFilePickerFirst` ever writes** when every doc failed — prevents the empty-zip-overwrite bug on the user's picked destination.
+- `src/components/claim/ClaimWorkspace.tsx` — pass `maNumber={claim.maNumber}` through to DocumentsTab.
+
+**Deploy status:** Live. `dpl_HUbrsgewYYkovpRUNnUfQ7tQvz7q` — `modern-tools-aug78skk3-henry-as-projects-88caed67.vercel.app`. Rollback: `npx vercel promote https://modern-tools-1m08bjmv5-henry-as-projects-88caed67.vercel.app --scope henry-as-projects-88caed67 --yes`.
+
+**Follow-up (same day):** Henry reported the file was correct but if he opened the Downloads folder BEFORE HAMS finished fetching, the zip appeared empty — Chrome's file-system-access picker creates a 0-byte file at save-confirm time, and the ~500ms-per-doc serial fetches gave him a wide window to beat it. Parallelized `buildZipBlob` with `Promise.all` (phase 1: fetch all signed URLs + file bytes in parallel; phase 2: build zip from the collected buffers). 10-doc zips now complete in roughly network-single-file time instead of 10×. Deploy `dpl_HgcA7pgvBcMdeN7AFMSRN1pi5bLb` — `modern-tools-c7nwxuiyn-henry-as-projects-88caed67.vercel.app`. Rollback: `npx vercel promote https://modern-tools-aug78skk3-henry-as-projects-88caed67.vercel.app --scope henry-as-projects-88caed67 --yes`.
+
+**In progress / broken / unknowns:** Single-file download (`downloadOne` + `saveBlob`) still uses the legacy pattern. For one file the fetch is usually fast enough that the gesture doesn't expire, so it probably works, but it has the same latent bug class. Leave for now; swap to `saveFilePickerFirst` next time Documents gets touched.
+
+**Next:** Henry retests the ZIP download. If it works, close this out.
+
+---
+
+## 2026-10-14 — ClientPicker save-on-blur bug + CSV reconciliation (dry-run only)
+
+**Worked on:**
+- Henry lost an hour of client-info edits because the ClientPicker&apos;s typed query lived in local component state and only propagated to the parent claim via explicit commit paths (click a dropdown match, press Enter, or click "Use typed text"). Blurring the input discarded the typing. Shipped a fix.
+- Henry sent a 139-row CSV of current claims (Current-Claims26-10-14.csv) and asked for reconciliation against HAMS: fill missing client info, map CSV ass_type → HAMS claimTypes, flag claims only in one side, flag phase mismatches. Wrote `scripts/reconcile-csv.mjs` and ran dry-run — holding writes pending Henry&apos;s review of concerning flips.
+
+**Changed:**
+- `src/components/claim/client-picker.tsx` — added `onBlur` handler on the input: if the user typed non-empty text and focus is leaving the picker (relatedTarget outside wrapRef), commit as free-text via `useAsFreeText(typed)`. Mirrors the existing Enter-key behavior. Skips the commit when focus moves to a dropdown item inside wrapRef (those paths commit themselves). Comment calls out the 2026-10-14 Henry incident so future-me doesn&apos;t revert this.
+- `scripts/reconcile-csv.mjs` (NEW) — reads a claims CSV, matches by MA# (assignment_id ↔ ma_number), fills HAMS claim.clientName / claim.insuranceCompany where empty, maps ass_type to claimTypes, and reports phase mismatches / orphans both ways. Dry-run default; `--commit` applies updates. RFC-4180 CSV parser inlined.
+
+**Deploy status:** Save fix live. `dpl_FUKJQVucy3N7ZyyydvRTag3NRidR` — `modern-tools-p8x9isvun-henry-as-projects-88caed67.vercel.app`. Rollback: `npx vercel promote https://modern-tools-co9ozwg1d-henry-as-projects-88caed67.vercel.app --scope henry-as-projects-88caed67 --yes`.
+
+**In progress / broken / unknowns:** CSV reconciliation **not committed yet** — awaiting Henry&apos;s review. Report lives at `csv-reconcile-report.json`. Summary of findings presented in-chat. Specific concern: 24 of the 50 claim-type updates flip `[estimate]` → `[acv]` because CSV says "Auto", which could wrongly drop an active estimate-dispute flag if the CSV is stale. Need Henry&apos;s call.
+
+**Next:**
+- Henry reviews the dry-run findings; if approved, run `node scripts/reconcile-csv.mjs <csv-path> --commit`.
+- 9 CSV MA#s not in HAMS — Henry decides whether to create those claims in HAMS or ignore.
+- 23 HAMS open claims not in CSV — Henry decides whether they should be closed or stay open.
+- 1 unknown ass_type ("Exotic") on MA 3927165 — Henry says what to map it to.
+- 1 unmapped CSV phase ("Waiting for Court Appointed Umpire") on MA 3915946 — Henry decides whether to add a new HAMS status phase or map to court_umpire.
+
+---
+
+## 2026-10-14 — Lockout: locked claim is read-only except Messages
+
+**Worked on:** The status-lockout gate already blocks the dashboard and all non-overdue claims when an appraiser goes 5+ business days silent, but inside the overdue claim they could still do anything (upload photos, run reports, edit claim info, submit). Henry wants the locked claim to be strictly view-only except for Messages — appraiser must post a status in Messages to unlock, nothing else.
+
+**Changed:**
+- `src/components/claim/ClaimWorkspace.tsx` — new optional `isLockedForMe` prop. When true, folds into the existing `readOnly` flag so the fieldset wrapping every tool/edit tab (step 1..12, 14..21) is disabled, which transparently turns off every input, select, textarea, and button inside. Messages (step 13) stays live because it&apos;s already rendered OUTSIDE the fieldset. Added a red banner at the top of the workspace explaining the state. Zero line-by-line disabling needed — the fieldset wrapper + existing read-only auto-save gate already handle every control.
+- `src/app/claims/[id]/page.tsx` — compute `isLockedForMe = lockout.isLocked && lockout.overdueClaimIds.has(id)` and pass to ClaimWorkspace. Admins never see this (getLockoutStateForUser returns EMPTY for admin + super_admin).
+- `src/lib/auth/require-claim-access.ts` — second optional arg `{ allowOnLockedClaim?: boolean }`. New rejection branch: when the target claim has `status_lockout_at` set and the route didn&apos;t opt in, non-admin writes get 423. Keeps the pre-existing "user has OTHER locks and this claim isn&apos;t locked → 423" dashboard-lockdown logic intact.
+- `src/app/api/claims/[id]/messages/route.ts` (GET + POST), `messages/[messageId]/route.ts`, `messages/read/route.ts`, `auto-message/route.ts` — all four pass `{ allowOnLockedClaim: true }`. POST is the specific action that unlocks the claim (via the existing `clear_status_lockout_on_appraiser_message` DB trigger). Auto-message bypasses because it&apos;s the parser-pdf system note path, not an appraiser action.
+
+**Deploy status:** Live. `dpl_2wwdJmPmyJphcDFhAihRzWovAphD` — `modern-tools-co9ozwg1d-henry-as-projects-88caed67.vercel.app`. Rollback: `npx vercel promote https://modern-tools-enf4x6zej-henry-as-projects-88caed67.vercel.app --scope henry-as-projects-88caed67 --yes`.
+
+**In progress / broken / unknowns:** The client-side `saveACVHistory` writes to Supabase directly via RLS, not through an API route — the fieldset disables the inputs so a user can&apos;t trigger a save, but a motivated appraiser with DevTools could still POST to Supabase directly to patch the claim JSON. The threat model is UX nudge, not air-tight access control; adding a trigger-level check for `status_lockout_at` on acv_history UPDATE is a straightforward follow-up migration if Henry wants belt-and-suspenders.
+
+**Next:** If Henry wants the belt-and-suspenders DB enforcement, extend `acv_history_appraiser_guard` to raise when the row has `status_lockout_at` and the caller isn&apos;t admin.
+
+---
+
+## 2026-10-14 — Dashboard "Insured" column → "Owner" + ownerName backfill
+
+**Worked on:** Dashboard was showing `insuredName` under an "Insured" column. Henry wants the column to be "Owner" (sourced from `claim.ownerName`), with every claim backfilled to have a non-empty `ownerName` so the dashboard always shows a name.
+
+**Changed:**
+- `scripts/backfill-owner-name.mjs` (NEW) — dry-run / --commit script. Scans every row in `acv_history`, sets `claim.ownerName = ownerName || insuredName || claimantName` on rows where `ownerName` was empty. Preserves all other `claim` JSONB fields byte-for-byte via spread. service_role short-circuits the `acv_history_appraiser_guard` trigger so no trigger disable needed.
+- `src/components/claims-table.tsx` — column header `Insured` → `Owner`; internal SortCol literal `insured` → `owner`; cell + sort key now read `ownerName || insuredName || claimantName` (fallback preserves display even if a future row lands with no owner).
+- `src/lib/claim-search.ts` — `buildSearchable` now pushes `ownerName` and `claimantName` into the haystack (previously only `insuredName`), so dashboard search still finds a claim by any of the three names.
+
+**Backfill result (prod, run 2026-10-14):** 702 rows scanned. 15 already had `ownerName` (left alone). 685 backfilled — 682 from `insuredName`, 3 from `claimantName`. 0 failed.
+
+**2 claims with no owner candidate (manual review needed — nothing to fall back from):**
+- `id=1791932315106-i47m6` MA# `555630`
+- `id=1789120165108-4f87e4` MA# `3956613`
+
+Both have no `insuredName`, no `claimantName`, and no `ownerName`. Dashboard will render `—` for the Owner column on these two until Henry sets a value in the Claim Info tab. Nothing broken — the UI fallback handles the empty case gracefully.
+
+**Deploy status:** Live. `dpl_CbvycVV8Qqr5GMErWAbE7TEjzCwH` — `modern-tools-enf4x6zej-henry-as-projects-88caed67.vercel.app`. Rollback: `npx vercel promote https://modern-tools-fezlb60d3-henry-as-projects-88caed67.vercel.app --scope henry-as-projects-88caed67 --yes`.
+
+**In progress / broken / unknowns:** None.
+
+**Next:** Henry fills in owner for the two flagged claims if those are legitimate open claims (vs. deliberately-empty test rows).
+
+---
+
+## 2026-10-14 — Merge Submission routing into Stage alerts + fix stale-closure save bug
+
+**Worked on:** Henry noticed the Submission routing tab duplicated what Stage alerts already does (notify people when a claim enters a stage) and asked to collapse the two tabs into one. Separately, per-client override rows weren&apos;t surviving a page refresh — a stale-closure bug where picking an admin saved an empty map because `setTimeout(commitRow, 0)` captured the pre-update `rows` snapshot.
+
+**Changed:**
+- `src/app/admin/settings/notifications/notifications-client.tsx` — removed the Submission routing tab, SubmissionTab, and RoutingSection. StagesTab now owns both watchers and per-client overrides. For each stage card, QC / Billing/Delivery / Payment also render a Per-client overrides sub-section with the same client-autocomplete + admin-select row UI (Main doesn&apos;t get overrides since there&apos;s no stage-transition point to key on). Watchers still save to `stage_entry_watchers`; per-client overrides save to `completion_admin_by_client` / `billing_admin_by_client` / `payment_admin_by_client` (same keys the server already reads).
+- `src/app/admin/settings/notifications/notifications-client.tsx` — stale-closure fix: `ClientNameAutocomplete.onCommit` signature changed from `() => void` to `(finalValue: string) => void`. The autocomplete now passes the finalized value (pick/Enter/blur) explicitly. StagesTab keeps `overrideRowsRef` synchronously mirroring state and persists via explicit `next` arrays computed inline, so a persist never reads a stale React snapshot.
+- No server-side changes. The server resolvers (`getSubmissionAdminForClaim`, `getBillingAdminForClaim`, `getPaymentAdminForClaim`) still fall back to the per-stage default admin keys (`completion_notification_admin_id` etc.) — those settings are now orphaned from the UI, but Henry&apos;s existing QC default admin keeps getting emails. Billing/Payment defaults were never configured so they&apos;re no-ops.
+
+**Deploy status:** Live. `dpl_7C7LzA5UUB4zkLSzizobqwWYH2EL` — `modern-tools-fezlb60d3-henry-as-projects-88caed67.vercel.app`. Rollback: `npx vercel promote https://modern-tools-7n10pux8s-henry-as-projects-88caed67.vercel.app --scope henry-as-projects-88caed67 --yes`.
+
+**In progress / broken / unknowns:** The per-stage default admin DB values are orphaned from the UI. If Henry ever wants to clear or change the QC default admin, I&apos;ll either add it back as a hidden "Default (legacy)" sub-field in the QC stage card, or add a one-shot clear button. Low priority — current QC default admin keeps working.
+
+**Next:** Nothing queued.
+
+---
+
+## 2026-10-14 — Submission routing: Billing/Delivery + Payment sections
+
+**Worked on:** Henry extended the Submission routing tab to also route Billing/Delivery and Payment stage transitions to a single designated admin per client. Previously only the appraiser-submit → QC transition had this; the Stage-alerts tab covers "many watchers" but not "one designated routing admin per client per stage."
+
+**Changed:**
+- `src/app/api/admin/site-settings/route.ts` — added 4 new allowed keys: `billing_notification_admin_id`, `billing_admin_by_client`, `payment_notification_admin_id`, `payment_admin_by_client`.
+- `src/lib/email/claim-notifications.ts` — added `getBillingAdminForClaim(clientName)` + `getPaymentAdminForClaim(clientName)` resolvers (per-client override → stage default), plus a shared `resolveAdminFromMapOrDefault` + small `readSettingString`/`readSettingClientMap` helpers. Added `notifyAdminStageAdvance({ claimId, adminId, actorName, stage })` which sends a stage-labeled "Advanced to X by Y" email with the standard claim detail block + open-claim link.
+- `src/app/api/claims/[id]/advance-workflow/route.ts` — after the existing `notifyStageEntry` watcher broadcast, resolves the per-client/default admin for `target === 'billing_delivery'` or `target === 'payment'` and fires `notifyAdminStageAdvance`. Pulls the actor name from `profiles` (name → email → "An admin"). QC stays owned by `/submit` (not advance-workflow) so no change there.
+- `src/app/admin/settings/notifications/notifications-client.tsx` — refactored `SubmissionTab` to pass `settings` + `patchSetting` down instead of pre-plucked props, then extracted the inner default-admin + per-client-rows block into a reusable `RoutingSection` subcomponent. Rendered three sections: "QC", "Billing / Delivery", "Payment". Each has its own default dropdown + autocomplete-powered per-client override list + Save state. Removed `overflow-hidden` from each section's row container (functionally unnecessary now that `ClientNameAutocomplete` uses fixed positioning).
+
+**Deploy status:** Live. `dpl_GuAPoLd9Ct1JZM2EMi8zrsSDYUm2` — `modern-tools-7n10pux8s-henry-as-projects-88caed67.vercel.app`. Alias verified. Rollback: `npx vercel promote https://modern-tools-cvtn6aauc-henry-as-projects-88caed67.vercel.app --scope henry-as-projects-88caed67 --yes`.
+
+**In progress / broken / unknowns:** None.
+
+**Next:** Possible gap — `/advance-workflow` main → qc (admin manually advancing a claim through QC rather than appraiser submitting) does NOT fire the submission-routing admin email. Only `/submit` does. If Henry ever reports "I advanced a claim to QC and the routing admin didn't get the email," add a `notifyAdminClaimSubmitted` call to the main→qc branch of advance-workflow.
+
+---
+
+## 2026-10-13 — Rough numbers workflow + `handlingAppraiser` → `negotiatingAppraiser` rename
+
+**Worked on:** Shipped the full rough-numbers workflow (per-claim toggle at creation, status phase that pauses cycle time, parked claim with configurable Rough Numbers inbox owner, two-stage submit so QC isn't polluted) and renamed `handlingAppraiser` → `negotiatingAppraiser` everywhere user-facing. Two deploys this session.
+
+Spec: `docs/superpowers/specs/2026-10-13-rough-numbers-workflow-design.md`
+Plan: `docs/superpowers/plans/2026-10-13-rough-numbers-workflow.md`
+
+### Deploy 1 — Rename (`dpl_6YiKDMYc2fbJic8o56PP3SCVzaMA`)
+
+- `src/lib/acv/types.ts` — `ClaimInfo.handlingAppraiser` → `negotiatingAppraiser`.
+- `src/lib/supabase/history.ts` — `rowToEntry` dual-reads legacy `handlingAppraiser` into `negotiatingAppraiser`. Safe to leave indefinitely; bridges the gap between code deploy and the manual jsonb-key migration.
+- `src/lib/supabase/profiles.ts` — `showInHandlingAppraiserList` TypeScript property → `showInNegotiatingAppraiserList`. SQL column stays `show_in_handling_appraiser_list` (not renamed in this phase; a column-rename migration can land separately).
+- `src/app/api/claims/[id]/complete-report/route.ts` — reads `negotiatingAppraiser` with dual-read fallback; error strings updated.
+- `src/app/api/claims/[id]/{assign,reopen,advance-workflow}/route.ts` — comments and local vars renamed; dual-read fallback on advance-workflow's last-ditch handling.
+- `src/app/api/admin/users/[id]/route.ts` — `showInNegotiatingAppraiserList` input/output.
+- `src/app/admin/settings/users/[id]/_tabs/permissions-tab.tsx` — permission label text + field key renamed.
+- `src/components/claim/ClaimWorkspace.tsx` — 28 token sites + the admin mini-card dropdown. Changed label to "Negotiating Appraiser," local vars renamed.
+- `src/components/claim/handling-appraiser-license-summary.tsx` → `negotiating-appraiser-license-summary.tsx` (git mv). Component renamed. Comments scrubbed.
+- `src/components/{claims-table,claim-search-button}.tsx`, `src/components/claim/{assignment-sheet,state-licensing-top-badge}.tsx` — token + label renames. Note: `assignment-sheet.tsx` keeps "Handling (Us)" vs "Opposing (IA)" as industry terminology — those labels describe sides, not the appraiser role.
+- `src/lib/{claim-search.ts,supabase/profiles.ts}`, `src/hooks/use-current-company-members.ts`, `src/app/api/companies/current/members/route.ts` — comments scrubbed.
+- `scripts/{preview-ev-acv.mjs,sync-claims-from-csv.mjs}` — identifier renames.
+- `supabase/migration-rename-handling-to-negotiating-appraiser.sql` + rollback (NEW) — disables the `acv_history_appraiser_guard` trigger around the UPDATE (SQL Editor runs as `postgres` role, which the guard would otherwise block — same workaround as commit `3a8c4ec`); renames the jsonb key; drops the now-obsolete `handlingAppraiser` check from the guard function (the field is metadata only in the new flow); re-enables the trigger.
+
+### Deploy 2 — Rough-numbers workflow (`dpl_7WGcpRRuvura7safq7iXU54i2Cw1`)
+
+- `supabase/migration-rough-numbers.sql` + rollback (NEW) — adds `acv_history.needs_rough_numbers` + `rough_numbers_handoff_at`, adds `clients.rough_numbers_default`, seeds `rough_numbers` status phase (color blue, `pauses_cycle_time=true`). All idempotent (`ADD COLUMN IF NOT EXISTS`, `ON CONFLICT DO NOTHING`).
+- `src/lib/supabase/clients.ts` — `Client.roughNumbersDefault` + mapping + updateClient patch + 42703 fallback (now a while-loop stripping any of `type_custom` / `rough_numbers_default`).
+- `src/lib/supabase/history.ts` — `ACVHistoryEntry.needsRoughNumbers` / `roughNumbersHandoffAt`; `rowToEntry` maps them; `saveACVHistory` writes `needs_rough_numbers` only (handoff timestamp is route-owned); 42703 regex extended; `colsFull` select extended.
+- `src/lib/supabase/site-settings.ts` — `SiteSettingsKey` is now `'rough_numbers_inbox_owner_id'`.
+- `src/lib/supabase/rough-numbers.ts` (NEW) — `getRoughNumbersInboxOwner()` + `setRoughNumbersInboxOwner()`.
+- `src/lib/email/claim-notifications.ts` — new `notifyRoughNumbersHandoff()` function; different subject/body than the QC submit email ("coordinate the client response" vs "QC review").
+- `src/app/api/claims/[id]/submit/route.ts` — new branch at the top: if `claim.needsRoughNumbers && !claim.roughNumbersHandoffAt`, apply the `rough_numbers` phase, reassign to the inbox owner, record a Main stage transition (phase pauses cycle time so span contributes zero), notify the owner. Does NOT set `submitted_at` or `workflow_stage` so the second submit falls through to today's QC code unchanged. Pre-migration state: both flags are undefined on `fetchClaim`'s return, so the branch guard evaluates false and today's QC path fires.
+- `src/lib/auth/require-admin.ts` — `WorkflowClaim.needsRoughNumbers` + `roughNumbersHandoffAt`; `fetchClaim` adds the two columns to `colsFull` with a cascade fallback for pre-migration.
+- `src/app/api/admin/site-settings/route.ts` — added `rough_numbers_inbox_owner_id` to `ALLOWED_KEYS` so the admin UI can write it.
+- `src/components/claim/ClaimWorkspace.tsx` — state `needsRoughNumbers`; effect that seeds the toggle from the picked client's `roughNumbersDefault` on new claims; `ClaimInfoForm` prop plumbing; new toggle row inside the Claim Information SectionCard (switch for new claims, read-only "Rough Numbers" pill for existing claims when the flag is on); `saveToHistory` wrapper's extras typed to include `needsRoughNumbers`; three call sites updated; autosave effect dep array extended.
+- `src/components/claim/ClaimLabelPills.tsx` — new `needsRoughNumbers` prop renders a blue "Rough Numbers" pill ahead of Supp/Revision/Specialty. Wired through `ClaimWorkspace`, `claims-table`, and `claim-search-button`.
+- `src/app/admin/settings/notifications/notifications-client.tsx` — new "Rough Numbers" tab (`RoughNumbersInboxTab`) renders an admin dropdown writing to `site_settings.rough_numbers_inbox_owner_id`.
+- `src/app/marketing/_components/client-drawer.tsx` — new per-client "Default to rough numbers for new claims" toggle below Notes, saves via existing `onSave('roughNumbersDefault', bool)` → `updateClient`.
+
+### Manual migrations (Henry runs these in Supabase SQL Editor)
+
+1. `supabase/migration-rename-handling-to-negotiating-appraiser.sql` — jsonb rename + guard function update. Idempotent.
+2. `supabase/migration-rough-numbers.sql` — new columns + status phase seed. Idempotent.
+
+### How the flow works end-to-end
+
+1. Admin creates a client in Marketing. Flips "Default to rough numbers for new claims" on for clients that want the parked path.
+2. Admin picks a Rough Numbers inbox owner in Admin → Settings → Notifications → Rough Numbers tab.
+3. Appraiser creates a claim. Picking a client auto-seeds the "Needs rough numbers?" toggle from the client's default; they can override.
+4. Appraiser does the ACV, posts rough numbers in Messages, hits Submit.
+5. Rough-numbers claim: branch fires → claim stays in Main, gets `rough_numbers` phase (cycle-time paused), reassigns to inbox owner, email sent. Does NOT go to QC.
+6. Inbox owner coordinates the client response:
+   - **Approved, no negotiation:** clear phase, hit Submit → QC.
+   - **Approved, negotiate:** clear phase, reassign to a negotiating appraiser → they work it → Submit → QC.
+   - **Declined:** close the claim.
+7. Non-rough claim: Submit works exactly like before — straight to QC.
+
+**Deploy status:** LIVE on hamsportal.com. Phase A deploy `dpl_6YiKDMYc2fbJic8o56PP3SCVzaMA`; Phase C+D deploy `dpl_7WGcpRRuvura7safq7iXU54i2Cw1`. Both verified.
+
+**Rollback URLs:**
+- To pre-Phase-A (if rename broke anything): `npx vercel promote https://modern-tools-ijqi9k18x-henry-as-projects-88caed67.vercel.app --scope henry-as-projects-88caed67 --yes` (then also run the rename rollback SQL).
+- To Phase-A-only (if rough-numbers broke anything): `npx vercel promote https://modern-tools-ghy2so5ct-henry-as-projects-88caed67.vercel.app --scope henry-as-projects-88caed67 --yes`.
+
+**In progress / broken / unknowns:**
+
+- **Git state is lagging.** Commit chain is still at `d7e78b3` (modernappraisers scaffold). Many Phase A rename files were never-committed Henry WIP from prior sessions, so a Phase-A commit would have swept in ~3,000 lines of unrelated work. Henry chose "option B" — skip the commit this session, deploy from local, catch git up on his own schedule afterward.
+- **Three deferred follow-ups from the spec's Open Questions** are still open: (a) where to put the inbox-owner setting long-term — went with Admin → Notifications tab for now; (b) whether to enforce that the Rough Numbers phase is cleared before the inbox owner's own Submit — not enforced in this ship; (c) optional dashboard count badge for parked rough-numbers claims — not shipped (the Rough Numbers pill in the row already distinguishes them).
+- **Column rename for `show_in_handling_appraiser_list`** deferred — only the TypeScript identifier renamed to `showInNegotiatingAppraiserList`. SQL column keeps its old name; a column-rename migration can land separately when there's appetite.
+
+**Next:** Catch git up, run the two manual migrations in the Supabase SQL Editor, then QA the full flow by creating a test rough-numbers claim end-to-end.
+
+---
+
+## 2026-10-13 — Whole-page drop zone + overlay indicator on document tabs
+
+**Worked on:** Follow-up to the earlier drag-indicator session. Henry wanted the drop zone to cover the entire Documents page (not just the Upload button), with an obvious indicator the moment a file is dragged over any part of it. Applied to all 3 document surfaces for consistency.
+
+**Changed:**
+- `src/components/claim/documents-tab.tsx` — switched `useDropzone` to `{ noClick: true, noKeyboard: true }` and destructured `open as openFilePicker`. Moved `{...getRootProps()}` from the little Upload button up to the outer tab `<div>` (now `relative space-y-6`). Upload button is now a plain `<button type="button" onClick={openFilePicker}>` with no dropzone wiring. Added overlay: when `isDragActive`, a full-tab absolute-positioned div renders a `bg-blue-500/10 outline-dashed outline-2 outline-blue-500 outline-offset-[-4px]` tint plus a centered blue "Drop files to upload" pill. `pointer-events-none` on the overlay so it never swallows the drop event.
+- `src/app/admin/settings/users/[id]/_tabs/documents-tab.tsx` — moved drag handlers from the inline flex row up to the outer `space-y-4 max-w-3xl` wrapper, which is now `relative` so the same overlay element can be positioned on top of the full tab.
+- `src/app/my-profile/my-profile-client.tsx` DocumentsTab — same restructure: handlers up to the outer wrapper + overlay element.
+
+**Design notes:**
+- The claim Documents tab uses `react-dropzone`'s `isDragActive`, which already handles dragenter/dragleave counting internally — so no flicker between child elements.
+- The two native-handler tabs (admin user docs, profile docs) keep the `!currentTarget.contains(relatedTarget as Node | null)` guard to avoid flicker when the pointer bounces over a child.
+- Only file drags trigger the indicator — `e.dataTransfer.types.includes('Files')` check filters out element/text drags.
+- Overlay style chosen to be unmissable: dashed inset blue outline + translucent blue tint + solid blue pill with Upload icon reading "Drop files to upload."
+
+**Not touched:**
+- CSV import boxes (marketing / admin data / admin guidelines) — already have a prominent dashed drop box; no change needed.
+- Claim-creation PDF upload row — small inline control alongside other form inputs; the existing inline ring is appropriate there.
+
+**Deploy status:** LIVE. `dpl_DmdYkpBgWb7xLWdd78G2u8Ti1gbE` → https://modern-tools-ijqi9k18x-henry-as-projects-88caed67.vercel.app. Aliases on hamsportal.com + modern-tools-rho.vercel.app verified. Rollback: `npx vercel promote https://modern-tools-dlgcm7cjj-henry-as-projects-88caed67.vercel.app --scope henry-as-projects-88caed67 --yes`.
+
+**In progress / broken / unknowns:** None. `npx tsc --noEmit` clean, `npm run build` clean.
+
+**Next:** Resume whatever Henry hands over.
+
+---
+
+## 2026-10-13 — Drag-and-drop visual indicator across all upload sites
+
+**Worked on:** Henry noticed drag-and-drop upload worked everywhere but there was no visual signal that it was accepting the file. Added a consistent "you're over the drop zone" indicator to all 7 drop targets.
+
+**Changed:**
+- `src/components/claim/documents-tab.tsx` — pulled `isDragActive` out of `useDropzone()` (was being discarded). Upload button now flips to blue (`border-blue-500 bg-blue-50 text-blue-700 ring-2 ring-blue-200`) and swaps label to "Drop to upload" while a file is over it. Dropped the stale "no visual indicator fires" comment.
+- `src/components/claim/ClaimWorkspace.tsx` — claim-creation PDF upload row. New `pdfDragOver` state + `onDragEnter` / `onDragLeave` handlers with the `!currentTarget.contains(relatedTarget)` child-bounce guard. Container gets `ring-2 ring-blue-500 bg-blue-50 ring-offset-2` + `rounded-lg` when dragging a file.
+- `src/app/marketing/import/import-client.tsx` — big dashed CSV drop box now flips border + bg to blue when dragging; icon and label text swap to blue + "Drop to upload CSV."
+- `src/app/admin/settings/data/data-client.tsx` — same inline-row ring treatment on the CSV import toolbar.
+- `src/app/admin/settings/guidelines/guidelines-client.tsx` — same inline-row ring treatment.
+- `src/app/admin/settings/users/[id]/_tabs/documents-tab.tsx` — admin user documents row, same treatment.
+- `src/app/my-profile/my-profile-client.tsx` — profile `DocumentsTab` row, same treatment.
+
+**Pattern used** (for the native-handler sites, 6 of 7):
+```
+onDragEnter: if dataTransfer.types.includes('Files') && !busy → setDragOver(true)
+onDragOver: preventDefault
+onDragLeave: if !currentTarget.contains(relatedTarget) → setDragOver(false)
+onDrop: preventDefault; setDragOver(false); existing logic
+```
+The `includes('Files')` filter means non-file drags (text, element reordering) don't trigger the highlight. The `contains(relatedTarget)` check prevents the flicker that bare `onDragLeave` causes when you drag over a child element.
+
+**Visual indicator:** blue (`ring-2 ring-blue-500 bg-blue-50 ring-offset-2` for inline rows; `border-blue-500 bg-blue-50` for the dashed CSV box; `border-blue-500 bg-blue-50 text-blue-700 ring-2 ring-blue-200` for the small Upload button on the claim Documents tab). Blue chosen deliberately — it's the HamsPortal primary action color per CLAUDE.md rule 6.
+
+**Deploy status:** LIVE. `dpl_9mW9X2CNwR76PqR1qj5uxdyVKMSt` → https://modern-tools-dlgcm7cjj-henry-as-projects-88caed67.vercel.app. Aliases on hamsportal.com + modern-tools-rho.vercel.app verified. Rollback: `npx vercel promote https://modern-tools-49wyawtr5-henry-as-projects-88caed67.vercel.app --scope henry-as-projects-88caed67 --yes`.
+
+**In progress / broken / unknowns:** None. All 7 drop zones carry the indicator. `npx tsc --noEmit` clean, `npm run build` clean.
+
+**Next:** Nothing follow-up on this item. Resume whatever Henry hands over next.
+
+---
+
+## 2026-10-12 — Marathon pt. 3: Award fallback, Referral type, contact-aware picker, required fields, handling-appraiser decouple, ACV close-gate, Summary PDF rebuild + logo flatten
+
+**Worked on:** Third session chunk of 2026-10-12 — follow-up polish and new behavioral rules on top of parts 1 & 2. Mostly surgical fixes driven by live use, plus a couple larger pieces (ClientPicker contact support, Summary PDF layout rewrite to match a reference printout, logo PNG inversion).
+
+**Changed (grouped by feature area):**
+
+### Award form — stop auto-filling ACV
+- `src/components/claim/ClaimWorkspace.tsx` — removed the live-value fallback in `awardValueDisplay`. The Award field now reads ONLY what the user explicitly typed into `awardData.acvAmountNum`. If blank, placeholder `$0.00` instead of silently showing live ACV / DV / Estimate. Settlement Analytics was already reading only the stored award value (no ACV fallback in that pipeline), so no behavior drift — just the display matches what the PDF actually prints.
+
+### Referral client type + contact-aware ClientPicker
+- `supabase/migration-clients-add-referral.sql` + rollback (new) — adds `'referral'` to `clients.type` check constraint. Idempotent. **Henry still needs to run this** before saving a Referral-type client won't 23514.
+- `src/lib/supabase/clients.ts` — new `'referral'` entry in `ClientType`, `CLIENT_TYPE_LABELS` ("Referral"), `SELECTABLE_CLIENT_TYPES`, and the defensive `knownTypes` list. New `searchClientsAndContactsByName()` returns a discriminated union of client matches + contact matches (contacts carry their parent `client` inline). New `ClientPickerMatch` export.
+- `src/app/marketing/_components/map-pane.tsx` + `src/app/marketing/marketing-client.tsx` — Referral pin / avatar styling (violet).
+- `src/components/claim/client-picker.tsx` — swapped `searchClientsByName` → `searchClientsAndContactsByName`. Dropdown now has two row styles: Building icon for companies, User icon for `Brandon @ Clear Counsel Law`-style contact rows. Picking a contact row sets both the company and the specific person. Signature of `onChange` extended from `(id, name)` to `(id, name, contactId, contactName)`. Lazy-fetches the contact name when a claim is loaded with an existing `contactId` so the input shows "Company - Person".
+- `src/lib/acv/types.ts` — added `clientContactId?: string | null` and `clientContactName?: string | null` to `ClaimInfo`. jsonb-nested on the claim; no DB migration required.
+- `src/components/claim/ClaimWorkspace.tsx` — ClientPicker usage passes `contactId`, handles the 4-arg onChange, writes all three fields in a single `onChange` so the auto-save sees a consistent snapshot. Read-only "Client Name" row in the Owner section now renders `${clientName} - ${contactName}` when a contact is attached. Dashboard column and top-of-claim "Client" chip unchanged (both still read `clientName` only, per Henry's spec).
+
+### Required-fields validation on Create Claim
+- `src/components/claim/ClaimWorkspace.tsx` — created `missingRequiredFields()` helper that returns labels for any missing of: **Owner Name**, **VIN**, **Insurance Company**. `createClaim` runs the check first and surfaces a red inline error above the button when anything's missing ("Fill in these required fields before creating the claim: X, Y."). Create Claim button is no longer disabled by field presence — it always shows a specific error message instead of a mysteriously-greyed button. Replaces the old `(!maNumber && !insuredName)` guard which effectively required only Insured Name.
+
+### Handling Appraiser decoupled from assignment
+- `src/app/api/claims/[id]/assign/route.ts` — removed the `claim.handlingAppraiser = <new-assignee-name>` sync. Reassigning now changes `assigned_to` only; `handlingAppraiser` is left exactly as the admin set it via the dropdown.
+- `src/app/api/claims/[id]/reopen/route.ts` — same removal (reopen also had the mirror). Comment in both files flags this as hard rule so future-me doesn't re-introduce it. "handlingAppraiser and assigned_to are different roles" per Henry 2026-10-12.
+
+### ACV override — only honored when claim is closed
+- `src/components/claim/ClaimWorkspace.tsx` — new `isClosed` prop on `ReportsStep`. `maValueForNotes` for ACV variants now uses: `(!isClosed && result.acv > 0) ? result.acv : (notesData.maValueNum > 0 ? notesData.maValueNum : result.acv)`. Policy: while OPEN, live ACV always wins so calculator edits auto-propagate to Closing Notes; while CLOSED, override takes over so the finalized value doesn't silently drift. The Valuations "MA Value (ACV)" field becomes a read-only chip on open claims (with live ACV) and an editable InlineEditCurrency on closed claims. A **Reset** link appears next to the label when the closed-claim override differs from the live value — one click clears it. The amber "override differs" banner above the ACV result also only fires on closed claims now. Edge case preserved: an OPEN claim with no live ACV yet (no comps) keeps the field editable so the user can seed an initial value.
+
+### MA# shows "—" on freshly-created claim
+- `src/lib/supabase/history.ts` — `rowToEntry` now merges `row.ma_number` (DB column, authoritative, assigned by trigger on INSERT) into `claim.maNumber` at read time. The UI reads `claim.maNumber` from the jsonb copy, which the DB trigger doesn't update — so new claims showed "—" until the user manually re-saved. Merge at read fixes it. (Noted in part 2 but hadn't actually been shipped standalone — rolled in with this chunk.)
+
+### Supp pill — hide on closed claims
+- `src/components/claim/ClaimLabelPills.tsx` — new optional `claimStatus?: 'open' | 'closed' | null` prop. When `claimStatus === 'closed'`, the Supp pill is suppressed regardless of count. Counter stays stored in DB — on next reopen as supplement, `/api/claims/[id]/reopen` increments it (Supp 1 → Supp 2 etc.) and the pill returns. Revision and Specialty pills unaffected per Henry's spec. Wired through at all three call sites: `claims-table.tsx` (dashboard rows), `claim-search-button.tsx` (search dropdown), `ClaimWorkspace.tsx` (top-of-claim toolbar).
+
+### Summary PDF — "Summary not found" bug + full layout rewrite
+- `src/app/api/claims/[id]/summary/generate-pdf/route.ts` — flipped priority: **inline `summary` payload** from the client is now the primary source (Summary data lives in `reports_state.summaryData` as of pt. 2, not the separate `summaries` table). Legacy fallback: if no inline payload, check `reports_state.summaryData`, then fall back to the `summaries` table via `summaryId`. Fixes the `{"error":"Summary not found"}` 404 that fired for every post-rewrite claim.
+- `src/lib/summary/pdf.ts` — full rewrite of layout to match the reference PDF Henry shared (file 3981523-summary.pdf). Changes: logo top-left (1.6in wide), tagline right-aligned on two bold lines, **centered** "Summary Page" title at 28pt (was left-aligned at 20pt), 1" left margin (was 0.75"), single horizontal divider only under Date of Loss (removed the extra dividers that were between OA/Receipt and before Status), Opposing Appraiser now formatted as `Name, Company` only (was slash-joined with phone/email), Status entries use the same bold-label pattern as the identifying rows (`**Status:** <date> <text>`). Field block gap tightened for a cleaner read.
+- `src/lib/summary/pdf.ts` — logo flatten via **pngjs**. The repo's `public/companies/modern-appraisers/logo.png` is the white-on-transparent variant designed for the dark app header. HTML Summary printed it via `filter: brightness(0)` CSS — pdf-lib has no filter primitive, so the embedded PNG rendered invisible on white paper. New `flattenLogoToBlack()` helper decodes the PNG, walks every pixel, flips opaque near-white pixels (R+G+B > 384) to `0,0,0` while preserving alpha and leaving dark pixels unchanged. Re-encodes and embeds. Safe for already-black logos too.
+- `package.json` — added `pngjs` + `@types/pngjs`.
+
+**Deploy status:** LIVE. Final deploy `dpl_AWchqyMXVzjJ7KDz7BpVntNNSyVJ` → https://modern-tools-49wyawtr5-henry-as-projects-88caed67.vercel.app. Aliases on hamsportal.com + modern-tools-rho.vercel.app. In order this session: `dpl_9PzCEFeCk69uMWcuo42goauqacp3` (award no-fallback), `dpl_C1sAQDysHS5y4KCnjvjZSay2MZ1k` (referral + contact picker), `dpl_9uMaHYBKAfV7oXgdRBPtr7Htc6Sq` (ACV close-gate), `dpl_7KRPEMxsoiVZpWMK4XoTXLV3MJ8a` (required fields + handling-appraiser decouple), `dpl_8yUkTnZx3pWEas1qVMpJX67kQEo7` (summary not-found fix), `dpl_4EYRS5ququq3HvJsNDpRj1h6Eu4W` (summary PDF layout rewrite), `dpl_2etaNtqjx42UociRnCMmFWLYupDf` (logo flatten), `dpl_AWchqyMXVzjJ7KDz7BpVntNNSyVJ` (supp pill hide on closed).
+
+Rollback target for final deploy: `npx vercel promote https://modern-tools-dlopdkjbf-henry-as-projects-88caed67.vercel.app --scope henry-as-projects-88caed67 --yes` (previous good: dpl_2etaNtqjx42UociRnCMmFWLYupDf, pre-supp-pill-change).
+
+**Migrations run by Henry this session:** none.
+
+**In progress / broken / unknowns:**
+- **`supabase/migration-clients-add-referral.sql` unrun.** Referral option shows in the picker but saving a client with type=referral will 23514 (check-constraint violation) until Henry runs it. Idempotent; 2-second run.
+- **`supabase/migration-invoice.sql` still unrun** (carried over from part 2). Invoice tab state (line items, invoice number, notes) persists only in-session. The schema-cache fallback added in pt. 2 catches the error so the `documents` field still saves on invoice print — nothing else breaks.
+- Other parsers (Eagle View, CCC, Crawford, Corbett, ClaimSolution) still default `ownerName` to a mirror of insured or blank — awaiting Henry's per-parser review of sample PDFs.
+- Dashboard "Insured" column still reads `insuredName`; Henry hasn't asked for the rename-to-Owner.
+- Reports' "Vehicle Owner" field in generated PDFs still pulls `insuredName`; awaiting Henry's call on prefer-ownerName.
+- Clients admin page per-contact claim count not shipped (deferred when adding the Referral + contact-picker feature; Henry would need to say the word).
+- `fetchAllClients()` still doesn't support `includeArchived` (carried over from part 1).
+
+**Next:**
+- Run `migration-clients-add-referral.sql` so Referral saves cleanly.
+- Run `migration-invoice.sql` so invoice tab state persists.
+- Continue ACV state research (next batch IL, IN, IA, KS, KY — carried over from part 1).
+- Review remaining parsers (EV/CCC/Crawford/Corbett/ClaimSolution) with sample PDFs.
+- Decide whether reports' Vehicle Owner should prefer ownerName.
+- Build per-contact claim count on Clients admin page.
+- Dashboard column rename "Insured" → "Owner" if Henry wants it.
+
+---
+
+## 2026-10-12 — Marathon pt. 2: CSP, Summary rebuild, archive, email HTML, Owner split, VIN decode, invoice-save root cause
+
+**Worked on:** Second long session on the same day, driven by live user bug reports. Major themes: document preview fixed, Summary tab rewritten to work like Award (ripped out the fragile separate-table approach), auto-archive for superseded report PDFs, email HTML sanitization, Claim Info Owner/Insured/Claimant split with new `ownerName` field, server-side VIN decode during assignment-sheet parse, DV date field, W-9 added to Reports, invoice filename standardized, and finally the root cause of "invoices don't save to Documents" (schema-cache miss on the missing `invoice` column).
+
+**Changed (grouped by feature area):**
+
+### Document preview — CSP fix
+- `vercel.json` — added `https://*.supabase.co` to `frame-src`. Chrome was blocking the PDF preview iframe (showed "This content is blocked" sad-face) because the signed Supabase storage URL is cross-origin and CSP didn't allow it.
+
+### Summary tab — full rewrite
+- `src/app/summary-page/SummaryPrintDoc.tsx` — portal element switched from `display:none` to off-screen `position:absolute; left:-99999px` so html2canvas can measure/capture real pixel dimensions. Added `crossOrigin="anonymous"` on the logo img. Reset positioning in print mode.
+- `src/lib/summary-pdf.ts` — client-side html2canvas path kept as legacy; got `useCORS: true, allowTaint: false` as a defensive layer.
+- **Server-side PDF generator (new):** `src/lib/summary/pdf.ts` — pdf-lib text-based Summary PDF generator with dividers between Opposing Appraiser / Receipt / Status / Additional Info / State Laws sections. Full word-wrap, pagination, Times New Roman, company logo embed. Mirrors SummaryPrintDoc layout.
+- `src/app/api/claims/[id]/summary/generate-pdf/route.ts` (new) — POST endpoint that accepts `{summaryId, summary}`, scopes the summaryId to the claim via `reports_state`, embeds the active company's logo, returns PDF bytes. Replaces the html2canvas path entirely for the Print button.
+- `src/components/claim/ClaimWorkspace.tsx` — **Summary data now lives in `reportsState.summaryData` (jsonb on the claim), same mechanism as `awardData` / `notesData`.** The separate `summaries` table + 700ms debounce + save-RLS gymnastics are gone. Rides on the claim's 2s auto-save. Legacy claims (that still have `reportsState.summaryId` pointing to the `summaries` table) are lazily migrated on first open — fetched once, hoisted into `summaryData`, and the standalone table becomes a backup. Added `ownerName` + Insured/Owner split (see below). Removed the "Saved" / "Filed in Documents" badges that were out of place vs. other tools. Summary Print now matches Award/Notes exactly: fetch server PDF → onDocumentSaved → savePdfWithPicker, no new tab.
+- `src/app/summary-page/SummaryFields.tsx` — three horizontal dividers added between Claim Identification/OA/Receipt/Status/Additional Info sections.
+
+### Archive on new report PDF
+- `src/lib/supabase/documents.ts` — added `archived?: boolean` to `ClaimDocument`, exported `ARCHIVABLE_REPORT_SOURCES` set (ACV / Award / Notes / Summary / DV / LOU / Estimate-Review / Invoice / Storage). When a new report-type PDF uploads, older same-source docs flip to `archived: true`. Manual uploads / photos never auto-archive.
+- `src/components/claim/ClaimWorkspace.tsx` — `addDocument` now mutates both the state array AND does an IMMEDIATE `saveToHistory` (bypassing the 2s debounce) so a refresh right after printing doesn't lose the Documents entry.
+- `src/components/claim/documents-tab.tsx` — "Show archived (N)" toggle in the Documents card header; bulk Archive/Unarchive button; archived rows render muted (`opacity-60 bg-gray-50/60`); default view hides archived.
+
+### Email notifications — strip pasted HTML
+- `src/components/claim/messages-tab.tsx` — new `onPaste` handler intercepts clipboard, inserts text/plain only (prevents Outlook `MsoNormal` + inline-styled spans from leaking in). Sanitize-on-send tightened: pre-process converts `<p>`/`<div>`/`<li>` to `<br>`, converts execCommand highlight spans to semantic `<mark>`, allowlist is now only `mark`+`br`, strips all `class` + non-highlight `style`.
+- `src/lib/email/claim-notifications.ts` — new `htmlToPlainText` helper strips HTML/decodes entities/collapses blank lines; `notifyClaimMessage` runs the stored body through it for both the `text` and HTML email bodies. Fixes the raw `<span style="color: rgb(...)">...</span>` tag soup Henry was seeing in message notifications.
+
+### Claim Info — Owner / Insured / Claimant split
+- `src/lib/acv/types.ts` — new optional `ownerName?: string` on `ClaimInfo`. Owner is the vehicle owner, may differ from the policy-holding Insured.
+- `src/components/claim/ClaimWorkspace.tsx` — Owner section edit view: `Insured / Owner Name` field relabeled to **Owner Name** bound to `ownerName`; the duplicated `Claimant Name` field in that section relabeled to **Insured Name** bound to `insuredName`. Read-only view: `Insured / Owner` row → **Owner** (shows `ownerName || insuredName` fallback), new **Insured** row shows `insuredName`, removed Claimant Name row from this section. Claimant read-only section: `Name` → **Claimant Name**. Top-of-claim header "Owner" chip now reads `claim.ownerName || claim.insuredName`.
+- `src/lib/supabase/history.ts` — `rowToEntry` merges the authoritative DB column `ma_number` into `claim.maNumber` at read time. Fixed the "MA# shows '—' on a freshly created claim" bug: the DB trigger assigns the column but doesn't update the jsonb copy; the UI reads the jsonb copy, so merge is now done at read time.
+
+### Parsers — ownerName + stop mirroring + VIN auto-decode
+- `src/lib/acv/parsers/types.ts` — added required `ownerName: string` to `ParsedClaim`.
+- `src/lib/acv/parsers/modern-appraisers.ts` — now extracts `ownerName` from Owner Information section's First + Last. **Removed the insured→claimant mirror** for first-party claims (Henry 2026-10-12: polluted third-party flows). Claimant fields stay empty on MA sheets since the format has no distinct Claimant block.
+- Other parsers (`eagle-view`, `ccc`, `crawford`, `corbett`, `claim-solution`) — all now populate `ownerName` with sensible defaults (mirror from insured where format has no distinct Owner block).
+- `src/lib/acv/decode-vin.ts` (new) — extracted shared `decodeVin()` + `sanitizeVin()` helpers from the GET route into a lib function. Replaces O→0 / I→1 / Q→9 typos.
+- `src/app/api/acv/decode-vin/route.ts` — refactored to use the shared lib.
+- `src/app/api/acv/parse-claim/route.ts` — auto-decodes VIN after parsing when make OR model is blank. Fills year/make/model/trim/engine/drivetrain/transmission/fuelType from MarketCheck (preferred) or NHTSA (fallback). Sanitized VIN replaces the raw VIN. Failures are silent (user can still fill manually).
+- `src/components/claim/ClaimWorkspace.tsx` — `handlePdfUpload` spread adds `ownerName: data.ownerName || claim.ownerName || ''`.
+- `src/lib/acv/claim-field-mapping.ts` — docs updated: Modern Appraisers now notes claimant fields are blank-for-manual-fill (removed "mirrored from insured" note).
+
+### DV Report
+- `src/components/claim/dv-tab.tsx` — added `reportDate?: string` to `DVState`; new "Report Date" date input in the Additional Report Fields card (first field, 2-col grid). PDF generation uses `state.reportDate || today`.
+
+### Reports — W-9
+- `public/companies/modern-appraisers/W9.pdf` (new, 2.3MB) — static downloadable W-9 reference.
+- `src/app/reports/page.tsx` — added "Modern Appraisers W9" card with Download icon. Anchor's `download="Modern Appraisers W9.pdf"` sets the browser's save-as filename.
+- `src/components/claim/reports-hub-tab.tsx` — added W-9 row inside each claim's Reports Hub table. Preview opens in the same modal as other reports; Download replaces the Edit button since W-9 isn't editable. Row type extended with `onDownload: {href, filename}` discriminator.
+
+### Dashboard
+- `src/components/claims-table.tsx` — removed `target="_blank"` from the MA# Link. Plain click now opens in same tab; Ctrl/Cmd+click opens new tab (standard browser behavior).
+
+### THE INVOICE SAVE BUG — root cause finally found
+- `src/components/claim/reports-hub-tab.tsx` — Reports Hub's `downloadInvoice` was previously calling `savePdfWithPicker` without `onDocumentSaved` at all, so printing from the Hub never filed into Documents. Added the missing call AND awaited it. New `onDocumentSaved` prop wired up in ClaimWorkspace. Also changed invoice filename from `{MA}-invoice-{number}` to just `{MA}-invoice.pdf`.
+- Across ALL print flows (`reports-tab.tsx`, `reports-hub-tab.tsx`, `ClaimWorkspace.tsx` for Closing Notes/Award/Summary, `dv-tab.tsx`, `lou-tab.tsx`, `cover-letter-tab.tsx`, `storage-tab.tsx`) — `onDocumentSaved`/`onGenerated` now returns `Promise<void> | void` and is AWAITED before `savePdfWithPicker` opens. The fire-and-forget pattern was race-losing the Documents save when the user refreshed quickly after closing the file picker.
+- `src/lib/supabase/history.ts` — **ROOT CAUSE:** the `invoice` column doesn't exist on `acv_history` (migration-invoice.sql was never run). Supabase PostgREST returns `PGRST204` ("Could not find the 'invoice' column... in the schema cache") when the save hits a missing column — a DIFFERENT error code than Postgres' native `42703`. The pre-migration fallback only handled 42703, so invoice saves failed hard and took the documents write with them. Fallback now catches both codes AND matches "not found in the schema cache" / "does not exist" in the error message as a last resort. Parses the specific offending column from the error and strips only that one (vs. nuking all post-baseline jsonb fields). Applied to both UPDATE and INSERT paths.
+- `saveACVHistory` now returns `{ok: true, id} | {ok: false, error: string}` instead of swallowing errors. `saveToHistory` throws on failure. `addDocument` catches and shows a visible `alertDialog` with the actual error message — which is how we finally saw the real cause instead of guessing.
+
+### Handling Appraiser
+- `src/components/claim/ClaimWorkspace.tsx` — admin-only Handling Appraiser dropdown now does an IMMEDIATE `saveToHistory` on change, same pattern as the document save. Admins were losing changes to the 2s debounce when navigating away quickly after picking.
+
+**Deploy status:** LIVE across ~12 iterations today. Final deploy `dpl_BdY42fuwdVgQtGFB2pJ5F3cofaZv` → https://modern-tools-qm43t4yrd-henry-as-projects-88caed67.vercel.app, aliases flipped to hamsportal.com + modern-tools-rho.vercel.app. Earlier deploys this session (in order): `dpl_EMntDFPHwRS3KNFS3njDTcYtkd8J` (CSP), `dpl_9T1yc5ymesnVAWc2u38YbY5nm2nJ` (first summary fix), `dpl_6iM9b9GWCo8FRMiX7BmafXpeVnm4` (offscreen portal), `dpl_5ykT9Jyb2q36NQBRLXATSdXiPwJd` (server summary PDF), `dpl_Uxx3WprFcH6Uy3B7jSozCnvZoUfT` (summary dividers), `dpl_FAcur35Y1NuNE71CAc6vKugKBM3v` (email HTML strip), `dpl_8EW6X7gfcvazXgNsiwtvkRqysG3M` (editor dividers), `dpl_72iVTBfSdYcg64unmvcmo9fRQzNN` (DV date), `dpl_GVaH1muu5B7J8ka1KDaf948PTCyX` (W-9 standalone), `dpl_EG9Fx8N7fZnQMQpLdG9F4Nv4tQSf` (W-9 in Reports Hub), `dpl_8ChmwfLTegFokvTRGrFvEeABJL9k` (Owner/Insured/Claimant split), `dpl_3dRq5pMw9Qx7owAe94Ly9hYM6BDF` (parsers + VIN decode), `dpl_BPx4h7bcXzv39cdi8KX3miuywvUb` (MA# jsonb merge), `dpl_413o3GKzFGx7svNtuKV821jTRst8` (Reports Hub onDocumentSaved + invoice filename), `dpl_98aKPTSf4YfrVBV98dkJb9nuSBry` (row-click to new tab — reverted next deploy), `dpl_3svPHrC2msBgYri4KMrBDUYtUrGR` (MA# link same-tab), `dpl_JCjpyogkL1zbC8rrhhevteaz1dbx` (awaited onDocumentSaved everywhere), `dpl_6EDvq2Htr9XPYHAWZXMsFtVLE6B2` (visible-error alertDialog). Rollback target for final: `npx vercel promote https://modern-tools-jqph8a9uf-henry-as-projects-88caed67.vercel.app --scope henry-as-projects-88caed67 --yes` (previous good: dpl_6EDvq2Htr9XPYHAWZXMsFtVLE6B2).
+
+**Migrations run by Henry today:** none this session. Carried over from part 1: claim-labels, cycle-times-reset-and-pauses, clients-type-expand.
+
+**In progress / broken / unknowns:**
+- **`supabase/migration-invoice.sql` STILL unrun.** Henry needs to run this in the Supabase SQL editor so the Invoice tab's line-item / notes / invoice-number state persists across sessions. Right now the invoice column save silently falls back and the invoice tab's edits only live for the current session. Documents / print flow are unaffected (fallback catches the error).
+- Other parsers (Eagle View, CCC, Crawford, Corbett, ClaimSolution) still default `ownerName` to a mirror of insured or blank. Henry wanted to review each with sample PDFs before updating parser-by-parser — on hold pending that review.
+- The dashboard "Insured" column still reads `insuredName`. Henry didn't say to switch it to Owner; flagged in review message but not changed.
+- Reports' "Vehicle Owner" field in generated PDFs still pulls from `insuredName`. If Henry wants ownerName preferred (with fallback), one-liner per report but awaiting his call.
+- `fetchAllClients()` still doesn't support `includeArchived` (carried over from part 1 of today).
+
+**Next:**
+- Run migration-invoice.sql so invoice state persists.
+- Continue ACV state research (next batch: IL, IN, IA, KS, KY — carried over from part 1).
+- Review assignment-sheet samples one at a time to update the remaining parsers' Owner/Insured/Claimant mapping.
+- Decide whether reports' Vehicle Owner should prefer `ownerName` over `insuredName`.
+- Dashboard column rename ("Insured" → "Owner") if Henry wants consistency with the new three-field model.
+
+---
+
+## 2026-10-12 — Marathon session: labels + reopen + cycle times + clients + rules/laws (ACV research started)
+
+**Worked on:** Long multi-feature session continuing from the earlier 2026-10-12 claim-labels work (see entry below). Covered reopen-flow finishing touches, dashboard polish, QC rename, cycle-times rewrite, clients admin page from zero to full CRUD, admin settings nav reorg, Rules/Laws index redesign, and start of a state-by-state ACV research effort (13 of 50 states researched with cited statutes/regulations).
+
+**Changed (grouped by feature area):**
+
+### Specialty rethink + pill column
+- `src/lib/acv/types.ts` — added `'specialty'` and later `'umpire'` to the `ClaimType` union. Specialty was initially a separate `is_specialty` column + Labels section, then collapsed into a Claim Type chip (removing the DB column from the migration). Umpire added as a second descriptive-modifier chip.
+- `src/components/claim/ClaimWorkspace.tsx` — iterated through several pill-placement attempts: initially in Status column (`showStatus` gate meant it only appeared on `/claims`), then moved into MA# cell (Henry didn't like it widening), finally landed on a dedicated unlabeled column between State and Days with widths rebalanced so dashboard width stays effectively unchanged. Also removed the separate Labels section from both ClaimInfoForm views; Specialty now lives inside the Claim Type chip row only.
+- `src/components/claims-table.tsx` — added narrow Labels column (70px) between State (shrunk 150→120) and Days (shrunk 110→90). Column header is blank (`aria-label="Labels"`), matching the pattern of the leftmost mark-circle column.
+- `src/components/claim/ClaimLabelPills.tsx` — unchanged shape; Specialty prop now driven by `claim.claimTypes?.includes('specialty')` instead of a dedicated field.
+
+### Star → Circle swap
+- `src/components/claims-table.tsx` — swapped `Star` lucide icon for `Circle`, kept amber color + `fill-current` behavior. Tooltip/aria updated to "Mark"/"Unmark" because "Star" would be weird on a circle. Column comment updated to "Mark circle".
+
+### Documents tab — Ctrl+click background open
+- `src/app/api/claims/[id]/documents/open/route.ts` (new) — server redirect that issues a short-lived signed URL for a document. Admin+claim-visibility guarded + path-prefix guard (`${claimId}/...`) to prevent cross-claim traversal.
+- `src/components/claim/documents-tab.tsx` — document name is now an `<a href=/api/claims/[id]/documents/open?path=…>` anchor instead of a `<button>` + `window.open`. Native browser Ctrl/Cmd+click now opens the doc in a background tab without stealing focus. Plain click still opens the in-tab preview modal for previewable types.
+
+### Dashboard bulk Cancel button
+- `src/components/claims-table.tsx` — added amber "Cancel" button between Close (green) and Delete (red) in the bulk action bar. Posts `{reason: 'cancelled'}` to the same `/approve` endpoint; already-closed claims in selection are skipped.
+
+### Main → Appraiser rename
+- `src/components/claims-table.tsx:1247` — bulk Send Back dialog now says "Returns the selected claim to **Appraiser**..."
+- `src/components/claim/ClaimWorkspace.tsx:4079,4122` — STAGE_LABELS and the single-claim Send Back dialog text updated.
+- `src/components/claim/activity-tab.tsx:36` — STAGE_LABELS.
+- `src/app/admin/settings/cycle-times/cycle-times-client.tsx:20,174` — STAGE_LABELS + the "Main" column header.
+- `src/app/admin/settings/users/[id]/_tabs/permissions-tab.tsx:9` — DASHBOARD_LABELS.
+- `src/app/api/claims/[id]/complete-report/route.ts:33` — API error string updated.
+
+### Cycle Times overhaul
+- `supabase/migration-cycle-times-reset-and-pauses.sql` (new) + rollback — truncates `claim_stage_events`, adds `cycle_tracked_from` column on `acv_history` with BEFORE INSERT trigger that stamps `now()` on new claims, sets every existing claim to NULL (excluded from aggregates), adds `pauses_cycle_time boolean` column on `status_phase_configs` with seed TRUE for `hold`, `pending_information`, `pending_repairs`, and adds AFTER INSERT trigger that auto-opens the first stage event when a claim is created. **Henry ran the migration — confirmed "it worked".** First iteration had an ordering bug (constraint drop before data update); corrected migration file ships that fix.
+- `src/lib/supabase/stage-events.ts` — deleted the lazy backfill block (was dumping pre-ledger time onto current assignees). Added `recordPhaseChange(service, claimId, newPhase, prevPhase)` that closes the current open event when entering a pause phase and reopens with current stage+assignee when leaving. Also added legacy-claim guard that only inserts into the ledger when `cycle_tracked_from` is non-null.
+- `src/app/api/claims/[id]/phase/route.ts` — now reads prev phase, applies patch, then calls `recordPhaseChange` so pause bookkeeping fires on every phase change.
+- `src/app/api/admin/cycle-times/route.ts` — pulls `cycle_tracked_from`, filters out claims where it's null so legacy data never contaminates aggregates.
+- `src/app/api/admin/status-phase-configs/[code]/route.ts` — PATCH accepts `pausesCycleTime` field with 42703 fallback.
+- `src/lib/supabase/status-phase-configs.ts` — StatusPhaseConfig interface gains `pausesCycleTime: boolean`.
+- `src/app/admin/settings/status-phases/status-phases-client.tsx` — new "Pauses Cycle" column + Pauses/Counts toggle chip per phase.
+
+### Cycle Times Print Report (with MA logo)
+- `src/app/admin/settings/cycle-times/cycle-times-client.tsx` — "Print Report" blue button (matches HamsPortal convention: `bg-blue-600`, Printer icon, exact label). Print-only section (`display:none` on screen; `@media print` reveals it) includes MA logo (black-filtered), Times New Roman, stage averages table, appraiser totals table, per-claim breakdown. Hidden on screen, visible on print.
+
+### Dashboard polish
+- Reorder from brief alphabetical scramble back to intended order.
+- Settings sidebar reordered per Henry: Users, Clients, Opposing Appraisers, Notifications, Guidelines, Settlement Analytics, Tool Settings, Status Phases, Licensed States, Fee Catalog, Cycle Times, Data Reports, Data. Super Admin section split out with amber "Super Admin" eyebrow heading (Accounting, Activity, Tickets) — rendered only when `profile.isSuperAdmin`. Guidelines/Settlement positions swapped per follow-up ask.
+- `src/app/admin/settings/_settings-nav.tsx` — split into `ADMIN_SECTIONS` + `SUPER_ADMIN_SECTIONS` arrays with a shared `renderLink` helper.
+
+### Data Reports upgrade
+- `src/app/api/admin/data-reports/route.ts` — now returns full claim lists per category (not just counts). New `cancelled` category (claims closed with `close_reason='cancelled'` in range). Phase filter now applies ONLY to the `overDays` metric; received/closed/cancelled are phase-blind.
+- `src/app/admin/settings/data-reports/data-reports-client.tsx` — removed preset dropdown (always manual From/To, defaults to last 30 days). Four cards (Received / Closed / Cancelled / Over X Days) each clickable to toggle the claim list below. Print Report button (blue, MA logo, Times New Roman) that prints a formatted report with summary + all four category claim lists.
+
+### Clients admin page (new)
+- `src/app/admin/settings/clients/page.tsx` (new) — thin wrapper.
+- `src/app/admin/settings/clients/clients-admin-client.tsx` (new) — initially a two-column layout (list + right panel), Henry asked to redesign to full-width table + modal popup. Now: full-width searchable + filterable table; click a row to open centered modal with full edit form (name, type, type_custom, address, city/state/zip, phone, email, website, notes), Archive/Unarchive, and People-at-this-client section with add/edit/delete contact + mark primary. Add Client button opens a smaller create modal.
+- `src/lib/supabase/clients.ts` — ClientType union expanded to `'tpa' | 'body_shop' | 'attorney' | 'insurance_company' | 'other' | 'adjuster'` (adjuster kept as legacy). New `SELECTABLE_CLIENT_TYPES` constant (excludes legacy adjuster) consumed by every picker. `Client` interface gains `typeCustom: string | null`. `rowToClient` + `createClient` + `updateClient` wire the field through with 42703 fallback.
+- `supabase/migration-clients-type-expand.sql` (new) + rollback — adds `type_custom` column, drops+rebuilds the type check constraint to allow `tpa`/`other`, migrates `adjuster → tpa`. **Henry ran it after I fixed an ordering bug in v1 (dropped constraint BEFORE the UPDATE, not after); confirmed "it worked".**
+- Marketing surfaces updated for consistency: `src/app/marketing/marketing-client.tsx` (AVATAR_STYLE + type picker), `src/app/marketing/_components/add-client-button.tsx` (new types + Other → custom text), `src/app/marketing/_components/client-drawer.tsx` (SELECTABLE_CLIENT_TYPES + custom-type field), `src/app/marketing/_components/map-pane.tsx` (PIN_COLOR for tpa/other), `src/app/marketing/backfill/backfill-client.tsx` (picker), `src/app/marketing/import/import-client.tsx` (CSV validator accepts new types, defaults to `tpa`). `src/components/claim/client-picker.tsx` picker added `typeCustom: null` to the `pickExisting` object to satisfy the stricter Client type.
+
+### Rules/Laws redesign + ACV research kickoff
+- `src/app/rules-laws/page.tsx` — redesigned index with 4 cards: Appraisal Clause (live), ACV (in progress), Diminished Value (live), Estimate Disputes (coming soon placeholder). Status badges on each.
+- `src/app/rules-laws/estimate-disputes/page.tsx` (new) — placeholder page accessible from the index card.
+- `src/lib/rules-laws/acv-data.ts` (new) — ACV data schema with `LicensingBlock` + `MethodologyBlock` + `Source[]` carrying type/citation/title/url/excerpt/accessedAt. `Trilean` + `BookTrilean` helper types. `ALL_STATE_CODES` list of 51 jurisdictions for the UI's "pending research" skeleton.
+- `src/app/rules-laws/acv/page.tsx` (new) — ACV state list page. Expandable cards per state. Pending-research states render greyed-out with a "Pending research" badge. Headers made bold+black with black-underline bars per Henry's feedback.
+- **Research completed for 13 states** (sources + excerpts cited inline): AL, AK, AZ, AR, CA, CO, CT, DE, DC, FL, GA, HI, ID. See the entries in `acv-data.ts` for the specific statute/regulation citations. Highlights: GA has the classic 50-mile/100-mile/30-day rule; AZ has similar; CA has 90-day window + 4-method hierarchy; CT is a book-value state (NADA + 1 DOI-approved source averaged) AND requires the Motor Vehicle Physical Damage Appraiser license; DE also requires an appraiser license. CO/DC/ID have no numeric methodology caps. FL's DFS applies the Public Adjuster license scope to appraisers.
+
+**Deploy status:** LIVE across many iterations today. Final deploy `dpl_9FTYBReUwX1gfYQM4UFMwXCxMkEu` → https://modern-tools-166adxnca-henry-as-projects-88caed67.vercel.app, aliases flipped to hamsportal.com + modern-tools-rho.vercel.app. Rollback to immediate previous (first batch of 5 ACV states only): `npx vercel promote https://modern-tools-f4fjfyv8j-henry-as-projects-88caed67.vercel.app --scope henry-as-projects-88caed67 --yes`.
+
+**Migrations run by Henry today (all confirmed working):**
+- `supabase/migration-claim-labels.sql`
+- `supabase/migration-cycle-times-reset-and-pauses.sql`
+- `supabase/migration-clients-type-expand.sql`
+
+**In progress / broken / unknowns:**
+- **ACV research is 13 of 50 states done.** Pattern is set; continuing in batches of ~5 per message, slowly. Next batch is IL, IN, IA, KS, KY (then MI/MN/MS/MO/MT, etc.). Approved style per Henry: real statute/regulation URLs with excerpts, "unclear" where there's no explicit DOI reg (not fabricated).
+- `fetchAllClients()` still only returns `archived_at IS NULL` rows server-side, so the admin Clients page's "Archived only" / "Active+archived" filter options will show nothing until the fetch is extended. Noted in the client code with a tooltip; not fixed this session.
+- **Settings page "Data"** entry is kept at the bottom of the admin section because Henry's reordered list didn't name it. Confirmed to keep it there in a follow-up ("then data").
+- `modernappraisers/` subproject still has pre-existing TS errors; excluded from the root tsconfig earlier today. Not touched since.
+
+**Next:**
+- Continue ACV research 5 states at a time (next: IL, IN, IA, KS, KY).
+- Decide if Estimate Disputes needs a research sprint too (currently placeholder).
+- `fetchAllClients` should be extended with an `includeArchived` option so the "Archived only" filter actually shows archived clients.
+- Mobile responsiveness pass on the new clients modal (not tested at narrow widths).
+
+---
+
+## 2026-10-12 — Claim labels (Supp / Revision / Specialty) + reopen-with-reassignment flow
+
+**Worked on:** Added three descriptive labels to HamsPortal claims that are neither phases (workflow state) nor claim-types (tool visibility) — pills shown next to the Open/Submitted status pill. Supplement counter increments every time a closed claim is reopened as a supplement; Revision is a one-time flag set on reopen-as-revision; Specialty is a user-toggleable label in Claim Info. Collapsed the three loose closed-claim toolbar buttons (`Mark Completed/Cancelled`, `Reopen`, `Reassign`) into a single **Actions ▾** dropdown mirroring the active-claim **Advance ▾** pattern. Reopen is now a two-step flow: pick Supplement or Revision → pick appraiser to route to. Standalone Reassign button removed on closed claims; dashboard bulk Reassign hidden when every selected claim is closed; dashboard bulk Reopen upgraded to the same supp/revision + assignee picker modal as the single-claim flow.
+
+Design spec at `docs/superpowers/specs/2026-10-12-claim-labels-and-reopen-flow-design.md`.
+
+**Changed:**
+- `supabase/migration-claim-labels.sql` (new) + `migration-claim-labels-rollback.sql` — three new columns on `acv_history`: `supplement_count int not null default 0`, `is_revision bool not null default false`, `is_specialty bool not null default false`. **Henry still needs to run this manually in the Supabase SQL editor** — until then, the UI runs fine but labels aren't persisted.
+- `src/lib/supabase/history.ts` — new fields on `ACVHistoryEntry`, select + map, 42703 fallback drops `is_specialty` so saves survive pre-migration state.
+- `src/app/api/claims/[id]/reopen/route.ts` — new body contract `{ as: 'supplement'|'revision', assignTo: string|null }`. Validates `as` and the assignee's profile, increments supplement_count or sets is_revision, syncs assigned_to + handling-appraiser on the claim jsonb, 42703-tolerant for label columns, fires assignment-notification emails. Legacy no-body callers still accepted for back-compat.
+- `src/components/claim/ClaimLabelPills.tsx` (new) — shared pill renderer. Supp = amber, Revision = yellow-400 (darker yellow), Specialty = indigo. Fixed left-to-right order; renders nothing when all three are at defaults.
+- `src/components/claim/ClaimWorkspace.tsx` — replaced closed-claim buttons with Actions ▾ dropdown (Reopen as Supplement/Revision submenu → appraiser picker → ConfirmDialog; also hosts Mark Completed/Cancelled and Delete). Removed `handleReopen`. Removed `isClosed` arm from the standalone Reassign gate (closed claims cannot be reassigned without reopening now). Added Labels section with Specialty chip to Claim Info form. Added `<ClaimLabelPills />` to the top toolbar after the Print button.
+- `src/components/claims-table.tsx` — mounted `<ClaimLabelPills />` inside the Status column cell (alongside the Open/Submitted/Cancelled pill, same cell → shares row height in the common case). Hid the bulk Reassign dropdown when every selected claim is closed (new `allSelectedClosed` memo). Upgraded bulk Reopen from a plain ConfirmDialog to a purpose-built modal: pick Supplement/Revision radio + pick appraiser select + Reopen N claims. `runBulkReopen` now sends `{as, assignTo}` per claim; mixed open/closed selections still cleanly skip the open ones.
+- `src/components/claim-search-button.tsx` — pills in the dropdown rows next to MA# / Closed badge.
+- `tsconfig.json` — excluded `modernappraisers` from the root typecheck. The subproject has its own tsconfig + node_modules, and its own TS errors were blocking `next build`'s typecheck gate. Pre-existing issue surfaced today; unrelated to this feature.
+
+**Deploy status:** LIVE. Deploy `dpl_vHptdzrJ2Jh1xwyzuNK9Y7nRgM1h` → https://modern-tools-k30391nps-henry-as-projects-88caed67.vercel.app, aliases flipped to hamsportal.com and modern-tools-rho.vercel.app. Rollback target: previous good deploy `dpl_38QXZpCPMy9sdzsJ1u8JdXouoryR` → `https://modern-tools-1hziwirag-henry-as-projects-88caed67.vercel.app`. Rollback command: `npx vercel promote https://modern-tools-1hziwirag-henry-as-projects-88caed67.vercel.app --scope henry-as-projects-88caed67 --yes`.
+
+**In progress / broken / unknowns:**
+- **Supabase migration not yet run.** `supabase/migration-claim-labels.sql` is sitting in the repo — Henry needs to run it in the Supabase SQL editor whenever he wants labels to actually persist. The deployed code tolerates pre-migration state via 42703 fallbacks: Specialty toggles save silently without erroring, reopens flip status but don't record counts, pills render as "nothing" because the columns return defaults. Nothing breaks; labels just don't stick until the migration lands.
+
+**Next:**
+- Henry: run `supabase/migration-claim-labels.sql` in the SQL editor.
+- After migration, smoke test: reopen a closed claim as Supplement → verify Supp 1 pill appears on the row and in the workspace toolbar. Reopen a second time as Revision → verify both pills coexist. Toggle Specialty on a claim → verify it persists across refresh. On the dashboard, select two closed claims and click Reopen → verify the new picker modal appears, not the old ConfirmDialog. Select a mixed open+closed set → verify Reassign still shows (gated by `!allSelectedClosed`). Select all-closed set → verify Reassign is hidden.
+
+---
+
 ## 2026-10-11 — modernappraisers.com v1 — phases 0-2 shipped locally, hero iterated to death, 3D model experiment nuked
 
 **Worked on:** Kicked off the modernappraisers.com rebuild as a brand-new sibling Next.js app at `/modernappraisers/`. Shipped the scaffold, UI primitives, chrome, and all marketing pages. Then iterated the home page hero copy + visuals through several directions based on live feedback. Deploy explicitly deferred — build + local dev only.

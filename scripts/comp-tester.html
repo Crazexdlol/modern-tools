@@ -1,0 +1,273 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Comp Finder Tester v2 — HamsPortal</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 14px/1.5 "Times New Roman", Times, serif; background: #f8fafc; color: #111; }
+  header { background: #0f172a; color: #e2e8f0; padding: 10px 18px; display: flex; align-items: baseline; gap: 12px; }
+  header h1 { margin: 0; font-size: 18px; }
+  header .sub { font-size: 12.5px; opacity: .7; }
+  main { padding: 16px; max-width: 1500px; margin: 0 auto; }
+  fieldset { background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 14px 16px; margin-bottom: 14px; }
+  legend { font-weight: 700; padding: 0 6px; font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: #475569; }
+  .grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px 14px; align-items: end; }
+  .grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px 14px; align-items: end; }
+  label { display: block; font-size: 11px; font-weight: 600; color: #475569; text-transform: uppercase; letter-spacing: .04em; margin-bottom: 4px; }
+  input, select { width: 100%; padding: 6px 8px; border: 1px solid #cbd5e1; border-radius: 5px; font-size: 14px; font-family: inherit; }
+  input:focus, select:focus { outline: none; border-color: #2563eb; box-shadow: 0 0 0 3px rgba(37,99,235,.15); }
+  button { background: #2563eb; color: #fff; border: 0; padding: 8px 18px; border-radius: 6px; font-size: 14px; font-weight: 700; cursor: pointer; font-family: inherit; }
+  button:hover:not(:disabled) { background: #1d4ed8; }
+  button:disabled { opacity: .5; cursor: wait; }
+  .mode-radio { display: flex; gap: 20px; align-items: center; padding: 10px 14px; background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; margin-bottom: 14px; }
+  .mode-radio label { display: inline-flex; align-items: center; gap: 7px; margin: 0; font-size: 13.5px; color: #1e3a8a; cursor: pointer; text-transform: none; font-weight: 600; letter-spacing: 0; }
+  .mode-radio input[type=radio] { width: auto; margin: 0; }
+  .summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 10px; }
+  .stat { background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px 12px; }
+  .stat .label { font-size: 10.5px; text-transform: uppercase; letter-spacing: .06em; color: #64748b; font-weight: 700; margin-bottom: 2px; }
+  .stat .value { font-size: 22px; font-weight: 700; color: #0f172a; }
+  .stat .sub { font-size: 11.5px; color: #64748b; }
+  .stat.hot .value { color: #15803d; }
+  .stat.cold .value { color: #991b1b; }
+  table { width: 100%; border-collapse: collapse; background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden; }
+  th { background: #f1f5f9; text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; padding: 8px 10px; border-bottom: 1px solid #e2e8f0; color: #0f172a; font-weight: 700; }
+  td { padding: 7px 10px; border-bottom: 1px solid #f1f5f9; vertical-align: top; font-size: 13px; }
+  tr:nth-child(even) td { background: #f8fafc; }
+  .mono { font-family: ui-monospace, Menlo, monospace; font-size: 12px; }
+  .pill { display: inline-block; padding: 1px 7px; border-radius: 999px; font-size: 11px; font-weight: 700; }
+  .pill-mc { background: #dbeafe; color: #1e40af; }
+  .pill-ad { background: #fef3c7; color: #92400e; }
+  .pill-ok { background: #d1fae5; color: #065f46; }
+  .pill-warn { background: #fef3c7; color: #92400e; }
+  .num { text-align: right; font-variant-numeric: tabular-nums; }
+  a.link { color: #2563eb; }
+  .err { background: #fef2f2; border: 1px solid #fecaca; color: #991b1b; padding: 10px 12px; border-radius: 8px; }
+  .notice { background: #fef3c7; border: 1px solid #fde68a; color: #92400e; padding: 10px 12px; border-radius: 8px; }
+  pre { background: #0f172a; color: #e2e8f0; padding: 10px 12px; border-radius: 8px; font-size: 11.5px; max-height: 160px; overflow: auto; }
+  .pages-table td, .pages-table th { padding: 4px 10px; }
+  details summary { cursor: pointer; font-weight: 700; padding: 6px 0; }
+  .arrow { color: #94a3b8; font-size: 20px; display: inline-block; vertical-align: middle; margin: 0 6px; }
+  .pipeline { background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px 14px; margin-top: 12px; font-size: 13px; }
+  .pipeline b { color: #0f172a; }
+  .pipeline .step { display: inline-flex; align-items: center; gap: 2px; margin: 0 2px; padding: 2px 10px; background: #f1f5f9; border-radius: 6px; font-weight: 700; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Comp Finder Tester v2</h1>
+  <span class="sub">localhost tool · prototypes the new "downgraded-plan" flow (nationwide MC + server-side distance &amp; mileage filter)</span>
+</header>
+
+<main>
+
+  <form id="searchForm">
+
+    <div class="mode-radio">
+      <strong>Mode:</strong>
+      <label><input type="radio" name="mode" value="radius" checked> Current hams (radius query to MC)</label>
+      <label><input type="radio" name="mode" value="nationwide"> New downgraded-plan (nationwide + server-filter)</label>
+    </div>
+
+    <fieldset>
+      <legend>Vehicle</legend>
+      <div class="grid">
+        <div><label>Year</label><input name="year" value="2017" required></div>
+        <div><label>Make</label><input name="make" value="Toyota" required></div>
+        <div><label>Model</label><input name="model" value="Tacoma" required></div>
+        <div><label>Trim</label><input name="trim" placeholder="(leave blank → fetch all)"></div>
+        <div><label>Vehicle Mileage</label><input name="vehicleMileage" value="30000" type="number" min="0" placeholder="subject vehicle"></div>
+      </div>
+      <div class="grid" style="margin-top:10px">
+        <div><label>Drivetrain</label><input name="drivetrain" placeholder="FWD / RWD / AWD / 4WD"></div>
+        <div><label>Transmission</label><input name="transmission" placeholder="Automatic / Manual"></div>
+        <div><label>Engine</label><input name="engine" placeholder="e.g. 3.5L"></div>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Filters</legend>
+      <div class="grid-4">
+        <div><label>ZIP</label><input name="zip" value="89011" required></div>
+        <div>
+          <label>Radius (mi)</label>
+          <input name="radius" value="150" type="number" min="1">
+          <div style="font-size:11px;color:#64748b;margin-top:3px">In radius mode: hits MC. In nationwide mode: post-filter (any value).</div>
+        </div>
+        <div>
+          <label>Mileage tolerance (±%)</label>
+          <input name="mileagePct" value="30" type="number" min="0" max="200">
+          <div style="font-size:11px;color:#64748b;margin-top:3px">Nationwide mode only. 30 = ±30% of vehicle mileage.</div>
+        </div>
+        <div>
+          <label>Fallback on empty</label>
+          <select name="fallbackOnEmpty">
+            <option value="true" selected>yes (drop mileage filter if 0 results)</option>
+            <option value="false">no (strict — show nothing)</option>
+          </select>
+        </div>
+      </div>
+      <div class="grid-4" style="margin-top:10px">
+        <div>
+          <label>Include inactive</label>
+          <select name="includeInactive"><option value="false">no (active only)</option><option value="true">yes (ever-listed)</option></select>
+        </div>
+        <div></div>
+        <div></div>
+        <div><button type="submit" id="goBtn">Search</button></div>
+      </div>
+    </fieldset>
+  </form>
+
+  <div id="result"></div>
+</main>
+
+<script>
+const form = document.getElementById('searchForm')
+const resultDiv = document.getElementById('result')
+const goBtn = document.getElementById('goBtn')
+
+function fmtMoney(n) { return n ? '$' + Math.round(n).toLocaleString('en-US') : '—' }
+function fmtMi(n)    { return n ? n.toLocaleString('en-US') : '—' }
+function esc(s)      { return String(s ?? '').replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])) }
+
+form.addEventListener('submit', async (e) => {
+  e.preventDefault()
+  goBtn.disabled = true
+  goBtn.textContent = 'Searching…'
+  resultDiv.innerHTML = '<p style="color:#64748b">Fetching from MarketCheck + Auto.dev, resolving zip, applying filters…</p>'
+
+  const fd = new FormData(form)
+  const qs = new URLSearchParams()
+  for (const [k, v] of fd.entries()) if (v !== '') qs.set(k, v)
+
+  try {
+    const res = await fetch('/search?' + qs)
+    if (!res.ok) throw new Error('HTTP ' + res.status)
+    const data = await res.json()
+    renderResult(data)
+  } catch (err) {
+    resultDiv.innerHTML = '<div class="err">Request failed: ' + esc(err.message) + '</div>'
+  } finally {
+    goBtn.disabled = false
+    goBtn.textContent = 'Search'
+  }
+})
+
+function renderResult(r) {
+  const mc = r.marketcheck
+  const ad = r.autodev
+  const p = r.pipeline
+  const i = r.input
+  const o = r.origin
+
+  let html = ''
+
+  // Origin resolution
+  if (i.mode === 'nationwide') {
+    if (o) {
+      html += '<div style="margin-bottom:12px"><span class="pill pill-ok">ZIP resolved</span> ' + esc(i.zip) + ' → ' + esc(o.city) + ', ' + esc(o.state) + ' (lat ' + o.lat.toFixed(3) + ', lon ' + o.lon.toFixed(3) + ')</div>'
+    } else if (i.zip) {
+      html += '<div class="err" style="margin-bottom:12px"><b>ZIP not resolved:</b> ' + esc(i.zip) + ' — zippopotam.us had no match. Distance filter will drop everything.</div>'
+    }
+  }
+
+  // Headline stats
+  html += '<h2 style="margin:6px 0 10px">Summary</h2><div class="summary">'
+  html += stat('MC num_found', mc.numFoundTotal != null ? mc.numFoundTotal.toLocaleString('en-US') : '—', 'total in index')
+  html += stat('MC rows returned', mc.totalReturned, '4 pages × 50 max')
+  html += stat('Auto.dev returned', ad.returned, ad.status === 'skipped' ? 'skipped' : 'up to 100')
+  html += stat('Raw total', p.rawTotal, 'both sources')
+  html += stat('After base filter', p.afterBase, 'no-VIN / no-price / dedup dropped')
+  if (i.mode === 'nationwide') {
+    html += stat('After radius ≤ ' + i.radius + ' mi', p.afterDistance, p.droppedByDistance + ' dropped', (p.afterDistance === 0 ? 'cold' : (p.afterDistance < 5 ? 'cold' : 'hot')))
+  }
+  if (i.vehicleMileage > 0 && i.mileagePct > 0) {
+    const mLo = Math.round(i.vehicleMileage * (1 - i.mileagePct / 100))
+    const mHi = Math.round(i.vehicleMileage * (1 + i.mileagePct / 100))
+    html += stat('After ±' + i.mileagePct + '% miles (' + mLo.toLocaleString('en-US') + '–' + mHi.toLocaleString('en-US') + ')',
+      p.afterMileage,
+      p.fallbackApplied ? 'FALLBACK: no matches, filter dropped' : (p.droppedByMileage + ' dropped'),
+      p.afterMileage === 0 ? 'cold' : 'hot')
+  }
+  html += stat('Final kept (shown)', p.afterMileage, 'what you would show to picker', (p.afterMileage > 0 ? 'hot' : 'cold'))
+  html += stat('Total time', r.totalMs + 'ms', 'end-to-end')
+  html += '</div>'
+
+  // Pipeline strip
+  html += '<div class="pipeline">'
+  html += '<b>Pipeline:</b> '
+  html += '<span class="step">raw ' + p.rawTotal + '</span>'
+  html += '<span class="arrow">→</span>'
+  html += '<span class="step">base filter ' + p.afterBase + '</span>'
+  if (i.mode === 'nationwide') {
+    html += '<span class="arrow">→</span>'
+    html += '<span class="step">radius ' + p.afterDistance + '</span>'
+  }
+  if (i.vehicleMileage > 0 && i.mileagePct > 0) {
+    html += '<span class="arrow">→</span>'
+    html += '<span class="step">mileage ' + p.afterMileage + '</span>'
+  }
+  html += '</div>'
+
+  if (p.fallbackApplied) {
+    html += '<div class="notice" style="margin-top:12px"><b>Fallback kicked in.</b> Mileage ±' + i.mileagePct + '% returned 0 results, so that filter was dropped and we show everything that passed the radius filter instead.</div>'
+  }
+
+  // Per-page table
+  html += '<h2 style="margin:18px 0 8px">Per-page breakdown</h2>'
+  html += '<table class="pages-table"><thead><tr><th>Source</th><th>Page/start</th><th>Status</th><th>Returned</th><th>Latency</th></tr></thead><tbody>'
+  for (const pg of mc.pages) {
+    html += '<tr><td><span class="pill pill-mc">MC</span></td><td>' + pg.start + '</td><td>' + pg.status + (pg.error ? ' — ' + esc(pg.error.slice(0, 100)) : '') + '</td><td class="num">' + pg.returned + '</td><td class="num">' + pg.ms + ' ms</td></tr>'
+  }
+  html += '<tr><td><span class="pill pill-ad">AD</span></td><td>1</td><td>' + ad.status + (ad.error ? ' — ' + esc(ad.error.slice(0, 100)) : '') + '</td><td class="num">' + ad.returned + '</td><td class="num">' + (ad.ms || 0) + ' ms</td></tr>'
+  html += '</tbody></table>'
+
+  // Params debug
+  html += '<details style="margin-top:14px"><summary>Params sent to MarketCheck</summary><pre>' + esc(JSON.stringify(r.mcQueryParams, null, 2)) + '</pre></details>'
+
+  // Final listings
+  html += '<h2 style="margin:18px 0 8px">Final kept (' + p.afterMileage + ', sorted by distance)</h2>'
+  if (!r.listings.length) {
+    html += '<div class="err">No listings passed the pipeline. Try widening radius, loosening mileage %, or enabling fallback.</div>'
+  } else {
+    html += '<table><thead><tr>'
+    html += '<th>Src</th><th>Year</th><th>Trim</th>'
+    html += '<th class="num">Price</th><th class="num">Mileage</th>'
+    html += '<th class="num">Δ Miles</th>'
+    html += '<th class="num">Distance</th>'
+    html += '<th>Engine · Trans · DT</th><th>Dealer</th><th>VIN</th><th>Link</th>'
+    html += '</tr></thead><tbody>'
+    for (const l of r.listings) {
+      const specs = [l.engine, l.transmission, l.drivetrain].filter(Boolean).join(' · ')
+      const deltaMiles = i.vehicleMileage > 0 ? (l.mileage - i.vehicleMileage) : null
+      const deltaPct = i.vehicleMileage > 0 ? (deltaMiles / i.vehicleMileage * 100) : null
+      html += '<tr>'
+      html += '<td>' + (l.source === 'marketcheck' ? '<span class="pill pill-mc">MC</span>' : '<span class="pill pill-ad">AD</span>') + '</td>'
+      html += '<td>' + esc(l.year || '') + '</td>'
+      html += '<td>' + esc(l.trim || '') + '</td>'
+      html += '<td class="num">' + fmtMoney(l.price) + '</td>'
+      html += '<td class="num">' + fmtMi(l.mileage) + '</td>'
+      html += '<td class="num" style="font-size:11.5px;color:#64748b">' + (deltaMiles != null ? (deltaMiles >= 0 ? '+' : '') + fmtMi(deltaMiles) + ' (' + deltaPct.toFixed(0) + '%)' : '—') + '</td>'
+      html += '<td class="num">' + (l.distanceMi != null ? l.distanceMi + ' mi' : '—') + '</td>'
+      html += '<td>' + esc(specs || '—') + '</td>'
+      html += '<td>' + esc(l.dealerName || '—') + (l.dealerCity ? '<div style="font-size:11px;color:#64748b">' + esc(l.dealerCity + (l.dealerState ? ', ' + l.dealerState : '')) + '</div>' : '') + '</td>'
+      html += '<td class="mono">' + esc(l.vin || '') + '</td>'
+      html += '<td>' + (l.link ? '<a class="link" href="' + esc(l.link) + '" target="_blank">open</a>' : '—') + '</td>'
+      html += '</tr>'
+    }
+    html += '</tbody></table>'
+  }
+
+  resultDiv.innerHTML = html
+}
+
+function stat(label, value, sub, tone) {
+  const cls = 'stat' + (tone ? ' ' + tone : '')
+  return '<div class="' + cls + '"><div class="label">' + esc(label) + '</div><div class="value">' + esc(value) + '</div>' + (sub ? '<div class="sub">' + esc(sub) + '</div>' : '') + '</div>'
+}
+</script>
+
+</body>
+</html>

@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { Plus, Archive, Undo2, Save, X } from 'lucide-react'
 import type { OpposingAppraiser } from '@/lib/supabase/opposing-appraisers'
+import { confirmDialog } from '@/components/ui/dialog-service'
 
 interface Draft {
   id: string | null   // null = new
@@ -11,9 +12,24 @@ interface Draft {
   phone: string
   email: string
   notes: string
+  claimTypes: string[]
 }
 
-const emptyDraft = (): Draft => ({ id: null, name: '', company: '', phone: '', email: '', notes: '' })
+const emptyDraft = (): Draft => ({ id: null, name: '', company: '', phone: '', email: '', notes: '', claimTypes: [] })
+
+// Mirror of CLAIM_TYPE_OPTIONS in the user permissions tab — kept inline so
+// this page doesn't need a cross-import.
+const OA_CLAIM_TYPE_OPTIONS: { code: string; label: string }[] = [
+  { code: 'acv', label: 'ACV' },
+  { code: 'dv', label: 'DV' },
+  { code: 'estimate', label: 'Estimate Dispute' },
+  { code: 'lou', label: 'LOU' },
+  { code: 'storage', label: 'Storage' },
+  { code: 'salvage', label: 'Salvage' },
+  { code: 'full', label: 'Full' },
+  { code: 'desk', label: 'Desk' },
+  { code: 'other', label: 'Other' },
+]
 
 export function OpposingAppraisersClient() {
   const [rows, setRows] = useState<OpposingAppraiser[]>([])
@@ -58,6 +74,7 @@ export function OpposingAppraisersClient() {
       phone: draft.phone.trim() || null,
       email: draft.email.trim() || null,
       notes: draft.notes.trim() || null,
+      claimTypes: draft.claimTypes,
     }
     const url = draft.id === null
       ? '/api/admin/opposing-appraisers'
@@ -83,7 +100,7 @@ export function OpposingAppraisersClient() {
       setError('To unarchive, contact a super-admin or run a DB query directly.')
       return
     }
-    if (!confirm('Archive this opposing appraiser? They will no longer appear in the claim picker.')) return
+    if (!(await confirmDialog({ title: 'Archive opposing appraiser?', message: 'They will no longer appear in the claim picker. You can un-archive them later.', confirmLabel: 'Archive', variant: 'danger' }))) return
     setBusy(true); setError(null)
     const res = await fetch(`/api/admin/opposing-appraisers/${id}`, { method: 'DELETE' })
     setBusy(false)
@@ -99,6 +116,7 @@ export function OpposingAppraisersClient() {
       phone: row.phone ?? '',
       email: row.email ?? '',
       notes: row.notes ?? '',
+      claimTypes: [...(row.claimTypes ?? [])],
     })
     setError(null)
   }
@@ -148,11 +166,22 @@ export function OpposingAppraisersClient() {
                 >
                   {isEditing && draft ? (
                     <>
-                      <td className="px-3 py-2"><input value={draft.name} onChange={e => setDraft({ ...draft, name: e.target.value })} className={inputCls} placeholder="First Last" /></td>
-                      <td className="px-3 py-2"><input value={draft.company} onChange={e => setDraft({ ...draft, company: e.target.value })} className={inputCls} placeholder="Firm name" /></td>
-                      <td className="px-3 py-2"><input value={draft.phone} onChange={e => setDraft({ ...draft, phone: e.target.value })} className={inputCls} placeholder="555-555-5555" /></td>
-                      <td className="px-3 py-2"><input value={draft.email} onChange={e => setDraft({ ...draft, email: e.target.value })} className={inputCls} placeholder="name@firm.com" type="email" /></td>
-                      <td className="px-3 py-2 text-right">
+                      <td className="px-3 py-2 align-top">
+                        <input value={draft.name} onChange={e => setDraft({ ...draft, name: e.target.value })} className={inputCls} placeholder="First Last" />
+                        <ClaimTypesChipRow
+                          selected={draft.claimTypes}
+                          onToggle={(code, next) => setDraft({
+                            ...draft,
+                            claimTypes: next
+                              ? Array.from(new Set([...draft.claimTypes, code]))
+                              : draft.claimTypes.filter(x => x !== code),
+                          })}
+                        />
+                      </td>
+                      <td className="px-3 py-2 align-top"><input value={draft.company} onChange={e => setDraft({ ...draft, company: e.target.value })} className={inputCls} placeholder="Firm name" /></td>
+                      <td className="px-3 py-2 align-top"><input value={draft.phone} onChange={e => setDraft({ ...draft, phone: e.target.value })} className={inputCls} placeholder="555-555-5555" /></td>
+                      <td className="px-3 py-2 align-top"><input value={draft.email} onChange={e => setDraft({ ...draft, email: e.target.value })} className={inputCls} placeholder="name@firm.com" type="email" /></td>
+                      <td className="px-3 py-2 text-right align-top">
                         <div className="inline-flex gap-2">
                           <button onClick={save} disabled={busy} className="text-emerald-600 hover:text-emerald-700 disabled:opacity-40" title="Save"><Save className="w-4 h-4" /></button>
                           <button onClick={() => setDraft(null)} disabled={busy} className="text-gray-400 hover:text-gray-600 disabled:opacity-40" title="Cancel"><X className="w-4 h-4" /></button>
@@ -193,11 +222,22 @@ export function OpposingAppraisersClient() {
 
             {draft && draft.id === null && (
               <tr className="bg-blue-50/40 border-b border-gray-100">
-                <td className="px-3 py-2"><input value={draft.name} onChange={e => setDraft({ ...draft, name: e.target.value })} placeholder="First Last" className={inputCls} /></td>
-                <td className="px-3 py-2"><input value={draft.company} onChange={e => setDraft({ ...draft, company: e.target.value })} placeholder="Firm name" className={inputCls} /></td>
-                <td className="px-3 py-2"><input value={draft.phone} onChange={e => setDraft({ ...draft, phone: e.target.value })} placeholder="555-555-5555" className={inputCls} /></td>
-                <td className="px-3 py-2"><input value={draft.email} onChange={e => setDraft({ ...draft, email: e.target.value })} placeholder="name@firm.com" type="email" className={inputCls} /></td>
-                <td className="px-3 py-2 text-right">
+                <td className="px-3 py-2 align-top">
+                  <input value={draft.name} onChange={e => setDraft({ ...draft, name: e.target.value })} placeholder="First Last" className={inputCls} />
+                  <ClaimTypesChipRow
+                    selected={draft.claimTypes}
+                    onToggle={(code, next) => setDraft({
+                      ...draft,
+                      claimTypes: next
+                        ? Array.from(new Set([...draft.claimTypes, code]))
+                        : draft.claimTypes.filter(x => x !== code),
+                    })}
+                  />
+                </td>
+                <td className="px-3 py-2 align-top"><input value={draft.company} onChange={e => setDraft({ ...draft, company: e.target.value })} placeholder="Firm name" className={inputCls} /></td>
+                <td className="px-3 py-2 align-top"><input value={draft.phone} onChange={e => setDraft({ ...draft, phone: e.target.value })} placeholder="555-555-5555" className={inputCls} /></td>
+                <td className="px-3 py-2 align-top"><input value={draft.email} onChange={e => setDraft({ ...draft, email: e.target.value })} placeholder="name@firm.com" type="email" className={inputCls} /></td>
+                <td className="px-3 py-2 text-right align-top">
                   <div className="inline-flex gap-2">
                     <button onClick={save} disabled={busy} className="text-emerald-600 hover:text-emerald-700 disabled:opacity-40" title="Save"><Save className="w-4 h-4" /></button>
                     <button onClick={() => setDraft(null)} disabled={busy} className="text-gray-400 hover:text-gray-600 disabled:opacity-40" title="Cancel"><X className="w-4 h-4" /></button>
@@ -225,3 +265,33 @@ export function OpposingAppraisersClient() {
 }
 
 const inputCls = 'bg-white border border-gray-200 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 w-full'
+
+// Chip row for the Draft editor's claim-types multi-select. Compact so it
+// nests under the Name input without blowing out the table layout.
+function ClaimTypesChipRow({ selected, onToggle }: { selected: string[]; onToggle: (code: string, next: boolean) => void }) {
+  const sel = new Set(selected)
+  return (
+    <div className="mt-2 space-y-1">
+      <div className="text-[10px] uppercase tracking-wider font-semibold text-gray-500">Claim types handled</div>
+      <div className="flex flex-wrap gap-1">
+        {OA_CLAIM_TYPE_OPTIONS.map(({ code, label }) => {
+          const on = sel.has(code)
+          return (
+            <button
+              key={code}
+              type="button"
+              onClick={() => onToggle(code, !on)}
+              className={`inline-flex items-center h-6 px-2 rounded-full border text-[11px] font-semibold transition ${
+                on
+                  ? 'bg-blue-600 border-blue-600 text-white hover:bg-blue-500'
+                  : 'bg-white border-gray-300 text-gray-700 hover:border-gray-400'
+              }`}
+            >
+              {label}
+            </button>
+          )
+        })}
+      </div>
+    </div>
+  )
+}

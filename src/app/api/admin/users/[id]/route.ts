@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/service'
-import { requireAdmin } from '@/lib/auth/require-admin'
+import { requireAdmin, assertCanTargetUser } from '@/lib/auth/require-admin'
 
 export const runtime = 'nodejs'
 
@@ -8,10 +8,12 @@ export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const { errorResponse } = await requireAdmin()
+  const { caller, errorResponse } = await requireAdmin()
   if (errorResponse) return errorResponse
 
   const { id } = await params
+  const guard = await assertCanTargetUser(id, caller!)
+  if (guard) return guard
   const body = await request.json().catch(() => null) as {
     name?: string
     role?: 'admin' | 'appraiser'
@@ -25,8 +27,12 @@ export async function PATCH(
     addressState?: string | null
     addressZip?: string | null
     isActive?: boolean
-    showInHandlingAppraiserList?: boolean
+    showInNegotiatingAppraiserList?: boolean
     marketingAccess?: boolean
+    canSubmitWithoutHandoff?: boolean
+    emailNotificationsEnabled?: boolean
+    claimTypes?: string[]
+    disabledTools?: string[]
   } | null
   if (
     !body ||
@@ -42,8 +48,12 @@ export async function PATCH(
       body.addressState === undefined &&
       body.addressZip === undefined &&
       body.isActive === undefined &&
-      body.showInHandlingAppraiserList === undefined &&
-      body.marketingAccess === undefined)
+      body.showInNegotiatingAppraiserList === undefined &&
+      body.marketingAccess === undefined &&
+      body.canSubmitWithoutHandoff === undefined &&
+      body.emailNotificationsEnabled === undefined &&
+      body.claimTypes === undefined &&
+      body.disabledTools === undefined)
   ) {
     return NextResponse.json({ error: 'no fields to update' }, { status: 400 })
   }
@@ -72,10 +82,25 @@ export async function PATCH(
   if (body.addressState !== undefined) patch.address_state = body.addressState
   if (body.addressZip !== undefined) patch.address_zip = body.addressZip
   if (body.isActive !== undefined) patch.is_active = body.isActive
-  if (body.showInHandlingAppraiserList !== undefined) patch.show_in_handling_appraiser_list = body.showInHandlingAppraiserList
+  if (body.showInNegotiatingAppraiserList !== undefined) patch.show_in_handling_appraiser_list = body.showInNegotiatingAppraiserList
   if (body.marketingAccess !== undefined) patch.marketing_access = body.marketingAccess
+  if (body.canSubmitWithoutHandoff !== undefined) patch.can_submit_without_handoff = body.canSubmitWithoutHandoff
+  if (body.emailNotificationsEnabled !== undefined) patch.email_notifications_enabled = body.emailNotificationsEnabled
+  if (body.claimTypes !== undefined) patch.claim_types = body.claimTypes.filter(t => typeof t === 'string')
+  if (body.disabledTools !== undefined) patch.disabled_tools = body.disabledTools.filter(t => typeof t === 'string')
 
-  const { error } = await service.from('profiles').update(patch).eq('id', id)
+  let { error } = await service.from('profiles').update(patch).eq('id', id)
+  // Pre-migration fallback: any of the newer columns may not exist yet.
+  // Retry without whichever are missing so other field updates still land.
+  if (error && error.code === '42703') {
+    const retryPatch = { ...patch }
+    if (body.canSubmitWithoutHandoff !== undefined) delete retryPatch.can_submit_without_handoff
+    if (body.emailNotificationsEnabled !== undefined) delete retryPatch.email_notifications_enabled
+    if (body.claimTypes !== undefined) delete retryPatch.claim_types
+    if (body.disabledTools !== undefined) delete retryPatch.disabled_tools
+    const { error: e2 } = await service.from('profiles').update(retryPatch).eq('id', id)
+    error = e2
+  }
   if (error) return NextResponse.json({ error: error.message }, { status: 400 })
   return NextResponse.json({ ok: true })
 }
@@ -91,6 +116,8 @@ export async function DELETE(
   if (id === caller!.userId) {
     return NextResponse.json({ error: 'Admins cannot delete themselves' }, { status: 400 })
   }
+  const guard = await assertCanTargetUser(id, caller!)
+  if (guard) return guard
 
   const service = createServiceClient()
   // Guard: acv_history.user_id is ON DELETE CASCADE. Deleting a user with

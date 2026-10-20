@@ -132,6 +132,18 @@ export async function fillDVPdf(companySlug: string, variant: DVVariant, data: D
     try {
       const field = form.getTextField(name)
       field.setText(value)
+      // Several claim-info-page fields on these templates (file.0.0, claim #,
+      // date, VIN, vehicle, mileage, Client Name, phone numb) inherit a /DA
+      // that paints text white (1 1 1 rg) — filled values are invisible on the
+      // white page. Rewrite only the white color to black so filled text shows
+      // up; non-white colors (e.g. the blue valuation-row fields) are left as-is.
+      const currentDA = field.acroField.getDefaultAppearance() ?? ''
+      if (/\b1\s+1\s+1\s+(rg|RG)\b/.test(currentDA)) {
+        const fixedDA = currentDA
+          .replace(/\b1\s+1\s+1\s+rg\b/g, '0 g')
+          .replace(/\b1\s+1\s+1\s+RG\b/g, '0 G')
+        field.acroField.setDefaultAppearance(fixedDA)
+      }
       field.defaultUpdateAppearances(helvetica)
     } catch { /* field may not exist in this template */ }
   }

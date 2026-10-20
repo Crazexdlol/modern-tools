@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import type { Reminder } from '@/lib/reminders/types';
 import { ReminderRow } from './reminder-row';
 import { CreateReminderSheet } from './create-reminder-sheet';
+import { confirmDialog } from '@/components/ui/dialog-service';
 
 type Tab = 'upcoming' | 'sent' | 'done';
 
@@ -45,18 +46,30 @@ export function RemindersHeaderButton() {
     setLoading(true);
     const res = await fetch(`/api/reminders?tab=${which}`);
     const data = await res.json();
-    setItems(data.reminders ?? []);
+    const reminders = (data.reminders ?? []) as Reminder[];
+    setItems(reminders);
     setLoading(false);
-    if (which === 'upcoming') setUpcomingCount((data.reminders ?? []).length);
+    if (which === 'upcoming') {
+      // Badge counts only reminders that have already fired and are waiting
+      // for action — not ones still scheduled in the future. Showing a count
+      // for not-yet-due reminders was misleading.
+      setUpcomingCount(reminders.filter((r) => r.status === 'fired').length);
+    }
   }, []);
 
-  // Load the upcoming count on mount so the badge is accurate before the user opens.
+  // Load the fired-but-unactioned count on mount so the badge is accurate
+  // before the user opens the popover. Poll every 60s so a reminder firing
+  // in another tab still bumps this user's badge within a minute.
   useEffect(() => {
-    (async () => {
+    const refresh = async () => {
       const res = await fetch('/api/reminders?tab=upcoming');
       const data = await res.json();
-      setUpcomingCount((data.reminders ?? []).length);
-    })();
+      const reminders = (data.reminders ?? []) as Reminder[];
+      setUpcomingCount(reminders.filter((r) => r.status === 'fired').length);
+    };
+    refresh();
+    const t = window.setInterval(refresh, 60_000);
+    return () => window.clearInterval(t);
   }, []);
 
   // When the popover opens, (re)load the active tab.
@@ -65,10 +78,15 @@ export function RemindersHeaderButton() {
   }, [open, tab, load]);
 
   const handleDelete = useCallback(async (id: string) => {
-    if (!confirm('Delete this reminder?')) return;
+    if (!(await confirmDialog({ title: 'Delete reminder?', message: 'This reminder will be removed. This cannot be undone.', confirmLabel: 'Delete', variant: 'danger' }))) return;
     await fetch(`/api/reminders/${id}`, { method: 'DELETE' });
-    setItems((prev) => prev.filter((r) => r.id !== id));
-    if (tab === 'upcoming') setUpcomingCount((n) => Math.max(0, n - 1));
+    setItems((prev) => {
+      const deleted = prev.find((r) => r.id === id);
+      if (tab === 'upcoming' && deleted?.status === 'fired') {
+        setUpcomingCount((n) => Math.max(0, n - 1));
+      }
+      return prev.filter((r) => r.id !== id);
+    });
   }, [tab]);
 
   return (
@@ -80,70 +98,90 @@ export function RemindersHeaderButton() {
         >
           <Bell className="w-4.5 h-4.5" />
           {upcomingCount > 0 && (
-            <span className="absolute -top-0.5 -right-0.5 inline-flex items-center justify-center min-w-[16px] h-4 px-1 rounded-full bg-amber-500 text-white text-[10px] font-semibold tabular-nums">
+            <span className="absolute -top-0.5 -right-0.5 inline-flex items-center justify-center min-w-[16px] h-4 px-1 rounded-full bg-blue-600 text-white text-[10px] font-semibold tabular-nums">
               {upcomingCount > 99 ? '99+' : upcomingCount}
             </span>
           )}
         </PopoverTrigger>
-        <PopoverContent align="end" sideOffset={8} className="w-80 p-3">
-          <div className="flex items-center justify-between mb-2">
-            <h2 className="text-sm font-semibold">🔔 Reminders</h2>
-            <Button size="sm" onClick={() => { setSheetOpen(true); setOpen(false); }}>+ New</Button>
+        <PopoverContent align="end" sideOffset={8} className="w-96 p-0 border-gray-200 shadow-xl">
+          <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200">
+            <h2 className="text-base font-bold tracking-tight text-black flex items-center gap-2">
+              <Bell className="w-4 h-4 text-blue-600" />
+              Reminders
+            </h2>
+            <Button
+              size="sm"
+              className="bg-blue-600 hover:bg-blue-500 text-white font-bold h-7 px-3"
+              onClick={() => { setSheetOpen(true); setOpen(false); }}
+            >
+              + New
+            </Button>
           </div>
+          <div className="p-3">
+
 
           <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)}>
-            <TabsList className="grid grid-cols-3 w-full h-8">
-              <TabsTrigger value="upcoming" className="text-xs">Upcoming</TabsTrigger>
-              <TabsTrigger value="sent" className="text-xs">Sent</TabsTrigger>
-              <TabsTrigger value="done" className="text-xs">Done</TabsTrigger>
+            <TabsList className="grid grid-cols-3 w-full h-9 bg-gray-100">
+              <TabsTrigger value="upcoming" className="text-xs data-[state=active]:bg-white data-[state=active]:text-blue-600 data-[state=active]:font-semibold">Upcoming</TabsTrigger>
+              <TabsTrigger value="sent" className="text-xs data-[state=active]:bg-white data-[state=active]:text-blue-600 data-[state=active]:font-semibold">Sent</TabsTrigger>
+              <TabsTrigger value="done" className="text-xs data-[state=active]:bg-white data-[state=active]:text-blue-600 data-[state=active]:font-semibold">Done</TabsTrigger>
             </TabsList>
 
-            <TabsContent value="upcoming" className="mt-2 max-h-80 overflow-y-auto">
+            <TabsContent value="upcoming" className="mt-3 max-h-96 overflow-y-auto">
               {loading ? (
-                <div className="text-xs text-neutral-500 py-4 text-center">Loading…</div>
+                <div className="text-xs text-gray-500 py-6 text-center">Loading…</div>
               ) : items.length === 0 ? (
-                <div className="text-xs text-neutral-500 py-4 text-center">Nothing upcoming.</div>
+                <div className="text-xs text-gray-500 py-6 text-center">Nothing upcoming.</div>
               ) : (
                 groupUpcoming(items).map((g) => (
-                  <div key={g.label} className="mt-2">
-                    <div className="text-[10px] uppercase tracking-wide text-neutral-500 mb-1">
+                  <div key={g.label} className="mt-3 first:mt-0">
+                    <div className="text-[10px] font-medium uppercase tracking-wider text-gray-500 mb-1">
                       {g.label}
                     </div>
                     {g.items.map((r) => (
-                      <ReminderRow key={r.id} reminder={r} onDelete={handleDelete} />
+                      <ReminderRow
+                        key={r.id}
+                        reminder={r}
+                        onDelete={handleDelete}
+                        onAcknowledged={(id) => {
+                          setItems((prev) => prev.filter((x) => x.id !== id));
+                          setUpcomingCount((n) => Math.max(0, n - 1));
+                        }}
+                      />
                     ))}
                   </div>
                 ))
               )}
             </TabsContent>
 
-            <TabsContent value="sent" className="mt-2 max-h-80 overflow-y-auto">
+            <TabsContent value="sent" className="mt-3 max-h-96 overflow-y-auto">
               {loading ? (
-                <div className="text-xs text-neutral-500 py-4 text-center">Loading…</div>
+                <div className="text-xs text-gray-500 py-6 text-center">Loading…</div>
               ) : items.length === 0 ? (
-                <div className="text-xs text-neutral-500 py-4 text-center">Nothing sent.</div>
+                <div className="text-xs text-gray-500 py-6 text-center">Nothing sent.</div>
               ) : (
                 items.map((r) => <ReminderRow key={r.id} reminder={r} onDelete={handleDelete} />)
               )}
             </TabsContent>
 
-            <TabsContent value="done" className="mt-2 max-h-80 overflow-y-auto">
+            <TabsContent value="done" className="mt-3 max-h-96 overflow-y-auto">
               {loading ? (
-                <div className="text-xs text-neutral-500 py-4 text-center">Loading…</div>
+                <div className="text-xs text-gray-500 py-6 text-center">Loading…</div>
               ) : items.length === 0 ? (
-                <div className="text-xs text-neutral-500 py-4 text-center">Nothing done yet.</div>
+                <div className="text-xs text-gray-500 py-6 text-center">Nothing done yet.</div>
               ) : (
                 items.map((r) => <ReminderRow key={r.id} reminder={r} />)
               )}
             </TabsContent>
           </Tabs>
+          </div>
         </PopoverContent>
       </Popover>
 
       <CreateReminderSheet
         open={sheetOpen}
         onClose={() => setSheetOpen(false)}
-        onCreated={() => { load(tab); setUpcomingCount((n) => n + 1); }}
+        onCreated={() => { load(tab); /* badge only counts fired-unactioned, so new scheduled reminders don't bump it */ }}
       />
     </>
   );

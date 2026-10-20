@@ -9,7 +9,9 @@ export const runtime = 'nodejs'
 // for the caller. Upserts (user_id, claim_id) with last_read_at = now().
 export async function POST(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id: claimId } = await params
-  const { caller, errorResponse } = await requireClaimAccess(claimId)
+  // Mark-as-read on a locked claim should still work — read tracking is
+  // read-only semantics even though it writes to user_claim_views.
+  const { caller, errorResponse } = await requireClaimAccess(claimId, { allowOnLockedClaim: true })
   if (errorResponse) return errorResponse
 
   const cookieStore = await cookies()

@@ -19,6 +19,7 @@ export async function PATCH(
     phone?: string | null
     email?: string | null
     notes?: string | null
+    claimTypes?: string[]
   } | null
 
   if (!body || Object.keys(body).length === 0) {
@@ -32,11 +33,19 @@ export async function PATCH(
   if (body.phone !== undefined) patch.phone = body.phone?.trim() || null
   if (body.email !== undefined) patch.email = body.email?.trim() || null
   if (body.notes !== undefined) patch.notes = body.notes?.trim() || null
+  if (body.claimTypes !== undefined) patch.claim_types = body.claimTypes.filter(t => typeof t === 'string')
 
-  const { error } = await service
+  let { error } = await service
     .from('opposing_appraisers')
     .update(patch)
     .eq('id', id)
+  // Pre-migration fallback: claim_types column may not exist yet.
+  if (error && error.code === '42703' && body.claimTypes !== undefined) {
+    const retry = { ...patch }
+    delete retry.claim_types
+    const { error: e2 } = await service.from('opposing_appraisers').update(retry).eq('id', id)
+    error = e2
+  }
 
   if (error) {
     if (error.code === '42P01') {

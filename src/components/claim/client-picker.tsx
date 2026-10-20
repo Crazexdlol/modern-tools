@@ -1,13 +1,14 @@
 "use client"
 
 import { useEffect, useRef, useState } from 'react'
-import { AlertTriangle, Building2, ChevronDown, Loader2, Plus, X } from 'lucide-react'
+import { AlertTriangle, Building2, ChevronDown, Loader2, Plus, User, X } from 'lucide-react'
 import {
   CLIENT_TYPE_LABELS,
   createClient as createClientRecord,
   fuzzyMatchClients,
-  searchClientsByName,
+  searchClientsAndContactsByName,
   type Client,
+  type ClientPickerMatch,
   type ClientType,
   type FuzzyClientMatch,
 } from '@/lib/supabase/clients'
@@ -20,6 +21,7 @@ const DUPLICATE_GUARD_THRESHOLD = 0.4
 export function ClientPicker({
   value,
   valueName,
+  contactId,
   onChange,
   placeholder = 'Sedgwick',
   inputClassName,
@@ -30,9 +32,17 @@ export function ClientPicker({
   // Free-text clientName (ClaimInfo.clientName). Shown when no client_id is set
   // so the pre-existing value stays visible until the appraiser picks a client.
   valueName: string
-  // Fires whenever the linked client changes. Passes both the id (for
-  // acv_history.client_id) and the display name (for ClaimInfo.clientName).
-  onChange: (clientId: string | null, clientName: string) => void
+  // Currently linked contact id (claim.clientContactId). When set, the input
+  // shows "Company Name - Person Name" so the user knows a specific person
+  // at the company is attributed to this claim. On the dashboard, only the
+  // Company Name is shown (via claim.clientName) — the contact id is used
+  // for per-person stats on the Clients admin page.
+  contactId?: string | null
+  // Fires whenever the linked client / contact changes. Passes the client id,
+  // the company name (always the company, never "Company - Person"), the
+  // contact id (null when only a company was picked), and the contact name
+  // (for stale-copy display inside the claim; null when no contact).
+  onChange: (clientId: string | null, clientName: string, contactId: string | null, contactName: string | null) => void
   placeholder?: string
   inputClassName?: string
 }) {
@@ -40,31 +50,50 @@ export function ClientPicker({
   // current value; typing overwrites it.
   const [query, setQuery] = useState('')
   const [open, setOpen] = useState(false)
-  const [results, setResults] = useState<Client[]>([])
+  const [results, setResults] = useState<ClientPickerMatch[]>([])
   const [loading, setLoading] = useState(false)
-  const [selected, setSelected] = useState<{ id: string; name: string } | null>(
-    value ? { id: value, name: valueName } : null,
+  // Selected { id, name } where name is the DISPLAY string ("Company" or
+  // "Company - Person" when a contact is attached). contactName is the raw
+  // contact name used alongside valueName to render the composite.
+  const [selected, setSelected] = useState<{ id: string; name: string; contactName?: string } | null>(
+    value
+      ? { id: value, name: valueName }
+      : null,
   )
   const [addModalOpen, setAddModalOpen] = useState(false)
   const wrapRef = useRef<HTMLDivElement | null>(null)
 
   // Reset local `selected` when the caller re-hydrates value/valueName (e.g.
   // switching between claims). Even without a linked id we still surface the
-  // free-text name so it doesn't look blank.
+  // free-text name so it doesn't look blank. When a contactId is attached,
+  // fetch the contact's name so the input can show "Company - Person".
   useEffect(() => {
-    if (value) setSelected({ id: value, name: valueName })
-    else if (valueName) setSelected({ id: '', name: valueName })
-    else setSelected(null)
+    if (value) {
+      setSelected({ id: value, name: valueName })
+      if (contactId) {
+        // Lazy-fetch the contact name once per contactId change.
+        import('@/lib/supabase/clients').then(({ fetchContacts }) =>
+          fetchContacts(value).then((contacts) => {
+            const c = contacts.find((p) => p.id === contactId)
+            if (c) setSelected({ id: value, name: `${valueName} - ${c.name}`, contactName: c.name })
+          }),
+        )
+      }
+    } else if (valueName) {
+      setSelected({ id: '', name: valueName })
+    } else {
+      setSelected(null)
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [value, valueName])
+  }, [value, valueName, contactId])
 
-  // Debounced search.
+  // Debounced combined search — clients AND contacts (People @ Company).
   useEffect(() => {
     if (!open) return
     if (!query.trim()) { setResults([]); return }
     setLoading(true)
     const timer = setTimeout(() => {
-      searchClientsByName(query, 12).then((rows) => {
+      searchClientsAndContactsByName(query, 12).then((rows) => {
         setResults(rows)
         setLoading(false)
       })
@@ -82,11 +111,20 @@ export function ClientPicker({
     return () => document.removeEventListener('mousedown', onDoc)
   }, [open])
 
-  const pick = (c: Client) => {
+  const pickClient = (c: Client) => {
     setSelected({ id: c.id, name: c.name })
     setQuery('')
     setOpen(false)
-    onChange(c.id, c.name)
+    onChange(c.id, c.name, null, null)
+  }
+
+  const pickContact = (c: Client, personName: string, personId: string) => {
+    // Display shows "Company - Person" inside the claim; `onChange` reports
+    // the company name only (unchanged dashboard behavior).
+    setSelected({ id: c.id, name: `${c.name} - ${personName}`, contactName: personName })
+    setQuery('')
+    setOpen(false)
+    onChange(c.id, c.name, personId, personName)
   }
 
   // "Use typed text as a one-off name" — keeps the string on the claim without
@@ -98,13 +136,13 @@ export function ClientPicker({
     setSelected({ id: '', name: t }) // id '' so the input shows the text
     setQuery('')
     setOpen(false)
-    onChange(null, t)
+    onChange(null, t, null, null)
   }
 
   const clear = () => {
     setSelected(null)
     setQuery('')
-    onChange(null, '')
+    onChange(null, '', null, null)
   }
 
   const openAddModal = () => {
@@ -127,6 +165,25 @@ export function ClientPicker({
             value={displayValue}
             onFocus={() => setOpen(true)}
             onChange={(e) => { setQuery(e.target.value); if (!open) setOpen(true) }}
+            onBlur={(e) => {
+              // CRITICAL: `query` lives in local state until something commits
+              // it to the parent (pick / Enter / "Use typed text" button).
+              // Without this blur handler, typing a client name and clicking
+              // away silently discards the edit — the auto-save never sees it
+              // and the claim refreshes to the stale value. (Henry hit this
+              // 2026-10-14 and lost an hour of client-info edits.)
+              //
+              // Rule: on blur, if the user typed non-empty text AND focus is
+              // leaving the picker (relatedTarget is outside wrapRef), commit
+              // the query as free-text. If focus is moving to a dropdown
+              // button inside wrapRef (match pick / "Add new client" / "Use
+              // text" / clear), skip — those paths commit themselves.
+              const next = e.relatedTarget as Node | null
+              if (next && wrapRef.current?.contains(next)) return
+              const typed = query.trim()
+              if (typed) useAsFreeText(typed)
+              setOpen(false)
+            }}
             onKeyDown={(e) => {
               // Enter commits the typed text as a free-text client name (not
               // linked to CRM). Escape closes the dropdown without change.
@@ -164,22 +221,49 @@ export function ClientPicker({
             {!loading && query.trim() && results.length === 0 && (
               <div className="px-3 py-2 text-xs text-gray-500">No matches.</div>
             )}
-            {results.map((c) => (
-              <button
-                key={c.id}
-                type="button"
-                onClick={() => pick(c)}
-                className="w-full flex items-center gap-3 px-3 py-2 text-left hover:bg-blue-50 border-b border-gray-100 last:border-b-0"
-              >
-                <Building2 className="w-4 h-4 text-blue-500 shrink-0" />
-                <div className="flex-1 min-w-0">
-                  <div className="text-sm font-semibold text-gray-900 truncate">{c.name}</div>
-                  <div className="text-xs text-gray-500">
-                    {CLIENT_TYPE_LABELS[c.type]}{c.city || c.state ? ` · ${[c.city, c.state].filter(Boolean).join(', ')}` : ''}
+            {results.map((m) => {
+              if (m.kind === 'client') {
+                const c = m.client
+                return (
+                  <button
+                    key={`c-${c.id}`}
+                    type="button"
+                    onClick={() => pickClient(c)}
+                    className="w-full flex items-center gap-3 px-3 py-2 text-left hover:bg-blue-50 border-b border-gray-100 last:border-b-0"
+                  >
+                    <Building2 className="w-4 h-4 text-blue-500 shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-semibold text-gray-900 truncate">{c.name}</div>
+                      <div className="text-xs text-gray-500">
+                        {CLIENT_TYPE_LABELS[c.type]}{c.city || c.state ? ` · ${[c.city, c.state].filter(Boolean).join(', ')}` : ''}
+                      </div>
+                    </div>
+                  </button>
+                )
+              }
+              // kind === 'contact'
+              const p = m.contact
+              const c = m.client
+              return (
+                <button
+                  key={`p-${p.id}`}
+                  type="button"
+                  onClick={() => pickContact(c, p.name, p.id)}
+                  className="w-full flex items-center gap-3 px-3 py-2 text-left hover:bg-indigo-50 border-b border-gray-100 last:border-b-0"
+                >
+                  <User className="w-4 h-4 text-indigo-500 shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-semibold text-gray-900 truncate">
+                      {p.name} <span className="text-gray-400 font-normal">@</span> {c.name}
+                    </div>
+                    <div className="text-xs text-gray-500 truncate">
+                      {p.title ? `${p.title} · ` : ''}{CLIENT_TYPE_LABELS[c.type]}
+                      {p.isPrimary ? ' · primary' : ''}
+                    </div>
                   </div>
-                </div>
-              </button>
-            ))}
+                </button>
+              )
+            })}
             <button
               type="button"
               onClick={openAddModal}
@@ -211,7 +295,9 @@ export function ClientPicker({
             setAddModalOpen(false)
             setSelected({ id: c.id, name: c.name })
             setQuery('')
-            onChange(c.id, c.name)
+            // New client always starts without a contact attached — user
+            // can switch to a specific person via the picker next time.
+            onChange(c.id, c.name, null, null)
           }}
         />
       )}
@@ -276,6 +362,9 @@ function AddClientModal({
       id: m.id,
       name: m.name,
       type: m.type,
+      typeCustom: null,
+      roughNumbersDefault: false,
+      rtaDefault: false,
       addressLine: null, city: m.city, state: m.state, zip: null,
       lat: null, lng: null, phone: null, email: null, website: null, notes: null,
       lastMarketedAt: null, remarketIntervalDays: null, nextRemarketAt: null,

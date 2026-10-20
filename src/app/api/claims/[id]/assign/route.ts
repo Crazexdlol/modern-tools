@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/service'
 import { requireAuth, fetchClaim } from '@/lib/auth/require-admin'
+import { recordStageTransition, type Stage } from '@/lib/supabase/stage-events'
+import { notifyAppraiserAssigned, notifyAppraiserRemoved, notifyStageEntry } from '@/lib/email/claim-notifications'
 
 export const runtime = 'nodejs'
 
@@ -54,20 +56,6 @@ export async function POST(
       return NextResponse.json({ error: 'Not authorized to reassign claims' }, { status: 403 })
     }
   }
-  // Sync claim.handlingAppraiser (a text field in the claim jsonb, used by
-  // the printed assignment sheet + signature block) with the new assignee's
-  // display name. Otherwise the printed docs keep showing the prior
-  // appraiser after a reassign. Clear it on unassign so the fallback in
-  // the assignment sheet renders "Unassigned".
-  let newHandlingName = ''
-  if (body.assignedTo) {
-    const { data: targetProf } = await service
-      .from('profiles')
-      .select('name, email')
-      .eq('id', body.assignedTo)
-      .maybeSingle()
-    newHandlingName = (targetProf?.name || targetProf?.email || '').trim()
-  }
   // Fetch the current row (also used to 404 admin-path reassigns of
   // non-existent ids — the UPDATE below would otherwise silently touch 0
   // rows and the caller would see {ok:true} despite the id being bogus).
@@ -77,7 +65,7 @@ export async function POST(
   const { data: currentRow } = await service
     .from('acv_history')
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    .select('claim, status_phase, company_id' as any)
+    .select('claim, status_phase, company_id, workflow_stage, assigned_to' as any)
     .eq('id', id)
     .maybeSingle()
   if (!currentRow) return NextResponse.json({ error: 'Claim not found' }, { status: 404 })
@@ -91,8 +79,14 @@ export async function POST(
   ) {
     return NextResponse.json({ error: 'Claim not found' }, { status: 404 })
   }
-  const currentClaim = (currentRowAny.claim ?? {}) as Record<string, unknown>
-  const nextClaim = { ...currentClaim, handlingAppraiser: newHandlingName }
+
+  // IMPORTANT: negotiatingAppraiser is a SEPARATE field from assigned_to
+  // and is managed independently by the admin via the top-of-claim dropdown.
+  // Reassigning a claim must NOT overwrite negotiatingAppraiser (Henry
+  // 2026-10-12 — the two names represent different roles: the person
+  // doing the work vs. the person whose name prints on the final docs).
+  // Previously this route stamped negotiatingAppraiser = new-assignee.name,
+  // which silently clobbered the admin's picked value on every reassign.
 
   // Also reset last_status_request_at so the new appraiser gets a fresh
   // 48-hour window, and stamp assigned_at so the cron has an anchor when
@@ -106,7 +100,6 @@ export async function POST(
     last_status_request_at: null,
     submitted_at: null,
     submitted_by: null,
-    claim: nextClaim,
   }
   // If the claim was phased 'completed' (via submit), clear the phase too —
   // the new appraiser hasn't submitted anything yet. Other phases (Umpire,
@@ -120,5 +113,31 @@ export async function POST(
     .update(patch)
     .eq('id', id)
   if (error) return NextResponse.json({ error: error.message }, { status: 400 })
+  // Cycle-time ledger: closes the prior assignee's span (if any) and opens
+  // a new one under the new assignee at the current workflow stage. Pulls
+  // the stage from the fetched currentRow since /assign doesn't change it.
+  const rowStage = (currentRowAny.workflow_stage ?? 'main') as string
+  // Tolerate transitional pre-merge values ('billing' / 'delivery' both roll
+  // into 'billing_delivery') for any row that hadn't been updated yet.
+  const normalizedStage = (rowStage === 'billing' || rowStage === 'delivery') ? 'billing_delivery' : rowStage
+  const stage: Stage = (['main','qc','billing_delivery','payment'].includes(normalizedStage) ? normalizedStage : 'main') as Stage
+  await recordStageTransition(service, id, stage, body.assignedTo ?? null)
+  // Fire assignment emails after the DB mutation lands. Only when the
+  // assignment actually changed (self-reassign to same person is a no-op).
+  // Email failures never surface to the client — logged in the helper.
+  const prevAssignedTo = (currentRowAny.assigned_to as string | null) ?? null
+  if (prevAssignedTo !== body.assignedTo) {
+    if (prevAssignedTo) {
+      await notifyAppraiserRemoved({ claimId: id, appraiserId: prevAssignedTo })
+    }
+    if (body.assignedTo) {
+      await notifyAppraiserAssigned({ claimId: id, appraiserId: body.assignedTo })
+      // "New Assignments" stage-entry watchers get pinged on every claim
+      // that gains an assignee (both brand-new and reassignments). The
+      // main stage itself doesn't change here, but the dashboard view it
+      // populates does — which is what the watcher config represents.
+      await notifyStageEntry({ claimId: id, stage: 'main', actorId: caller!.userId })
+    }
+  }
   return NextResponse.json({ ok: true })
 }

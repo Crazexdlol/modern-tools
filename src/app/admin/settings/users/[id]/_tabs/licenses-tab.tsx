@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { Plus, Trash2 } from 'lucide-react'
 import { fetchUserLicenses, getLicenseAlertLevel, type AppraiserLicense, type LicenseAlertLevel } from '@/lib/supabase/appraiser-licenses'
 import { US_STATES } from '@/lib/us-states'
+import { confirmDialog } from '@/components/ui/dialog-service'
 
 interface Draft {
   id: string | null   // null = new
@@ -91,7 +92,7 @@ export function LicensesTab({ userId }: { userId: string }) {
   }
 
   const remove = async (id: string) => {
-    if (!confirm('Delete this license?')) return
+    if (!(await confirmDialog({ title: 'Delete license?', message: 'This license record will be removed. This cannot be undone.', confirmLabel: 'Delete', variant: 'danger' }))) return
     setBusy(true); setError(null)
     const res = await fetch(`/api/admin/appraiser-licenses/${id}`, { method: 'DELETE' })
     setBusy(false)

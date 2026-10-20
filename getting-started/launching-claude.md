@@ -4,9 +4,10 @@ Short guide for firing up a working session on this repo.
 
 ## 1. Open PowerShell in the project folder
 
-```powershell
 cd "C:\XSFA\Modern Tools Official"
-```
+claude remote-control
+
+
 
 There should be exactly **one** copy of this project on disk at that path. If you see another copy anywhere else, stop and check with Henry before doing anything — a duplicate is what caused the 2026-07-06 prod incident.
 

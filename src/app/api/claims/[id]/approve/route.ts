@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/service'
 import { requireAdmin, fetchClaim } from '@/lib/auth/require-admin'
+import { closeOpenStageEvent } from '@/lib/supabase/stage-events'
 
 export const runtime = 'nodejs'
 
@@ -54,5 +55,8 @@ export async function POST(
       .eq('id', id))
   }
   if (error) return NextResponse.json({ error: error.message }, { status: 400 })
+  // Cycle-time ledger: terminal close — stamp exited_at on the current open
+  // event, no new event opens.
+  await closeOpenStageEvent(service, id)
   return NextResponse.json({ ok: true, reason })
 }

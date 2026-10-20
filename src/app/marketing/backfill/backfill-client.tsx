@@ -3,7 +3,8 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { ArrowLeft, Check, Loader2, User } from 'lucide-react'
-import { CLIENT_TYPE_LABELS, type ClientType } from '@/lib/supabase/clients'
+import { CLIENT_TYPE_LABELS, SELECTABLE_CLIENT_TYPES, type ClientType } from '@/lib/supabase/clients'
+import { alertDialog } from '@/components/ui/dialog-service'
 
 interface AnalyzedCluster {
   key: string
@@ -41,7 +42,7 @@ export function BackfillClient() {
   useEffect(() => {
     fetch('/api/marketing/backfill/analyze').then(async r => {
       const data = await r.json()
-      if (!r.ok) { alert(data.error ?? 'analyze failed'); return }
+      if (!r.ok) { await alertDialog({ title: 'Analyze failed', message: data.error ?? 'The analyzer returned an error.', variant: 'danger' }); return }
       setAnalysis(data)
       const m = new Map<string, Decision>()
       for (const c of data.clusters as AnalyzedCluster[]) {
@@ -179,7 +180,7 @@ export function BackfillClient() {
                 </div>
                 <select value={d.type} onChange={(e) => updateDecision(c.key, { type: e.target.value as ClientType })}
                         className="text-xs border border-gray-200 rounded-md px-2 py-1 bg-white">
-                  {(Object.keys(CLIENT_TYPE_LABELS) as ClientType[]).map(t => (
+                  {SELECTABLE_CLIENT_TYPES.map(t => (
                     <option key={t} value={t}>{CLIENT_TYPE_LABELS[t]}</option>
                   ))}
                 </select>

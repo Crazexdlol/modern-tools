@@ -3,8 +3,16 @@
 import { useEffect, useState } from 'react'
 import { Plus, Archive, Undo2, Trash2, Save, X } from 'lucide-react'
 import { fetchStatusPhaseConfigs, invalidateStatusPhaseConfigsCache, phaseColorClasses, type StatusPhaseConfig } from '@/lib/supabase/status-phase-configs'
+import { confirmDialog } from '@/components/ui/dialog-service'
 
-const COLORS = ['green', 'red', 'amber', 'blue', 'gray'] as const
+// Full palette supported by phaseColorClasses — expose all of them in the
+// admin create/edit form so admins can pick anything the renderer knows how
+// to style. Order ≈ visual hue wheel so the dropdown reads naturally.
+const COLORS = [
+  'red', 'orange', 'amber', 'yellow',
+  'green', 'teal', 'blue', 'purple',
+  'fuchsia', 'gray',
+] as const
 type Color = typeof COLORS[number]
 
 interface Draft {
@@ -89,8 +97,20 @@ export function StatusPhasesClient() {
     void load()
   }
 
+  const togglePauses = async (code: string, next: boolean) => {
+    setBusy(true); setError(null)
+    const res = await fetch(`/api/admin/status-phase-configs/${code}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pausesCycleTime: next }),
+    })
+    setBusy(false)
+    if (!res.ok) { const b = await res.json().catch(() => ({})); setError((b as { error?: string }).error ?? 'Save failed'); return }
+    void load()
+  }
+
   const remove = async (code: string) => {
-    if (!confirm('Delete this phase? If any claim references it, deletion will be refused (archive it instead).')) return
+    if (!(await confirmDialog({ title: 'Delete phase?', message: 'If any claim references this phase, deletion will be refused (archive it instead).', confirmLabel: 'Delete', variant: 'danger' }))) return
     setBusy(true); setError(null)
     const res = await fetch(`/api/admin/status-phase-configs/${code}`, { method: 'DELETE' })
     setBusy(false)
@@ -124,6 +144,12 @@ export function StatusPhasesClient() {
               <th className="text-left px-3 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">Label</th>
               <th className="text-left px-3 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider w-48">Code</th>
               <th className="text-left px-3 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider w-44">Color</th>
+              <th
+                className="text-left px-3 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider w-32"
+                title="When ON, time a claim spends in this phase does not count toward cycle-time totals."
+              >
+                Pauses Cycle
+              </th>
               <th className="text-right px-3 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider w-32">Actions</th>
             </tr>
           </thead>
@@ -161,6 +187,7 @@ export function StatusPhasesClient() {
                           ))}
                         </select>
                       </td>
+                      <td className="px-3 py-2 text-xs text-gray-400 italic">(edit via toggle)</td>
                       <td className="px-3 py-2 text-right">
                         <div className="inline-flex gap-2">
                           <button onClick={save} disabled={busy} className="text-emerald-600 hover:text-emerald-700 disabled:opacity-40" title="Save"><Save className="w-4 h-4" /></button>
@@ -178,6 +205,23 @@ export function StatusPhasesClient() {
                           <span className={`w-2 h-2 rounded-full border ${phaseColorClasses(row.color)}`} aria-hidden />
                           {row.color}
                         </span>
+                      </td>
+                      <td className="px-3 py-2">
+                        <button
+                          type="button"
+                          onClick={() => togglePauses(row.code, !row.pausesCycleTime)}
+                          disabled={busy}
+                          title={row.pausesCycleTime
+                            ? 'Click to STOP pausing cycle time while in this phase'
+                            : 'Click to START pausing cycle time while in this phase'}
+                          className={`inline-flex items-center text-[11px] font-semibold px-2 py-0.5 rounded-full border transition-colors ${
+                            row.pausesCycleTime
+                              ? 'bg-amber-100 border-amber-300 text-amber-800 hover:bg-amber-200'
+                              : 'bg-white border-gray-200 text-gray-500 hover:bg-gray-50'
+                          } disabled:opacity-50 disabled:cursor-not-allowed`}
+                        >
+                          {row.pausesCycleTime ? 'Pauses' : 'Counts'}
+                        </button>
                       </td>
                       <td className="px-3 py-2 text-right">
                         <div className="inline-flex gap-2">
@@ -242,6 +286,7 @@ export function StatusPhasesClient() {
                     ))}
                   </select>
                 </td>
+                <td className="px-3 py-2 text-xs text-gray-400 italic">toggle after save</td>
                 <td className="px-3 py-2 text-right">
                   <div className="inline-flex gap-2">
                     <button onClick={save} disabled={busy} className="text-emerald-600 hover:text-emerald-700 disabled:opacity-40" title="Save"><Save className="w-4 h-4" /></button>

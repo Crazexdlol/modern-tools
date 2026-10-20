@@ -15,6 +15,10 @@ interface SummaryUser {
   thisMonth: number
   last6Months: number
   lastActiveAt: string | null
+  // Session stats (null when user_sessions table doesn't exist yet). All
+  // computed over the last 30 days to keep the summary snappy.
+  avgSessionSeconds: number | null
+  sessions30d: number | null
 }
 
 // GET /api/activity/summary
@@ -27,6 +31,8 @@ export async function GET() {
   const weekStart = laMondayOf(today)
   const monthStart = laMonthStart(today)
   const sixMonthsStart = laMinusDays(today, 180)
+  // 30-day cutoff for the session-stats rollup (avg length + session count).
+  const thirtyDaysAgoIso = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
 
   const service = createServiceClient()
 
@@ -55,11 +61,34 @@ export async function GET() {
         isActive: p.is_active !== false,
         today: 0, thisWeek: 0, thisMonth: 0, last6Months: 0,
         lastActiveAt: null,
+        avgSessionSeconds: null,
+        sessions30d: null,
       }))
       return NextResponse.json({ users, warning: 'user_activity_daily table not found' })
     }
     return NextResponse.json({ error: rowsErr.message }, { status: 500 })
   }
+
+  // Session rollup (last 30 days). If user_sessions doesn't exist yet
+  // (migration-activity-ticks-and-sessions not run), silently skip and
+  // return nulls so the UI keeps rendering.
+  const sessionStats = new Map<string, { count: number; totalSeconds: number }>()
+  const { data: sessionRows, error: sessErr } = await service
+    .from('user_sessions')
+    .select('user_id, active_seconds')
+    .gte('started_at', thirtyDaysAgoIso)
+  if (sessErr && sessErr.code !== '42P01') {
+    console.warn('[summary] session rollup failed:', sessErr.message)
+  }
+  if (sessionRows) {
+    for (const r of sessionRows as Array<{ user_id: string; active_seconds: number }>) {
+      const s = sessionStats.get(r.user_id) ?? { count: 0, totalSeconds: 0 }
+      s.count += 1
+      s.totalSeconds += r.active_seconds ?? 0
+      sessionStats.set(r.user_id, s)
+    }
+  }
+  const sessionTableExists = !sessErr || sessErr.code !== '42P01'
 
   // Bucket rows per user.
   const byUser = new Map<string, { today: number; week: number; month: number; sixMonths: number; lastActive: string | null }>()
@@ -81,6 +110,7 @@ export async function GET() {
 
   const users: SummaryUser[] = (profiles ?? []).map(p => {
     const b = byUser.get(p.id)
+    const s = sessionStats.get(p.id)
     return {
       userId: p.id,
       name: p.name,
@@ -91,6 +121,8 @@ export async function GET() {
       thisMonth: b?.month ?? 0,
       last6Months: b?.sixMonths ?? 0,
       lastActiveAt: b?.lastActive ?? null,
+      avgSessionSeconds: sessionTableExists ? (s && s.count > 0 ? Math.round(s.totalSeconds / s.count) : 0) : null,
+      sessions30d: sessionTableExists ? (s?.count ?? 0) : null,
     }
   })
 

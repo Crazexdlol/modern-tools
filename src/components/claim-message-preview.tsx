@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useRef, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import { MessageCircle } from 'lucide-react'
 import { createBrowserClient } from '@supabase/ssr'
 
@@ -64,38 +65,82 @@ async function fetchLastMessage(claimId: string): Promise<LastMessage | 'empty' 
   }
 }
 
-// ─── Popover positioning state ───────────────────────────────────────────────
+// ─── Popover positioning (viewport-fixed) ────────────────────────────────────
+// Rendered via a portal with position:fixed so the popover escapes the table's
+// overflow:auto container. Coordinates are computed from the trigger button's
+// bounding rect each time it opens.
+//
+// The popover sizes itself to its content (bounded by MAX_W / MAX_H), is placed
+// just below the icon when there's room below, otherwise just above. Horizontal
+// alignment anchors to the right edge of the icon by default, flipping to the
+// left edge if the popover would spill past the viewport right-edge.
 
-interface PopoverPos {
-  vertical: 'above' | 'below'
-  horizontal: 'left' | 'right'
+const PX_GAP = 6
+const MAX_W = 320
+const MAX_H = 220
+
+interface PopoverRect {
+  top: number
+  left: number
+  maxWidth: number
+  maxHeight: number
 }
 
-function computePos(rect: DOMRect): PopoverPos {
-  const vertical: 'above' | 'below' =
-    rect.bottom + 200 > window.innerHeight ? 'above' : 'below'
-  const horizontal: 'left' | 'right' =
-    rect.right + 340 > window.innerWidth ? 'right' : 'left'
-  return { vertical, horizontal }
+function computeRect(iconRect: DOMRect): PopoverRect {
+  const vw = window.innerWidth
+  const vh = window.innerHeight
+  const spaceBelow = vh - iconRect.bottom - PX_GAP
+  const spaceAbove = iconRect.top - PX_GAP
+  // Prefer below when the popover fits; otherwise flip above. If neither has
+  // the full MAX_H the popover shrinks to the available room (overflow-y auto
+  // handles the rare long-message case).
+  const placeBelow = spaceBelow >= Math.min(MAX_H, 120) || spaceBelow >= spaceAbove
+  const maxHeight = Math.min(MAX_H, placeBelow ? spaceBelow : spaceAbove)
+  const top = placeBelow ? iconRect.bottom + PX_GAP : iconRect.top - PX_GAP - maxHeight
+  // Anchor the popover's right edge to the icon's right edge by default so it
+  // doesn't cover the row content to the right. If that would push the left
+  // edge off-screen, anchor the left edge to the icon's left edge instead.
+  const anchorRight = iconRect.right
+  const anchorLeft = iconRect.left
+  const maxWidth = Math.min(MAX_W, vw - 16)
+  let left = anchorRight - maxWidth
+  if (left < 8) left = Math.min(anchorLeft, vw - maxWidth - 8)
+  return { top, left, maxWidth, maxHeight }
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export function ClaimMessagePreview({ claimId }: { claimId: string }) {
   const [open, setOpen] = useState(false)
-  const [pos, setPos] = useState<PopoverPos>({ vertical: 'below', horizontal: 'left' })
+  const [rect, setRect] = useState<PopoverRect | null>(null)
   const [result, setResult] = useState<LastMessage | 'empty' | 'error' | 'loading'>('loading')
   const [touchOnly, setTouchOnly] = useState(false)
+  const [mounted, setMounted] = useState(false)
   const buttonRef = useRef<HTMLButtonElement>(null)
   const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  // Detect touch-only devices on mount; render nothing if so.
+  // Detect touch-only devices on mount; render nothing if so. Also marks the
+  // component mounted so the portal only renders client-side (no SSR fallback).
   useEffect(() => {
+    setMounted(true)
     if (window.matchMedia('(hover: none)').matches) {
       setTouchOnly(true)
     }
   }, [])
+
+  // Close the popover on scroll — the fixed-positioned coordinates would
+  // otherwise lag behind the icon. Also closes on resize for the same reason.
+  useEffect(() => {
+    if (!open) return
+    const close = () => setOpen(false)
+    window.addEventListener('scroll', close, true)
+    window.addEventListener('resize', close)
+    return () => {
+      window.removeEventListener('scroll', close, true)
+      window.removeEventListener('resize', close)
+    }
+  }, [open])
 
   if (touchOnly) return null
 
@@ -126,8 +171,8 @@ export function ClaimMessagePreview({ claimId }: { claimId: string }) {
       hideTimer.current = null
     }
     hoverTimer.current = setTimeout(() => {
-      const rect = buttonRef.current?.getBoundingClientRect()
-      if (rect) setPos(computePos(rect))
+      const iconRect = buttonRef.current?.getBoundingClientRect()
+      if (iconRect) setRect(computeRect(iconRect))
       setOpen(true)
       resolveCache()
     }, 150)
@@ -138,25 +183,75 @@ export function ClaimMessagePreview({ claimId }: { claimId: string }) {
       clearTimeout(hoverTimer.current)
       hoverTimer.current = null
     }
+    // Give the cursor enough time to cross the 4px gap between the icon and
+    // the popover (and back). Original 100ms was too tight on some users'
+    // machines — popover disappeared before they could land on it to read.
     hideTimer.current = setTimeout(() => {
       setOpen(false)
-    }, 100)
+    }, 400)
   }
 
-  // Popover position classes
-  const verticalClass = pos.vertical === 'above'
-    ? 'bottom-full mb-1'
-    : 'top-full mt-1'
-  const horizontalClass = pos.horizontal === 'right'
-    ? 'right-0'
-    : 'left-0'
+  // Hovering onto the popover itself should cancel the hide so the user can
+  // read it without racing the timer. Leaving the popover re-arms the hide.
+  const handlePopoverEnter = () => {
+    if (hideTimer.current) {
+      clearTimeout(hideTimer.current)
+      hideTimer.current = null
+    }
+  }
+  const handlePopoverLeave = () => {
+    hideTimer.current = setTimeout(() => {
+      setOpen(false)
+    }, 400)
+  }
 
   // Truncate body for display
   const displayBody = (msg: LastMessage) =>
-    msg.body.length > 300 ? msg.body.slice(0, 300) + '…' : msg.body
+    msg.body.length > 500 ? msg.body.slice(0, 500) + '…' : msg.body
+
+  const popover = open && rect && (
+    <div
+      role="tooltip"
+      aria-hidden={!open}
+      onMouseEnter={handlePopoverEnter}
+      onMouseLeave={handlePopoverLeave}
+      className="fixed z-[60] bg-white border border-gray-200 rounded-lg shadow-xl p-3 overflow-y-auto"
+      style={{
+        top: rect.top,
+        left: rect.left,
+        width: rect.maxWidth,
+        maxHeight: rect.maxHeight,
+      }}
+    >
+      {result === 'loading' && (
+        <div className="space-y-2">
+          <div className="h-3 bg-gray-200 rounded animate-pulse w-1/3" />
+          <div className="h-3 bg-gray-200 rounded animate-pulse w-full" />
+          <div className="h-3 bg-gray-200 rounded animate-pulse w-4/5" />
+        </div>
+      )}
+      {result === 'error' && (
+        <p className="text-red-600 text-xs">Couldn&apos;t load message</p>
+      )}
+      {result === 'empty' && (
+        <p className="text-gray-400 text-xs italic">No messages yet</p>
+      )}
+      {result !== 'loading' && result !== 'error' && result !== 'empty' && (
+        <div>
+          <div className="flex items-center justify-between mb-1.5">
+            <span className="text-xs font-medium text-gray-700 truncate">{result.senderName}</span>
+            <span className="text-xs text-gray-400 ml-2 shrink-0">{formatStamp(result.createdAt)}</span>
+          </div>
+          <p className="text-xs text-gray-600 leading-relaxed whitespace-pre-wrap break-words">
+            {displayBody(result)}
+          </p>
+        </div>
+      )}
+    </div>
+  )
 
   return (
-    <span className="relative inline-flex items-center">
+    <span className="inline-flex items-center">
       <button
         ref={buttonRef}
         type="button"
@@ -168,42 +263,7 @@ export function ClaimMessagePreview({ claimId }: { claimId: string }) {
       >
         <MessageCircle className="w-[18px] h-[18px]" strokeWidth={2.25} />
       </button>
-
-      {open && (
-        <div
-          role="tooltip"
-          aria-hidden={!open}
-          className={`absolute ${verticalClass} ${horizontalClass} w-80 z-50 bg-white border border-gray-200 rounded-lg shadow-lg p-3 pointer-events-none`}
-        >
-          {result === 'loading' && (
-            <div className="space-y-2">
-              <div className="h-3 bg-gray-200 rounded animate-pulse w-1/3" />
-              <div className="h-3 bg-gray-200 rounded animate-pulse w-full" />
-              <div className="h-3 bg-gray-200 rounded animate-pulse w-4/5" />
-            </div>
-          )}
-          {result === 'error' && (
-            <p className="text-red-600 text-xs">Couldn&apos;t load message</p>
-          )}
-          {result === 'empty' && (
-            <p className="text-gray-400 text-xs italic">No messages yet</p>
-          )}
-          {result !== 'loading' && result !== 'error' && result !== 'empty' && (
-            <div>
-              <div className="flex items-center justify-between mb-1.5">
-                <span className="text-xs font-medium text-gray-700 truncate">{result.senderName}</span>
-                <span className="text-xs text-gray-400 ml-2 shrink-0">{formatStamp(result.createdAt)}</span>
-              </div>
-              <p
-                className="text-xs text-gray-600 leading-relaxed overflow-hidden"
-                style={{ display: '-webkit-box', WebkitLineClamp: 5, WebkitBoxOrient: 'vertical', maxHeight: '120px' }}
-              >
-                {displayBody(result)}
-              </p>
-            </div>
-          )}
-        </div>
-      )}
+      {mounted && popover ? createPortal(popover, document.body) : null}
     </span>
   )
 }

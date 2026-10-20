@@ -1,4 +1,4 @@
-/* HamsPortal reminders — push service worker */
+/* HamsPortal reminders — push service worker v3 (branded notifications) */
 self.addEventListener('install', (event) => {
   self.skipWaiting();
 });
@@ -15,9 +15,11 @@ self.addEventListener('push', (event) => {
   } catch {
     payload = { title: 'Reminder', body: event.data.text() };
   }
-  const title = payload.title || 'Reminder';
+  const title = payload.title || 'HamsPortal reminder';
   const options = {
     body: payload.body || '',
+    icon: payload.icon || '/hamsportal-logo.png',
+    badge: payload.badge || '/favicon.png',
     data: { url: payload.url || '/' },
     requireInteraction: true,
     tag: payload.tag || undefined,

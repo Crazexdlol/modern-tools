@@ -79,12 +79,20 @@ export async function fillACVPdf(
   setField(form, 'Date of Loss', fmtDate(claim.dateOfLoss))
   setField(form, 'Date2_af_date', today)
 
-  // Owner
+  // Owner. Address line gets claim.zip appended if the parsed/edited
+  // address is missing the zip — covers both parser edge cases (empty
+  // cityStateZip) and manual edits that stripped the zip. No-op when
+  // the zip is already in the string (Henry 2026-10-18: zip wasn't
+  // showing on the printed ACV report).
+  const ownerAddressFull =
+    claim.ownerAddress && claim.zip && !claim.ownerAddress.includes(claim.zip)
+      ? `${claim.ownerAddress} ${claim.zip}`.trim()
+      : claim.ownerAddress
   setDropdown(form, 'List Box 1', claim.clientType)
   setField(form, 'Owner Name', claim.insuredName)
   setField(form, 'Owner Phone', claim.ownerPhone)
   setField(form, 'Owner Email', claim.ownerEmail)
-  setField(form, 'Owner Address', claim.ownerAddress)
+  setField(form, 'Owner Address', ownerAddressFull)
   setField(form, 'Client', claim.clientName || claim.insuredName)
 
   // Insurance

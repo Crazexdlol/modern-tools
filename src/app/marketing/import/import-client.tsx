@@ -72,6 +72,7 @@ export function ImportClient() {
   const [rows, setRows] = useState<GroupedClient[]>([])
   const [progress, setProgress] = useState<{ done: number; total: number; label: string } | null>(null)
   const [errors, setErrors] = useState<string[]>([])
+  const [dragOver, setDragOver] = useState(false)
 
   const downloadTemplate = () => {
     const csv = CSV_HEADERS.join(',') + '\n' + [
@@ -195,10 +196,31 @@ export function ImportClient() {
                 className="inline-flex items-center gap-1 text-sm font-semibold text-gray-700 border border-gray-200 hover:border-gray-300 bg-white px-3 py-2 rounded-lg">
           <Download className="w-4 h-4" /> Download template
         </button>
-        <label className="block border-2 border-dashed border-gray-300 rounded-xl bg-white p-10 text-center cursor-pointer hover:border-gray-400 transition-colors">
+        <label
+          className={`block border-2 border-dashed rounded-xl p-10 text-center cursor-pointer transition-colors ${
+            dragOver
+              ? 'border-blue-500 bg-blue-50'
+              : 'border-gray-300 bg-white hover:border-gray-400'
+          }`}
+          onDragEnter={(e) => {
+            if (e.dataTransfer.types.includes('Files')) setDragOver(true)
+          }}
+          onDragOver={(e) => { e.preventDefault() }}
+          onDragLeave={(e) => {
+            if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDragOver(false)
+          }}
+          onDrop={(e) => {
+            e.preventDefault()
+            setDragOver(false)
+            const f = Array.from(e.dataTransfer.files).find(file => /\.csv$/i.test(file.name) || file.type === 'text/csv')
+            if (f) onFile(f)
+          }}
+        >
           <input type="file" accept=".csv,text/csv" onChange={(e) => { const f = e.target.files?.[0]; if (f) onFile(f) }} className="hidden" />
-          <Upload className="w-8 h-8 text-gray-400 mx-auto mb-2" />
-          <div className="text-sm text-gray-500">Drop a CSV or click to browse</div>
+          <Upload className={`w-8 h-8 mx-auto mb-2 ${dragOver ? 'text-blue-600' : 'text-gray-400'}`} />
+          <div className={`text-sm ${dragOver ? 'text-blue-700 font-medium' : 'text-gray-500'}`}>
+            {dragOver ? 'Drop to upload CSV' : 'Drop a CSV or click to browse'}
+          </div>
         </label>
         {errors.length > 0 && (
           <div className="p-3 rounded bg-red-50 border border-red-200 text-red-700 text-sm space-y-1">
@@ -350,7 +372,7 @@ function parseCsv(text: string): RawRow[] {
       if (h in row) (row as unknown as Record<string, string>)[h] = v
     })
     if (!row.name) row.errors.push('name missing')
-    if (row.type && !['adjuster', 'body_shop', 'attorney', 'insurance_company'].includes(row.type)) {
+    if (row.type && !['tpa', 'body_shop', 'attorney', 'insurance_company', 'other', 'adjuster'].includes(row.type)) {
       row.errors.push(`unknown type "${row.type}"`)
     }
     rows.push(row)
@@ -385,8 +407,10 @@ function groupByName(rows: RawRow[]): GroupedClient[] {
     const key = r.name.trim().toLowerCase()
     if (!key) continue
     const existing = map.get(key)
-    const type: ClientType = (['adjuster', 'body_shop', 'attorney', 'insurance_company'] as ClientType[])
-      .find(t => t === r.type) ?? 'adjuster'
+    // CSV import defaults unknown/missing types to 'tpa' (post-2026-10-12
+     // taxonomy — adjuster rows get migrated into tpa).
+    const type: ClientType = (['tpa', 'body_shop', 'attorney', 'insurance_company', 'other', 'adjuster'] as ClientType[])
+      .find(t => t === r.type) ?? 'tpa'
     if (existing) {
       // Merge contacts. Later client-level fields overwrite blanks.
       if (r.contact_name) {

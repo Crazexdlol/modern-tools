@@ -6,6 +6,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import type { Reminder } from '@/lib/reminders/types';
 import { ReminderRow } from './reminder-row';
 import { CreateReminderSheet } from './create-reminder-sheet';
+import { confirmDialog } from '@/components/ui/dialog-service';
 
 function groupUpcoming(items: Reminder[]): { label: string; items: Reminder[] }[] {
   const now = new Date();
@@ -48,7 +49,7 @@ export function RemindersSidebar() {
   useEffect(() => { load(tab); }, [tab, load]);
 
   const handleDelete = useCallback(async (id: string) => {
-    if (!confirm('Delete this reminder?')) return;
+    if (!(await confirmDialog({ title: 'Delete reminder?', message: 'This reminder will be removed. This cannot be undone.', confirmLabel: 'Delete', variant: 'danger' }))) return;
     await fetch(`/api/reminders/${id}`, { method: 'DELETE' });
     setItems((prev) => prev.filter((r) => r.id !== id));
   }, []);

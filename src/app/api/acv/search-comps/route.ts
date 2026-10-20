@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/lib/auth/require-admin'
 import { rateLimit } from '@/lib/rate-limit'
 import { mirrorListings } from '@/lib/comps-db/mirror-listings'
+import { normalizeBodyType } from '@/lib/acv/decode-vin'
 
 // Module-level cache: which Auto.dev keys have hit their monthly quota.
 // Resets when Vercel cycles the lambda (cold start).
@@ -60,6 +61,8 @@ type AutoDevListing = {
     transmission?: string
     engine?: string
     fuel?: string
+    bodyStyle?: string
+    bodyType?: string
   }
   retailListing?: {
     price?: number
@@ -86,6 +89,7 @@ type NormalizedListing = {
   drivetrain: string
   transmission: string
   fuelType: string
+  bodyType: string
   dealerName: string
   dealerPhone: string
   dealerCity: string
@@ -122,6 +126,9 @@ function normalizeMarketcheck(items: Record<string, unknown>[]): NormalizedListi
       transmission: ((build.transmission as string) ?? (l.transmission as string) ?? '') as string,
       fuelType: normalizeFuelType(
         (build.fuel_type as string) ?? (l.fuel_type as string) ?? (build.powertrain_type as string) ?? ''
+      ),
+      bodyType: normalizeBodyType(
+        (build.body_type as string) ?? (l.body_type as string) ?? (build.body_style as string) ?? ''
       ),
       dealerName: (dealer.name as string) ?? '',
       dealerPhone: (dealer.phone as string) ?? '',
@@ -170,6 +177,7 @@ function normalizeAutodev(items: AutoDevListing[]): NormalizedListing[] {
       drivetrain: v.drivetrain ?? '',
       transmission: v.transmission ?? '',
       fuelType: normalizeFuelType(v.fuel ?? ''),
+      bodyType: normalizeBodyType(v.bodyStyle ?? v.bodyType ?? ''),
       dealerName: r.dealer ?? '',
       dealerPhone: '',
       dealerCity: r.city ?? '',

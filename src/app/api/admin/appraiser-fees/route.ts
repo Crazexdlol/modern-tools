@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/service'
-import { requireAdmin } from '@/lib/auth/require-admin'
+import { requireAdmin, assertCanTargetUser } from '@/lib/auth/require-admin'
 
 export const runtime = 'nodejs'
 
@@ -11,7 +11,7 @@ export const runtime = 'nodejs'
  * amount is a number sets/updates the row.
  */
 export async function POST(request: NextRequest) {
-  const { errorResponse } = await requireAdmin()
+  const { caller, errorResponse } = await requireAdmin()
   if (errorResponse) return errorResponse
 
   const body = await request.json().catch(() => null) as {
@@ -21,6 +21,8 @@ export async function POST(request: NextRequest) {
   if (!body?.userId || !Array.isArray(body.fees)) {
     return NextResponse.json({ error: 'userId and fees array required' }, { status: 400 })
   }
+  const guard = await assertCanTargetUser(body.userId, caller!)
+  if (guard) return guard
 
   const service = createServiceClient()
   const nowIso = new Date().toISOString()

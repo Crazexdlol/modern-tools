@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { SummaryFields } from "../SummaryFields";
 import { SummaryPrintDoc } from "../SummaryPrintDoc";
+import { useCurrentProfile } from "@/lib/supabase/profiles";
 import {
   SavedSummary,
   deleteSummary,
@@ -30,6 +31,7 @@ export default function SummaryEditorPage({
 }) {
   const { id } = use(params);
   const router = useRouter();
+  const { profile } = useCurrentProfile();
   const [summary, setSummary] = useState<SavedSummary | null>(null);
   const [notFound, setNotFound] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -185,7 +187,14 @@ export default function SummaryEditorPage({
         </div>
 
         <div className="space-y-6">
-          <SummaryFields summary={summary} onChange={setSummary} resetKey={resetKey} />
+          <SummaryFields
+            summary={summary}
+            onChange={setSummary}
+            resetKey={resetKey}
+            viewerId={profile?.id}
+            viewerName={profile?.name ?? profile?.email}
+            isAdmin={profile?.role === 'admin'}
+          />
 
           {summary.updatedAt && (
             <p className="text-xs text-gray-400 text-right">

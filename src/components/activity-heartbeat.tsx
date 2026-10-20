@@ -4,12 +4,17 @@ import { useEffect, useRef } from 'react'
 import { useCurrentProfile } from '@/lib/supabase/profiles'
 
 const TICK_MS = 60_000
-const IDLE_MS = 120_000  // 2 minutes of no interaction => stop crediting
+// 5 minutes of no interaction before heartbeats stop (Henry 2026-10-15 — was
+// 2 min; reading long emails / reviewing PDFs inside HAMS often stretched
+// past that and under-counted real activity time). Matches the server-side
+// SESSION_GAP_MS in /api/activity/heartbeat, so a user coming back after
+// idle gets a clean new session row.
+const IDLE_MS = 300_000
 
 // Client-only. Fires POST /api/activity/heartbeat every 60s while:
 //   - the tab is visible (document.visibilityState === 'visible')
 //   - the window has focus (document.hasFocus())
-//   - the user interacted (mouse/keyboard/scroll/touch) within the last 2 min
+//   - the user interacted (mouse/keyboard/scroll/touch) within the last 5 min
 // Multi-tab dedup is handled server-side; this hook can safely fire from every tab.
 export function ActivityHeartbeat() {
   const { profile } = useCurrentProfile()

@@ -7,8 +7,8 @@ import { createClient } from '@/lib/supabase/client'
 //     a dispatcher still needs to route to an appraiser).
 //   - all: cross-stage view of every open claim.
 // Both are admin-only in the UI (gated below). The real workflow stages
-// (main / qc / billing / delivery / payment) still come from dashboard_configs.
-export type DashboardCode = 'new_assignments' | 'main' | 'qc' | 'billing' | 'delivery' | 'payment' | 'all'
+// (main / qc / billing_delivery / payment) still come from dashboard_configs.
+export type DashboardCode = 'new_assignments' | 'main' | 'qc' | 'billing_delivery' | 'payment' | 'all'
 
 export const VIRTUAL_DASHBOARD_CODES = new Set<DashboardCode>(['new_assignments', 'all'])
 
@@ -21,9 +21,17 @@ export interface DashboardConfig {
 }
 
 interface State {
-  dashboards: DashboardConfig[]      // 5 real stages + 2 virtual tabs
+  dashboards: DashboardConfig[]      // 4 real stages + 2 virtual tabs
   assignedCodes: Set<DashboardCode>  // the subset the current user can see
   loading: boolean
+}
+
+const ALL_CONFIG: DashboardConfig = {
+  code: 'all',
+  label: 'All',
+  color: 'slate',
+  sortOrder: -1,
+  description: 'Every open claim across all stages',
 }
 
 const NEW_ASSIGNMENTS_CONFIG: DashboardConfig = {
@@ -32,14 +40,6 @@ const NEW_ASSIGNMENTS_CONFIG: DashboardConfig = {
   color: 'blue',
   sortOrder: 0,
   description: 'Unassigned claims — dispatcher routes them to an appraiser',
-}
-
-const ALL_CONFIG: DashboardConfig = {
-  code: 'all',
-  label: 'All',
-  color: 'slate',
-  sortOrder: 999,
-  description: 'Every open claim across all stages',
 }
 
 /**
@@ -95,9 +95,10 @@ export function useUserDashboards(): State {
         sortOrder: c.sort_order as number,
         description: (c.description as string | null) ?? null,
       }))
-      // Prepend New Assignments (admins only) and append All (admins only).
+      // Admins only: All comes first (default landing tab), then New
+      // Assignments, then the real workflow stages.
       const dashboards = isAdmin
-        ? [NEW_ASSIGNMENTS_CONFIG, ...realDashboards, ALL_CONFIG]
+        ? [ALL_CONFIG, NEW_ASSIGNMENTS_CONFIG, ...realDashboards]
         : realDashboards
 
       const assigned = new Set<DashboardCode>()

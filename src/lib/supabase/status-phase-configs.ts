@@ -6,6 +6,11 @@ export interface StatusPhaseConfig {
   color: string          // 'green' | 'red' | 'amber' | 'blue' | 'gray' | 'purple' | 'teal' | 'fuchsia'
   sortOrder: number
   archived: boolean
+  // When true, time a claim spends in this phase does NOT count toward
+  // cycle-time aggregates. Seeded true for hold / pending_information /
+  // pending_repairs; admin-editable per phase. Pre-migration rows return
+  // undefined and are treated as false.
+  pausesCycleTime: boolean
 }
 
 interface Row {
@@ -14,6 +19,7 @@ interface Row {
   color: string
   sort_order: number
   archived: boolean
+  pauses_cycle_time?: boolean
 }
 
 // Module-level cache with 60s TTL + in-flight dedup. Configs rarely change,
@@ -33,7 +39,12 @@ async function actuallyFetch(includeArchived: boolean): Promise<StatusPhaseConfi
   const { data, error } = await q
   if (error) { console.error('fetchStatusPhaseConfigs failed:', error); return [] }
   return (data as Row[]).map(r => ({
-    code: r.code, label: r.label, color: r.color, sortOrder: r.sort_order, archived: r.archived,
+    code: r.code,
+    label: r.label,
+    color: r.color,
+    sortOrder: r.sort_order,
+    archived: r.archived,
+    pausesCycleTime: r.pauses_cycle_time === true,
   }))
 }
 
@@ -86,12 +97,17 @@ export function phaseColorClasses(color: string): string {
   switch (color) {
     case 'green':   return 'bg-emerald-50 text-emerald-800 border-emerald-200'
     case 'red':     return 'bg-red-50 text-red-800 border-red-200'
+    // 'amber' kept for back-compat with any legacy row still set to it; the
+    // active palette (2026-10-10) uses 'orange' for Umpire so Court Appointed
+    // Umpire's 'yellow' isn't adjacent in hue.
     case 'amber':   return 'bg-amber-50 text-amber-800 border-amber-200'
+    case 'orange':  return 'bg-orange-100 text-orange-800 border-orange-300'
     case 'blue':    return 'bg-blue-50 text-blue-800 border-blue-200'
-    case 'gray':    return 'bg-gray-100 text-gray-700 border-gray-200'
+    case 'gray':    return 'bg-slate-100 text-slate-800 border-slate-300'
     case 'purple':  return 'bg-violet-50 text-violet-800 border-violet-200'
     case 'teal':    return 'bg-teal-50 text-teal-800 border-teal-200'
     case 'fuchsia': return 'bg-fuchsia-50 text-fuchsia-800 border-fuchsia-200'
+    case 'yellow':  return 'bg-yellow-100 text-yellow-800 border-yellow-300'
     default:        return 'bg-gray-100 text-gray-700 border-gray-200'
   }
 }

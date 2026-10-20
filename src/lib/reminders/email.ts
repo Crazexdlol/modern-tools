@@ -17,7 +17,7 @@ function getClient(): Resend {
   return client;
 }
 
-const FROM = process.env.RESEND_FROM ?? 'reminders@hamsportal.com';
+const FROM = process.env.RESEND_FROM ?? 'HamsPortal <reminders@hamsportal.com>';
 
 export async function sendEmail(payload: EmailPayload): Promise<{ ok: boolean; error?: string }> {
   try {

@@ -9,13 +9,27 @@ export interface ClaimDocument {
   // What produced it: a generated report, a manual upload, or an auto-classified upload.
   // 'upload' and 'labor-rates' are legacy values kept for backward-compat only —
   // new uploads never produce them; they render as 'document' at display time.
-  source: 'acv-report' | 'award' | 'closing-notes' | 'summary' | 'dv-report' | 'estimate' | 'estimate-review' | 'invoice' | 'storage' | 'upload' | 'labor-rates' | 'document' | 'photo'
+  source: 'acv-report' | 'award' | 'closing-notes' | 'summary' | 'dv-report' | 'lou-report' | 'estimate' | 'estimate-review' | 'invoice' | 'storage' | 'upload' | 'labor-rates' | 'document' | 'photo'
   path: string
   size: number
   createdAt: string
   // When true, this document is only visible to admin users.
   adminOnly?: boolean
+  // When true, this document is hidden from the default Documents list and
+  // only shown when the user flips the "Show archived" toggle. Auto-set on
+  // older same-source report PDFs when a new one is generated (so a claim
+  // doesn't accumulate 15 ACV reports in the active view). Still downloadable
+  // and never deleted — just visually moved to the archive section.
+  archived?: boolean
 }
+
+// Report-type sources that should auto-archive older same-source docs when
+// a fresh one is generated. Manual uploads / photos / loose documents are
+// NOT auto-archived — only superseded reports.
+export const ARCHIVABLE_REPORT_SOURCES = new Set<ClaimDocument['source']>([
+  'acv-report', 'award', 'closing-notes', 'summary',
+  'dv-report', 'lou-report', 'estimate-review', 'invoice', 'storage',
+])
 
 const BUCKET = 'claim-documents'
 

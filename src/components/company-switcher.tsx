@@ -2,6 +2,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { ArrowLeftRight, ChevronDown, Check } from 'lucide-react'
 import { useUserCompanies } from '@/hooks/use-user-companies'
+import { alertDialog } from '@/components/ui/dialog-service'
 
 // Two modes:
 //  - Exactly 2 companies: single toggle button "Switch to <other>" — one click
@@ -36,7 +37,7 @@ export function CompanySwitcher() {
     if (!r.ok) {
       setBusy(false)
       const body = await r.json().catch(() => ({} as { error?: string }))
-      alert(body.error ?? 'Switch failed')
+      await alertDialog({ title: 'Switch failed', message: body.error ?? 'Could not switch companies.', variant: 'danger' })
       return
     }
     window.location.reload()

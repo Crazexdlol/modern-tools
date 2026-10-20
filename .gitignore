@@ -53,3 +53,6 @@ backups/
 # customer data: names, VINs, addresses).
 scripts/_samples/
 
+# Claude Code local settings (per-machine permissions)
+.claude/
+

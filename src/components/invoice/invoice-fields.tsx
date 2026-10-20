@@ -131,15 +131,35 @@ export function InvoiceSummary({ lineItems }: { lineItems: InvoiceLineItem[] }) 
 export function InvoiceFormFields({
   data,
   onChange,
+  title = 'Invoice Details',
+  onBack,
 }: {
   data: InvoiceFormData
   onChange: (patch: Partial<InvoiceFormData>) => void
+  // Optional overrides so the parent (in-claim ReportsTab) can swap the
+  // section title to "Invoice" and add a Back-to-Reports button, matching
+  // the Closing Notes / Award in-bubble layout.
+  title?: string
+  onBack?: () => void
 }) {
   const variant = pickInvoiceVariant(data.lineItems.length)
   return (
     <>
       <Card className="bg-white border-gray-200 shadow-sm">
-        <CardHeader><CardTitle className="text-gray-900">Invoice Details</CardTitle></CardHeader>
+        <CardHeader className="py-3">
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-black text-lg font-bold tracking-tight">{title}</CardTitle>
+            {onBack && (
+              <button
+                type="button"
+                onClick={onBack}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-700 bg-white border border-gray-200 rounded-md hover:border-gray-300 hover:bg-gray-50 transition-colors"
+              >
+                ← Back to Reports
+              </button>
+            )}
+          </div>
+        </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>

@@ -27,7 +27,7 @@ import { writeFileSync } from 'node:fs'
 const claim = {
   maNumber: 'MA-EV-TEST-01',
   claimNumber: 'CL-2026-98765',
-  handlingAppraiser: 'Henry Aleksanyan',
+  negotiatingAppraiser: 'Henry Aleksanyan',
   dateOfLoss: '2026-08-14',
   clientType: 'Insured',
   clientName: 'Jane Q. Insured',

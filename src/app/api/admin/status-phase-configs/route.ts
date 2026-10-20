@@ -4,7 +4,13 @@ import { requireAdmin } from '@/lib/auth/require-admin'
 
 export const runtime = 'nodejs'
 
-const ALLOWED_COLORS = ['green', 'red', 'amber', 'blue', 'gray']
+// Must stay in sync with phaseColorClasses (src/lib/supabase/status-phase-configs.ts)
+// and the admin UI picker (status-phases-client.tsx COLORS).
+const ALLOWED_COLORS = [
+  'red', 'orange', 'amber', 'yellow',
+  'green', 'teal', 'blue', 'purple',
+  'fuchsia', 'gray',
+]
 
 export async function POST(request: NextRequest) {
   const { errorResponse } = await requireAdmin()

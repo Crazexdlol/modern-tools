@@ -14,7 +14,7 @@ import {
   type InvoiceFormData,
 } from '@/lib/invoice/types'
 import { InvoiceFormFields, InvoiceLineItemsEditor, InvoiceSummary } from '@/components/invoice/invoice-fields'
-import { savePdfWithPicker } from '@/lib/save-pdf'
+import { savePdfPickerFirst } from '@/lib/save-pdf'
 
 // Per-claim Invoice state, stored as acv_history.invoice jsonb via workspace
 // auto-save. Pre-filled from Claim Info the first time the tab is opened for
@@ -50,11 +50,18 @@ export function ReportsTab({
   invoice,
   onChange,
   onGenerated,
+  onBack,
 }: {
   claim: ClaimInfo
   invoice: InvoiceReportState | null
   onChange: (next: InvoiceReportState) => void
-  onGenerated?: (blob: Blob, name: string) => void
+  // Returns a Promise so `downloadPdf` can AWAIT the full upload + DB-save
+  // chain before continuing to the file-picker. Without await, the file-
+  // save flow races the Documents-save (Henry hit this 2026-10-12).
+  onGenerated?: (blob: Blob, name: string) => Promise<void> | void
+  // When set, the first card's header gets a "← Back to Reports" button
+  // (matches Closing Notes / Award layout).
+  onBack?: () => void
 }) {
   // Memoize the default so unedited fields don't silently follow the current
   // claim (or `new Date()`) on every render. Once the user edits anything,
@@ -69,26 +76,31 @@ export function ReportsTab({
   const downloadPdf = async () => {
     setDownloading(true)
     setError(null)
+    const name = `${claim.maNumber || 'claim'}-invoice.pdf`
     try {
-      const subtotal = formatInvoiceMoneyWithSign(invoiceSubtotal(state.lineItems))
-      const variant = pickInvoiceVariant(state.lineItems.length)
-      const res = await fetch('/api/invoices/generate-pdf', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          variant,
-          data: { ...state, lineItems: formatLineItemsForPdf(state.lineItems), subtotal },
-        }),
-      })
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}))
-        throw new Error(data.error || 'PDF generation failed')
-      }
-      const blob = await res.blob()
-      const name = `${claim.maNumber || 'claim'}-invoice${state.invoiceNumber ? `-${state.invoiceNumber}` : ''}.pdf`
-      // Auto-file to Documents first, then prompt for local save location.
-      onGenerated?.(blob, name)
-      await savePdfWithPicker(blob, name)
+      await savePdfPickerFirst(
+        name,
+        async () => {
+          const subtotal = formatInvoiceMoneyWithSign(invoiceSubtotal(state.lineItems))
+          const variant = pickInvoiceVariant(state.lineItems.length)
+          const res = await fetch('/api/invoices/generate-pdf', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              variant,
+              data: { ...state, lineItems: formatLineItemsForPdf(state.lineItems), subtotal },
+            }),
+          })
+          if (!res.ok) {
+            const data = await res.json().catch(() => ({}))
+            throw new Error(data.error || 'PDF generation failed')
+          }
+          return res.blob()
+        },
+        async (blob, filename) => {
+          await onGenerated?.(blob, filename)
+        },
+      )
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Print failed')
     } finally {
@@ -98,7 +110,7 @@ export function ReportsTab({
 
   return (
     <div className="space-y-6">
-      <InvoiceFormFields data={state} onChange={set} />
+      <InvoiceFormFields data={state} onChange={set} title="Invoice" onBack={onBack} />
 
       <Card className="bg-white border-gray-200 shadow-sm">
         <CardHeader><CardTitle className="text-gray-900">Line Items</CardTitle></CardHeader>
@@ -115,10 +127,12 @@ export function ReportsTab({
         </div>
       )}
 
-      <Button onClick={downloadPdf} disabled={downloading} className="bg-blue-600 hover:bg-blue-500 text-white font-bold">
-        {downloading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Printer className="w-4 h-4 mr-2" />}
-        Print Invoice
-      </Button>
+      <div className="flex justify-end">
+        <Button onClick={downloadPdf} disabled={downloading} className="bg-blue-600 hover:bg-blue-500 text-white font-bold">
+          {downloading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Printer className="w-4 h-4 mr-2" />}
+          Print Report
+        </Button>
+      </div>
     </div>
   )
 }

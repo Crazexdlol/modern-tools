@@ -100,6 +100,71 @@ export async function requireSuperAdmin(): Promise<
   return authed
 }
 
+// Guard for user-management endpoints (PATCH / DELETE / reset-password /
+// change-email / appraiser-fees / appraiser-licenses). Enforces two rules:
+//
+//   1. A regular admin cannot mutate a super-admin's row — otherwise any
+//      admin could demote the super-admin, reset their password, change
+//      their email, or deactivate them, hijacking the only account that
+//      can grant admin rights.
+//
+//   2. A regular admin cannot mutate a user who isn't a member of the
+//      admin's active company — otherwise a Modern Appraisers admin could
+//      change Eagleview appraisers' fees, licenses, or roles.
+//
+// Super-admin bypasses both. Pre-multi-company deploys (no activeCompanyId,
+// no user_companies rows) fall through as allowed so legacy behavior stays
+// intact. Returns `null` when allowed; returns a 403 response otherwise.
+export async function assertCanTargetUser(
+  targetUserId: string,
+  caller: CallerContext,
+): Promise<NextResponse | null> {
+  if (caller.isSuperAdmin) return null
+  const service = createServiceClient()
+
+  // 1. Super-admin guard.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: targetProfile } = await service
+    .from('profiles')
+    .select('is_super_admin' as any)
+    .eq('id', targetUserId)
+    .maybeSingle()
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  if ((targetProfile as any)?.is_super_admin === true) {
+    return NextResponse.json(
+      { error: 'Only the super-admin can modify a super-admin account.' },
+      { status: 403 },
+    )
+  }
+
+  // 2. Same-company membership guard. Skip pre-multi-company (caller has
+  // no activeCompanyId) so older deploys don't break.
+  if (!caller.activeCompanyId) return null
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const membership = await service
+    .from('user_companies' as any)
+    .select('user_id' as any)
+    .eq('user_id', targetUserId)
+    .eq('company_id', caller.activeCompanyId)
+    .limit(1)
+  // 42P01 = user_companies table missing (pre-migration) — fall through.
+  if (membership.error && membership.error.code === '42P01') return null
+  if (membership.error) {
+    // Any other error = fail closed. We can't verify the caller is allowed.
+    return NextResponse.json(
+      { error: 'Could not verify target user membership. Try again.' },
+      { status: 500 },
+    )
+  }
+  if (!membership.data || membership.data.length === 0) {
+    return NextResponse.json(
+      { error: 'Target user is not a member of your active company.' },
+      { status: 403 },
+    )
+  }
+  return null
+}
+
 // Ensures the caller has an active_company_id set. Use in any route that
 // writes company-scoped data via the service client.
 //
@@ -131,10 +196,17 @@ export interface WorkflowClaim {
   status: 'open' | 'closed'
   assignedTo: string | null
   submittedAt: string | null
+  submittedBy: string | null
   statusPhase: string | null
-  workflowStage: 'main' | 'qc' | 'billing' | 'delivery' | 'payment' | null
+  workflowStage: 'main' | 'qc' | 'billing_delivery' | 'payment' | null
   userId: string
   companyId: string | null
+  // Rough-numbers workflow fields. Both undefined pre-migration (fetchClaim
+  // falls back to selecting without them so routes keep working); the submit
+  // branch's `claim.needsRoughNumbers && !claim.roughNumbersHandoffAt` guard
+  // then evaluates to false and the standard QC path fires.
+  needsRoughNumbers?: boolean
+  roughNumbersHandoffAt?: string | null
 }
 
 // Fetches a claim scoped to a company. When companyId is passed, the row must
@@ -150,15 +222,17 @@ export async function fetchClaim(id: string, companyId?: string | null): Promise
   const full = await service
     .from('acv_history')
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    .select('id, status, assigned_to, submitted_at, status_phase, workflow_stage, user_id, company_id' as any)
+    .select('id, status, assigned_to, submitted_at, submitted_by, status_phase, workflow_stage, user_id, company_id, needs_rough_numbers, rough_numbers_handoff_at' as any)
     .eq('id', id)
     .maybeSingle()
   if (full.error && full.error.code === '42703') {
-    // Fall back twice — once dropping company_id, then dropping workflow_stage
-    // so a pre-migration DB still works.
+    // Fall back — drop columns that don't exist yet, in order from newest to oldest.
+    // Dropping rough-numbers + company_id in one step handles the case where
+    // either (or both) are missing; the submit route tolerates undefined on
+    // both fields via its branch guard.
     const mid = await service
       .from('acv_history')
-      .select('id, status, assigned_to, submitted_at, status_phase, workflow_stage, user_id')
+      .select('id, status, assigned_to, submitted_at, submitted_by, status_phase, workflow_stage, user_id')
       .eq('id', id)
       .maybeSingle()
     if (mid.error && mid.error.code === '42703') {
@@ -178,17 +252,26 @@ export async function fetchClaim(id: string, companyId?: string | null): Promise
   // Enforce company scoping when the caller provided a companyId AND the row
   // has one. Missing row.company_id (pre-migration) falls through as OK.
   if (companyId && row.company_id && row.company_id !== companyId) return null
-  const stage = ['main','qc','billing','delivery','payment'].includes(row.workflow_stage)
-    ? row.workflow_stage as 'main'|'qc'|'billing'|'delivery'|'payment'
-    : null
+  // Tolerate transitional pre-merge values on cached rows ('billing' / 'delivery'
+  // both roll into 'billing_delivery') — the DB migration already rewrote
+  // persisted rows but this keeps live reads tolerant.
+  let stage: 'main'|'qc'|'billing_delivery'|'payment'|null = null
+  if (['main','qc','billing_delivery','payment'].includes(row.workflow_stage)) {
+    stage = row.workflow_stage as 'main'|'qc'|'billing_delivery'|'payment'
+  } else if (row.workflow_stage === 'billing' || row.workflow_stage === 'delivery') {
+    stage = 'billing_delivery'
+  }
   return {
     id: row.id,
     status: (row.status === 'closed' ? 'closed' : 'open'),
     assignedTo: row.assigned_to,
     submittedAt: row.submitted_at,
+    submittedBy: row.submitted_by ?? null,
     statusPhase: row.status_phase,
     workflowStage: stage,
     userId: row.user_id,
     companyId: row.company_id ?? null,
+    needsRoughNumbers: row.needs_rough_numbers === true,
+    roughNumbersHandoffAt: row.rough_numbers_handoff_at ?? null,
   }
 }

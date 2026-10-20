@@ -1,17 +1,34 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/service'
-import { requireAdmin } from '@/lib/auth/require-admin'
+import { requireAdmin, assertCanTargetUser } from '@/lib/auth/require-admin'
 
 export const runtime = 'nodejs'
+
+// Load the owning user_id for a license row so we can enforce
+// assertCanTargetUser on PATCH/DELETE. Returns null if not found or on error.
+async function fetchLicenseOwner(id: string): Promise<string | null> {
+  const service = createServiceClient()
+  const { data } = await service
+    .from('appraiser_licenses')
+    .select('user_id')
+    .eq('id', id)
+    .maybeSingle()
+  return (data as { user_id: string } | null)?.user_id ?? null
+}
 
 export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const { errorResponse } = await requireAdmin()
+  const { caller, errorResponse } = await requireAdmin()
   if (errorResponse) return errorResponse
 
   const { id } = await params
+  const owner = await fetchLicenseOwner(id)
+  if (!owner) return NextResponse.json({ error: 'not found' }, { status: 404 })
+  const guard = await assertCanTargetUser(owner, caller!)
+  if (guard) return guard
+
   const body = await request.json().catch(() => null) as {
     state?: string
     licenseNumber?: string
@@ -44,10 +61,15 @@ export async function DELETE(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const { errorResponse } = await requireAdmin()
+  const { caller, errorResponse } = await requireAdmin()
   if (errorResponse) return errorResponse
 
   const { id } = await params
+  const owner = await fetchLicenseOwner(id)
+  if (!owner) return NextResponse.json({ error: 'not found' }, { status: 404 })
+  const guard = await assertCanTargetUser(owner, caller!)
+  if (guard) return guard
+
   const service = createServiceClient()
   const { error } = await service.from('appraiser_licenses').delete().eq('id', id)
   if (error) return NextResponse.json({ error: error.message }, { status: 400 })

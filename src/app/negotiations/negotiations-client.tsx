@@ -5,6 +5,7 @@ import Link from 'next/link'
 import type { ThreadFilter, ThreadListResponse, ThreadListItem } from '@/app/api/negotiations/threads/route'
 import type { ClaimSearchResult } from '@/app/api/negotiations/search-claims/route'
 import { RefreshCw, AlertTriangle, Paperclip, ExternalLink, Link as LinkIcon, X, Car, ArrowRight, Sparkles, Search, Trash2, Archive, MoreVertical } from 'lucide-react'
+import { alertDialog, confirmDialog } from '@/components/ui/dialog-service'
 
 interface SyncState {
   running: boolean
@@ -244,7 +245,8 @@ export function NegotiationsClient() {
     const ids = Array.from(selectedIds)
     if (ids.length === 0) return
     const verb = status === 'ignored' ? 'archive' : status === 'spam' ? 'mark as spam' : 'move to Closed claim'
-    if (!window.confirm(`${verb} ${ids.length} thread${ids.length === 1 ? '' : 's'}?`)) return
+    const verbTitle = verb.charAt(0).toUpperCase() + verb.slice(1)
+    if (!(await confirmDialog({ title: `${verbTitle}?`, message: `${verbTitle} ${ids.length} thread${ids.length === 1 ? '' : 's'}?`, confirmLabel: verbTitle }))) return
     setBulkBusy(true)
     try {
       await Promise.all(ids.map(id =>
@@ -262,7 +264,7 @@ export function NegotiationsClient() {
   const bulkDelete = useCallback(async () => {
     const ids = Array.from(selectedIds)
     if (ids.length === 0) return
-    if (!window.confirm(`Permanently delete ${ids.length} thread${ids.length === 1 ? '' : 's'}? This removes the emails from HamsPortal — the mail stays in your mailbox.`)) return
+    if (!(await confirmDialog({ title: `Delete ${ids.length} thread${ids.length === 1 ? '' : 's'}?`, message: 'This removes the emails from HamsPortal — the mail stays in your mailbox.', confirmLabel: 'Delete', variant: 'danger' }))) return
     setBulkBusy(true)
     try {
       await Promise.all(ids.map(id =>
@@ -515,7 +517,7 @@ function ThreadRow({ thread, onLinkClaim, onChanged, extraChains = 0, isSelected
     } finally { setBusy(null); setMenuOpen(false) }
   }
   const doDelete = async () => {
-    if (!window.confirm('Delete this thread permanently? This removes the emails and attachments from HamsPortal — the mail stays in your mailbox.')) return
+    if (!(await confirmDialog({ title: 'Delete thread?', message: 'This removes the emails and attachments from HamsPortal — the mail stays in your mailbox.', confirmLabel: 'Delete', variant: 'danger' }))) return
     setBusy('delete')
     try {
       await fetch(`/api/negotiations/threads/${thread.id}/delete`, { method: 'POST' })
@@ -530,7 +532,7 @@ function ThreadRow({ thread, onLinkClaim, onChanged, extraChains = 0, isSelected
     const payload = which === 'sender' ? { email } : { domain }
     if (which === 'domain' && !domain) return
     const label = which === 'sender' ? email : `@${domain}`
-    if (!window.confirm(`Mute ${label}? Future emails will skip the triage view.`)) return
+    if (!(await confirmDialog({ title: `Mute ${label}?`, message: 'Future emails from this sender will skip the triage view.', confirmLabel: 'Mute' }))) return
     setBusy('spam')
     try {
       const res = await fetch('/api/negotiations/mute', {
@@ -540,7 +542,7 @@ function ThreadRow({ thread, onLinkClaim, onChanged, extraChains = 0, isSelected
       })
       if (!res.ok) {
         const detail = await res.text().catch(() => '')
-        window.alert(`Mute failed (${res.status}). ${detail}`.trim())
+        await alertDialog({ title: 'Mute failed', message: `${res.status}. ${detail}`.trim(), variant: 'danger' })
         return
       }
       onChanged()

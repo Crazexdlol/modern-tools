@@ -8,6 +8,10 @@ export interface Message {
   body: string
   createdAt: string  // ISO
   isAutoRequest: boolean
+  // When true, non-admins can't see the row (RLS filters it out). Only
+  // admins can set this flag at send time. Defaults to false for every
+  // existing message pre-migration.
+  isAdminOnly: boolean
 }
 
 export interface UnreadClaim {
@@ -23,6 +27,9 @@ export interface UnreadClaim {
 export interface SendMessagePayload {
   recipientIds: string[]
   body: string
+  // Admins only. Sent as `false` for non-admins. Server also enforces
+  // (returns 403 if a non-admin tries true + RLS blocks the insert).
+  isAdminOnly?: boolean
 }
 
 // Fetch all messages on a claim, oldest-first.
@@ -44,6 +51,28 @@ export async function sendMessage(claimId: string, payload: SendMessagePayload):
   const data = await res.json()
   return data.message as Message
 }
+
+// Delete a single message. Hard delete — no notification fires.
+export async function deleteMessage(claimId: string, messageId: string): Promise<void> {
+  const res = await fetch(`/api/claims/${encodeURIComponent(claimId)}/messages/${encodeURIComponent(messageId)}`, {
+    method: 'DELETE',
+  })
+  if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? 'Failed to delete message')
+}
+
+// Edit a single message. Re-emails all original recipients (minus the sender).
+export async function editMessage(claimId: string, messageId: string, body: string): Promise<void> {
+  const res = await fetch(`/api/claims/${encodeURIComponent(claimId)}/messages/${encodeURIComponent(messageId)}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ body }),
+  })
+  if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? 'Failed to edit message')
+}
+
+// Convenience for `fetchMessages` row shape awareness in older callers that
+// expected the pre-admin-only Message type. Not used internally.
+export type MessageLegacy = Omit<Message, 'isAdminOnly'>
 
 // Mark this claim's thread as read for the caller (upserts message_reads).
 export async function markMessagesRead(claimId: string): Promise<void> {

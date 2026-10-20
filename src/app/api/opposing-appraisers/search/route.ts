@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/lib/auth/require-admin'
 import { createServiceClient } from '@/lib/supabase/service'
+import { escapePostgrestLike } from '@/lib/postgrest-escape'
 
 export const runtime = 'nodejs'
 
@@ -33,7 +34,10 @@ export async function GET(request: NextRequest) {
     .is('archived_at', null)
     .order('name', { ascending: true })
     .limit(all ? 500 : limit)
-  if (!all) query = query.or(`name.ilike.%${q}%,company.ilike.%${q}%`)
+  if (!all) {
+    const qSafe = escapePostgrestLike(q)
+    query = query.or(`name.ilike.%${qSafe}%,company.ilike.%${qSafe}%`)
+  }
   const { data, error } = await query
 
   if (error) {

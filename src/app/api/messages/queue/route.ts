@@ -16,6 +16,8 @@ interface ClaimRow {
   ma_number: string | null
   vehicle: string | null
   claim: { insuredName?: string } | null
+  status: string | null
+  assigned_to: string | null
 }
 
 interface ReadRow {
@@ -42,10 +44,25 @@ export async function GET() {
   mark('authGetUser', tAuth)
   if (!user) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
 
+  // Caller role — appraisers see unread only for claims currently assigned to
+  // them; admins see unread for every open claim. Closed claims always drop
+  // out of the queue regardless of role (no more messaging on closed files).
+  const { data: callerProfile } = await supabase
+    .from('profiles')
+    .select('role')
+    .eq('id', user.id)
+    .maybeSingle()
+  const callerIsAdmin = (callerProfile?.role as string | undefined) === 'admin'
+
   // Fetch every message where the caller is a recipient AND is not the
   // sender (self-messages should never show up in your own unread queue,
   // even if you accidentally add yourself to the recipient list). RLS still
   // narrows to claims the caller can see — belt + suspenders.
+  //
+  // The OR clause (sender_id is null OR sender_id != user.id) includes
+  // auto-request messages (HamsPortal nags) which have sender_id=null.
+  // A plain .neq would silently exclude them because `NULL <> user.id`
+  // evaluates to NULL (treated as false in a WHERE clause).
   const tMsgs = Date.now()
   // Cap the scan. If the user is on more than 500 recent recipient messages,
   // the queue's "unread count" will be approximate — but the dashboard badge
@@ -55,7 +72,7 @@ export async function GET() {
     .from('messages')
     .select('id, claim_id, sender_name, created_at')
     .contains('recipient_ids', [user.id])
-    .neq('sender_id', user.id)
+    .or(`sender_id.is.null,sender_id.neq.${user.id}`)
     .order('created_at', { ascending: false })
     .limit(500)
   mark('messagesQuery', tMsgs)
@@ -97,12 +114,13 @@ export async function GET() {
 
   if (buckets.size === 0) return NextResponse.json({ claims: [] })
 
-  // Enrich each claim with display fields.
+  // Enrich each claim with display fields + scope columns (status, assigned_to)
+  // so we can filter closed claims and (for appraisers) non-assigned ones.
   const unreadClaimIds = Array.from(buckets.keys())
   const tClaims = Date.now()
   const { data: claims, error: claimErr } = await supabase
     .from('acv_history')
-    .select('id, ma_number, vehicle, claim')
+    .select('id, ma_number, vehicle, claim, status, assigned_to')
     .in('id', unreadClaimIds)
   mark('claimsEnrichQuery', tClaims)
   if (claimErr) return NextResponse.json({ error: claimErr.message }, { status: 400 })
@@ -115,6 +133,12 @@ export async function GET() {
       const b = buckets.get(cid)!
       const c = claimMap.get(cid)
       if (!c) return null  // RLS filtered it out (shouldn't happen if messages_select passed, but safe)
+      // Closed claims drop out for everyone (no live messaging).
+      if (c.status === 'closed') return null
+      // Appraisers only see claims currently assigned to them. Once a claim
+      // leaves their queue (reassigned, submitted to QC and unassigned,
+      // advanced to a later stage) the unread rows stop surfacing.
+      if (!callerIsAdmin && c.assigned_to !== user.id) return null
       return {
         claimId: cid,
         maNumber: c.ma_number ?? '',

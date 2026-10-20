@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { extractLossState } from '@/lib/claim-state'
 import { fetchLicensedStates, isLicensedState, isForbiddenState, type LicensedState } from '@/lib/supabase/licensed-states'
-import { fetchAllLicenses, fetchUserLicenses, isLicenseValid, type AppraiserLicense } from '@/lib/supabase/appraiser-licenses'
+import { fetchAllLicenses, isLicenseValid, type AppraiserLicense } from '@/lib/supabase/appraiser-licenses'
 import type { ClaimInfo } from '@/lib/acv/types'
 import type { Profile } from '@/lib/supabase/profiles'
 
@@ -11,39 +11,39 @@ import type { Profile } from '@/lib/supabase/profiles'
  * Compact but LOUD state-licensing status badge for the top toolbar of the
  * claim workspace. Sits next to the Print button. Renders one of:
  *   - FORBIDDEN (bold red bar) — highest priority, cannot be missed
- *   - NOT LICENSED (bold red pill) — licensed state, handler not licensed
- *   - LICENSED (green pill) — licensed state, handler licensed
+ *   - NOT LICENSED (bold red pill) — licensed state, negotiating appraiser not licensed
+ *   - LICENSED (green pill) — licensed state, negotiating appraiser licensed
  *   - nothing — state doesn't require licensing (or state unknown)
+ *
+ * License status is based on the NEGOTIATING APPRAISER
+ * (claim.negotiatingAppraiser, resolved by name against allProfiles) — NOT
+ * the current assignee. QC claims have no assignee but still need to show
+ * the correct status for the negotiating appraiser named on the file.
  */
 export function StateLicensingTopBadge({
   claim,
-  assignedTo,
-  profile,
+  allProfiles,
 }: {
   claim: ClaimInfo
-  assignedTo: string | null
-  profile: Profile | null
+  // Legacy props kept for callers; no longer used.
+  assignedTo?: string | null
+  profile?: Profile | null
+  allProfiles: Profile[]
 }) {
   const [licensedStates, setLicensedStates] = useState<LicensedState[]>([])
   const [licenses, setLicenses] = useState<AppraiserLicense[]>([])
   const [loading, setLoading] = useState(true)
 
-  const isAdmin = profile?.role === 'admin'
-
   useEffect(() => {
     Promise.all([
       fetchLicensedStates(),
-      isAdmin
-        ? fetchAllLicenses()
-        : profile?.id === assignedTo
-          ? fetchUserLicenses(profile.id)
-          : Promise.resolve<AppraiserLicense[]>([]),
+      fetchAllLicenses(),
     ]).then(([states, lics]) => {
       setLicensedStates(states)
       setLicenses(lics)
       setLoading(false)
     })
-  }, [assignedTo, isAdmin, profile?.id])
+  }, [])
 
   if (loading) return null
 
@@ -62,8 +62,18 @@ export function StateLicensingTopBadge({
 
   if (!isLicensedState(state, licensedStates)) return null
 
-  const handlerLicensed = !!assignedTo && licenses.some(
-    l => l.userId === assignedTo && l.state === state && isLicenseValid(l)
+  // Resolve the negotiating appraiser's name (free-text) to a profile id,
+  // then check whether that user has a valid license in the loss state.
+  const negotiatingName = (claim.negotiatingAppraiser ?? '').trim().toLowerCase()
+  const negotiatingProfile = negotiatingName
+    ? allProfiles.find(p => {
+        const n = (p.name ?? '').trim().toLowerCase()
+        const e = (p.email ?? '').trim().toLowerCase()
+        return n === negotiatingName || e === negotiatingName
+      })
+    : undefined
+  const handlerLicensed = !!negotiatingProfile && licenses.some(
+    l => l.userId === negotiatingProfile.id && l.state === state && isLicenseValid(l)
   )
 
   if (handlerLicensed) {

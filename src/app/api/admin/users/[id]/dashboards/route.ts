@@ -5,7 +5,7 @@ import { requireAdmin } from '@/lib/auth/require-admin'
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-const ALL_CODES = ['main', 'qc', 'billing', 'delivery', 'payment'] as const
+const ALL_CODES = ['main', 'qc', 'billing_delivery', 'payment'] as const
 type Code = typeof ALL_CODES[number]
 
 // GET — list the user's current dashboard grants.
@@ -27,7 +27,7 @@ export async function GET(_request: NextRequest, ctx: { params: Promise<{ id: st
 }
 
 // PUT — replace the user's dashboard grants with the provided set.
-// Body: { codes: ("main"|"qc"|"billing"|"delivery"|"payment")[] }
+// Body: { codes: ("main"|"qc"|"billing_delivery"|"payment")[] }
 export async function PUT(request: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   const { caller, errorResponse } = await requireAdmin()
   if (errorResponse) return errorResponse

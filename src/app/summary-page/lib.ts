@@ -1,6 +1,16 @@
 import { createClient } from "@/lib/supabase/client";
 
-export type StatusEntry = { id: string; date: string; text: string };
+export type StatusEntry = {
+  id: string;
+  date: string;
+  text: string;
+  // Author stamped at creation time so we can gate per-row delete (appraisers
+  // delete only their own entries; admins delete any). Optional for back-compat
+  // with pre-existing entries that predate this field — those render as
+  // admin-deletable only in the UI.
+  authorId?: string;
+  authorName?: string;
+};
 export type InfoEntry = { id: string; text: string };
 export type StateLaw = { id: string; state: string; content: string };
 

@@ -132,6 +132,9 @@ export function parseCcc(text: string): ParsedClaim {
     clientType: 'Insured',
     clientName: 'N/A',
     insuredName: na(ownerName),
+    // CCC reports surface an "Owner" field; same value drives both the
+    // Owner chip and the Insured field.
+    ownerName: na(ownerName),
     ownerPhone: 'N/A',
     ownerEmail: 'N/A',
     ownerAddress: na(ownerAddress),

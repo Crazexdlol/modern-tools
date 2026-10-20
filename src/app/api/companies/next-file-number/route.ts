@@ -5,19 +5,26 @@ import { requireAuth } from '@/lib/auth/require-admin'
 export const runtime = 'nodejs'
 
 // POST /api/companies/next-file-number
-// For Eagleview users: atomically reserves the next value from
-// public.eagleview_file_seq via the security-definer RPC and returns it as a
-// string ("222001", "222002", ...). Each call advances the sequence.
+// Atomically reserves the next file number from the caller's active company.
 //
-// For Modern Appraisers (or any company that doesn't auto-generate): returns
-// { supported: false } so the client leaves the field as a plain manual input.
-//
-// Also returns { supported: false } pre-migration (function missing) so the
-// UI degrades gracefully to manual entry.
+// Each company has its own sequence (eagleview_file_seq, ma_file_seq, …)
+// exposed via a security-definer RPC — Supabase-js can't call nextval()
+// directly. We dispatch to the right RPC based on the company slug.
 //
 // Response shapes:
-//   { supported: true, fileNumber: "222001" }
-//   { supported: false }
+//   { supported: true, fileNumber: "555001" }
+//   { supported: false }   // unknown company or RPC not yet installed
+//
+// `supported: false` is returned (not a 500) so the UI degrades gracefully
+// to manual entry on pre-migration deploys, during a Supabase outage, or
+// for any company we haven't configured a sequence for yet.
+
+// Map company slug → security-definer RPC that reserves the next value.
+const SEQ_RPC_BY_SLUG: Record<string, string> = {
+  'eagleview':         'nextval_public_eagleview_file_seq',
+  'modern-appraisers': 'nextval_public_ma_file_seq',
+}
+
 export async function POST() {
   const { caller, errorResponse } = await requireAuth()
   if (errorResponse) return errorResponse
@@ -28,18 +35,15 @@ export async function POST() {
     .select('slug')
     .eq('id', caller!.activeCompanyId ?? '')
     .maybeSingle()
-  const slug = (co as { slug: string } | null)?.slug
+  const slug = (co as { slug: string } | null)?.slug ?? ''
 
-  if (slug !== 'eagleview') {
-    return NextResponse.json({ supported: false })
-  }
+  const rpcName = SEQ_RPC_BY_SLUG[slug]
+  if (!rpcName) return NextResponse.json({ supported: false })
 
-  // Reserve via RPC. If the function doesn't exist yet (pre-migration),
-  // fall through with supported=false so the UI keeps working.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data, error } = await (svc.rpc as any)('nextval_public_eagleview_file_seq')
+  const { data, error } = await (svc.rpc as any)(rpcName)
   if (error) {
-    console.warn('nextval RPC failed (probably pre-migration):', error.message)
+    console.warn(`${rpcName} failed (probably pre-migration):`, error.message)
     return NextResponse.json({ supported: false })
   }
   // RPC returns [{ value: bigint }] as JSON.

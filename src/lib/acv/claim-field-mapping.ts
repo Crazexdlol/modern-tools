@@ -25,15 +25,20 @@ export const MODERN_APPRAISERS_FIELDS: Record<string, ParserLabel> = {
   dateOfLoss: { labels: ['Date of Loss', 'DOL'] },
   clientType: { labels: ['Claim For'], note: "'Insured' or 'Claimant'" },
   clientName: { labels: ['Business Name'] },
-  insuredName: { labels: ['Insured Name', 'First Name + Last Name'] },
+  insuredName: { labels: ['Insured Name'] },
+  ownerName: { labels: ['First Name', 'Last Name'], note: 'Owner Information section — First + Last concatenated' },
   ownerPhone: { labels: ['Mobile Phone', 'Home Phone', 'Work Phone'] },
   ownerEmail: { labels: ['Client Email'] },
   ownerAddress: { labels: ['Address 1', 'Address 2', 'City', 'State', 'Zip'] },
-  // Claimant block is mirrored from Owner when clientType === 'Insured'.
-  claimantName: { labels: [], note: 'Mirrored from insured when clientType = Insured' },
-  claimantPhone: { labels: [], note: 'Mirrored from insured when clientType = Insured' },
-  claimantEmail: { labels: [], note: 'Mirrored from insured when clientType = Insured' },
-  claimantAddress: { labels: [], note: 'Mirrored from insured when clientType = Insured' },
+  // Modern Appraisers assignment sheets don't carry a distinct Claimant
+  // block. Claimant fields are left blank for the appraiser to fill
+  // manually when the claim is a third-party / Claimant-type claim.
+  // Previously these were mirrored from the Insured — Henry removed that
+  // behavior 2026-10-12 after it polluted third-party claims.
+  claimantName: { labels: [], note: 'Blank — fill manually for third-party claims' },
+  claimantPhone: { labels: [], note: 'Blank — fill manually for third-party claims' },
+  claimantEmail: { labels: [], note: 'Blank — fill manually for third-party claims' },
+  claimantAddress: { labels: [], note: 'Blank — fill manually for third-party claims' },
   insuranceCompany: { labels: ['Insurance Company', 'Carrier'] },
   adjuster: { labels: ['Adjuster'] },
   adjusterPhone: { labels: ['Adjuster Phone'] },
@@ -94,14 +99,19 @@ export const CCC_FIELDS: Record<string, ParserLabel> = {
  * assignment sheet. New fields that fit here don't need parser updates.
  */
 export const APP_INTERNAL_FIELDS = [
-  'handlingAppraiser',
+  'negotiatingAppraiser',
   'claimTypes',
   'trim',           // sometimes parsed, often set from VIN decode
   'engine',
   'drivetrain',
   'transmission',
   'fuelType',
+  'bodyType',       // set from VIN decode's bodyStyle (normalized), editable in UI
   'radius',
+  'vehicleLocationName',    // holder's name (body shop / tow yard / residence)
+  'vehicleLocationAddress', // holder's street address
+  'vehicleLocationContact', // contact at the holder (name + phone/email, freeform string)
+  'vehicleLocation',        // legacy single-field; superseded by the two above but kept for old claims
   'appraiserNotes',
   'factOfLoss',
 ] as const

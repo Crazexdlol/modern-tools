@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { Plus, Archive, Undo2, Trash2, Save, X } from 'lucide-react'
 import { fetchFeeCatalog, type FeeCatalogEntry } from '@/lib/supabase/fee-catalog'
+import { confirmDialog } from '@/components/ui/dialog-service'
 
 interface Draft {
   id: string | null   // null = new
@@ -71,7 +72,7 @@ export function FeeCatalogClient() {
   }
 
   const remove = async (id: string) => {
-    if (!confirm('Delete this fee type? If any appraiser has an amount for it, deletion will be refused (archive it instead).')) return
+    if (!(await confirmDialog({ title: 'Delete fee type?', message: 'If any appraiser has an amount for it, deletion will be refused (archive it instead).', confirmLabel: 'Delete', variant: 'danger' }))) return
     setBusy(true); setError(null)
     const res = await fetch(`/api/admin/fee-catalog/${id}`, { method: 'DELETE' })
     setBusy(false)

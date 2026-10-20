@@ -1,25 +1,63 @@
 @import "tailwindcss";
-@import "@fontsource-variable/inter";
 
 @theme {
-  --font-sans: "Inter Variable", ui-sans-serif, system-ui, sans-serif;
+  /* HARD RULE (Henry 2026-10-18): entire modernappraisers.com runs on
+     Times New Roman — no exceptions. Mirrors the HamsPortal rule. */
+  --font-sans: "Times New Roman", Times, serif;
+  --font-serif: "Times New Roman", Times, serif;
 
-  --color-bg: #ffffff;
-  --color-bg-subtle: #fafafa;
-  --color-ink: #0a0a0a;
-  --color-ink-muted: #4b5563;
-  --color-ink-soft: #6b7280;
-  --color-border: #e5e7eb;
-  --color-border-strong: #d1d5db;
-  --color-accent: #0ea5e9;
-  --color-accent-ink: #0369a1;
-  --color-success: #059669;
-  --color-danger: #dc2626;
+  /* Dark theme — matches live modernappraisers.com: near-black primary
+     surface, slightly lighter card / subtle surfaces, gold accent, white
+     primary text with muted light-gray for secondary copy. */
+  --color-bg: #0a0a0a;
+  --color-bg-subtle: #141414;
+  --color-bg-elevated: #1a1a1a;
+  --color-bg-light: #ffffff;
+  --color-ink: #ffffff;
+  --color-ink-muted: #b3b3b3;
+  --color-ink-soft: #8a8a8a;
+  --color-ink-dark: #0a0a0a;
+  --color-border: #2a2a2a;
+  --color-border-strong: #3a3a3a;
+  --color-border-light: #e5e5e5;
+  --color-accent: #2563eb;
+  --color-accent-ink: #60a5fa;
+  --color-success: #10b981;
+  --color-danger: #f87171;
 
-  --radius-card: 10px;
+  --radius-card: 8px;
 }
 
-html, body { background: var(--color-bg); color: var(--color-ink); font-family: var(--font-sans); font-feature-settings: "cv11", "ss01"; }
+html, body {
+  background: var(--color-bg);
+  color: var(--color-ink);
+  font-family: "Times New Roman", Times, serif;
+}
 body { -webkit-font-smoothing: antialiased; }
 
-::selection { background: var(--color-accent); color: #fff; }
+/* Pin every element to Times New Roman regardless of utility class or
+   inline font-family — enforces the HARD RULE across the whole site. */
+*, *::before, *::after {
+  font-family: "Times New Roman", Times, serif !important;
+}
+
+h1, h2, h3, h4 {
+  letter-spacing: -0.015em;
+}
+
+::selection { background: var(--color-accent); color: var(--color-ink-dark); }
+
+/* Carriers marquee — horizontal infinite scroll. The marquee track renders
+   the logo row twice back-to-back; translating -50% leaves the second copy
+   exactly where the first began, so the seam is invisible. */
+@keyframes carriers-marquee {
+  from { transform: translateX(0); }
+  to   { transform: translateX(-50%); }
+}
+.animate-carriers-marquee {
+  animation: carriers-marquee 45s linear infinite;
+  will-change: transform;
+}
+@media (prefers-reduced-motion: reduce) {
+  .animate-carriers-marquee { animation: none; }
+}

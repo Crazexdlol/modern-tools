@@ -65,26 +65,18 @@ export default function SummaryDashboardPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 text-gray-900">
+    <div className="min-h-screen bg-slate-50 text-slate-900">
       <AppHeader />
 
-      <main className="max-w-5xl mx-auto px-6 py-8">
-        <div className="flex items-center gap-4 mb-6">
-          <Link href="/" className="text-gray-400 hover:text-gray-900 transition-colors">
-            <ArrowLeft className="w-5 h-5" />
+      <main className="max-w-5xl mx-auto px-6 py-7">
+        <div className="flex items-center gap-3 mb-5">
+          <Link href="/" className="hp-btn hp-btn-sm hp-btn-ghost">
+            <ArrowLeft className="w-3.5 h-3.5" /> Dashboard
           </Link>
-          <div className="flex-1">
-            <h1 className="text-2xl font-bold text-gray-900">Summary Pages</h1>
-            <p className="text-sm text-gray-500">
-              All saved claim summaries. Click one to edit, or start a new summary.
-            </p>
-          </div>
-          <Button
-            onClick={handleNew}
-            className="bg-indigo-600 hover:bg-indigo-700 text-white"
-          >
-            <Plus className="w-4 h-4 mr-1.5" /> New Summary
-          </Button>
+          <h1 className="hp-display flex-1">Summary Pages</h1>
+          <button onClick={handleNew} className="hp-btn hp-btn-primary">
+            <Plus className="w-4 h-4" /> New Summary
+          </button>
         </div>
 
         {loaded && summaries.length === 0 && (
@@ -94,12 +86,9 @@ export default function SummaryDashboardPage() {
               <p className="text-sm text-gray-500 mb-4">
                 No summaries saved yet.
               </p>
-              <Button
-                onClick={handleNew}
-                className="bg-indigo-600 hover:bg-indigo-700 text-white"
-              >
-                <Plus className="w-4 h-4 mr-1.5" /> Create your first summary
-              </Button>
+              <button onClick={handleNew} className="hp-btn hp-btn-primary mx-auto">
+                <Plus className="w-4 h-4" /> Create your first summary
+              </button>
             </CardContent>
           </Card>
         )}

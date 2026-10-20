@@ -1,11 +1,12 @@
 "use client"
 
-import { useState } from 'react'
-import { useRouter } from 'next/navigation'
-import { ArrowLeft, Download, Loader2 } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
+import { ArrowLeft, Loader2, Printer } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { AppHeader } from '@/components/app-header'
 import type { ACVHistoryEntry } from '@/lib/supabase/history'
+import { createClient } from '@/lib/supabase/client'
 
 // Labels + section grouping for the ACV Modern Contract fill flow. Field
 // names are the auto-generated AcroForm names from the PDF template; the
@@ -157,15 +158,32 @@ function buildDefaults(entry: ACVHistoryEntry): Record<string, string> {
 
 interface Props {
   entry: ACVHistoryEntry
+  // Optional overrides for in-workspace rendering. When present they win
+  // over the ?embed=1 / ?readonly=1 URL params the standalone page uses.
+  embed?: boolean
+  readOnly?: boolean
+  // Called by the "Back to Reports" button in embed mode. If omitted we fall
+  // back to postMessage (iframe case) and finally router.back() (full page).
+  onBack?: () => void
 }
 
-export function ContractClient({ entry }: Props) {
+export function ContractClient({ entry, embed: embedProp, readOnly: readOnlyProp, onBack }: Props) {
   const router = useRouter()
+  // Embed mode: when the contract is rendered inside the workspace or inside
+  // the Reports Hub preview modal, hide the app chrome + back button so only
+  // the form shows. Readonly disables every input + hides Generate.
+  const search = useSearchParams()
+  const embed = embedProp ?? (search.get('embed') === '1')
+  const readOnly = readOnlyProp ?? (search.get('readonly') === '1')
   const defaults = buildDefaults(entry)
 
+  // Initial values: saved contract state (if any) wins over claim-derived
+  // defaults so users don't lose edits between visits. Each claim keeps its
+  // own contract field values on reports_state.contract.
+  const saved = entry.reportsState?.contract as Record<string, string> | undefined
   const [values, setValues] = useState<Record<string, string>>(() => {
     const init: Record<string, string> = {}
-    for (const f of ALL_FIELDS) init[f.name] = defaults[f.name] ?? ''
+    for (const f of ALL_FIELDS) init[f.name] = saved?.[f.name] ?? defaults[f.name] ?? ''
     return init
   })
 
@@ -175,6 +193,27 @@ export function ContractClient({ entry }: Props) {
   function setValue(field: string, value: string) {
     setValues(prev => ({ ...prev, [field]: value }))
   }
+
+  // Debounced auto-save of contract values onto acv_history.reports_state.
+  // Merges with the existing reportsState so sibling blobs (summaryId,
+  // Award / Notes editor state) aren't clobbered.
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const firstRun = useRef(true)
+  useEffect(() => {
+    if (readOnly) return
+    if (firstRun.current) { firstRun.current = false; return }
+    if (saveTimer.current) clearTimeout(saveTimer.current)
+    saveTimer.current = setTimeout(async () => {
+      try {
+        const supabase = createClient()
+        const nextReportsState = { ...(entry.reportsState ?? {}), contract: values }
+        await supabase.from('acv_history').update({ reports_state: nextReportsState }).eq('id', entry.id)
+      } catch (err) {
+        console.error('contract auto-save failed', err)
+      }
+    }, 1200)
+    return () => { if (saveTimer.current) clearTimeout(saveTimer.current) }
+  }, [values, readOnly, entry.id, entry.reportsState])
 
   async function handleGenerate() {
     setGenerating(true)
@@ -219,7 +258,8 @@ export function ContractClient({ entry }: Props) {
             id={`field-${f.name}`}
             checked={values[f.name] === 'true'}
             onChange={e => setValue(f.name, e.target.checked ? 'true' : '')}
-            className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+            disabled={readOnly}
+            className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 disabled:opacity-70"
           />
           <label htmlFor={`field-${f.name}`} className="text-sm text-gray-700">
             {f.label}
@@ -235,7 +275,8 @@ export function ContractClient({ entry }: Props) {
             id={`field-${f.name}`}
             value={values[f.name]}
             onChange={e => setValue(f.name, e.target.value)}
-            className={inputCls}
+            disabled={readOnly}
+            className={`${inputCls} disabled:bg-gray-50 disabled:text-gray-700`}
           >
             <option value="">— Select —</option>
             {f.options.map(opt => (
@@ -253,7 +294,8 @@ export function ContractClient({ entry }: Props) {
           type="text"
           value={values[f.name]}
           onChange={e => setValue(f.name, e.target.value)}
-          className={inputCls}
+          readOnly={readOnly}
+          className={`${inputCls} read-only:bg-gray-50 read-only:text-gray-700`}
           placeholder="—"
         />
       </div>
@@ -274,30 +316,32 @@ export function ContractClient({ entry }: Props) {
 
   return (
     <>
-      <AppHeader />
-      <div className="max-w-4xl mx-auto px-4 py-8 space-y-6">
-        <button
-          type="button"
-          onClick={() => router.back()}
-          className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-800 transition-colors"
-        >
-          <ArrowLeft className="w-4 h-4" />
-          Back to claim
-        </button>
+      {!embed && <AppHeader />}
+      <div className={embed ? 'space-y-6' : 'max-w-4xl mx-auto px-4 py-8 space-y-6'}>
+        {/* Only the standalone page renders the back button + big title here.
+            In embed mode the parent (workspace step 20 or modal header)
+            already provides them — rendering again would duplicate. */}
+        {!embed && (
+          <>
+            <button
+              type="button"
+              onClick={() => router.back()}
+              className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-800 transition-colors"
+            >
+              <ArrowLeft className="w-4 h-4" />
+              Back to claim
+            </button>
 
-        <div className="flex items-start justify-between gap-4 flex-wrap">
-          <div>
-            <h1 className="text-xl font-bold text-gray-900">ACV Modern Contract</h1>
-            {vehicleLabel && (
-              <p className="text-sm text-gray-500 mt-0.5">{entry.maNumber} — {vehicleLabel}</p>
-            )}
-          </div>
-          <Button onClick={handleGenerate} disabled={generating}>
-            {generating
-              ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Generating…</>
-              : <><Download className="w-4 h-4 mr-2" />Generate PDF</>}
-          </Button>
-        </div>
+            <div className="flex items-start justify-between gap-4 flex-wrap">
+              <div>
+                <h1 className="text-xl font-bold text-gray-900">ACV Modern Contract</h1>
+                {vehicleLabel && (
+                  <p className="text-sm text-gray-500 mt-0.5">{entry.maNumber} — {vehicleLabel}</p>
+                )}
+              </div>
+            </div>
+          </>
+        )}
 
         {error && (
           <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
@@ -305,8 +349,25 @@ export function ContractClient({ entry }: Props) {
           </div>
         )}
 
-        {sections.map(section => (
+        {sections.map((section, idx) => (
           <div key={section.label} className="bg-white border border-gray-200 rounded-lg shadow-sm p-6 space-y-4">
+            {/* First section bubble carries ONLY the tab title + Back
+                button. Print Report lives at bottom-right of the form (see
+                below) matching every other tool. */}
+            {idx === 0 && embed && (
+              <div className="flex items-center justify-between gap-4 flex-wrap pb-3 border-b border-gray-100">
+                <h1 className="text-lg font-bold tracking-tight text-black">ACV Modern Contract</h1>
+                {onBack && (
+                  <button
+                    type="button"
+                    onClick={onBack}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-700 bg-white border border-gray-200 rounded-md hover:border-gray-300 hover:bg-gray-50 transition-colors"
+                  >
+                    ← Back to Reports
+                  </button>
+                )}
+              </div>
+            )}
             <h2 className="text-sm font-bold text-gray-900 uppercase tracking-wide">{section.label}</h2>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-4">
               {section.fields.map(renderField)}
@@ -314,13 +375,15 @@ export function ContractClient({ entry }: Props) {
           </div>
         ))}
 
-        <div className="flex justify-end">
-          <Button onClick={handleGenerate} disabled={generating}>
-            {generating
-              ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Generating…</>
-              : <><Download className="w-4 h-4 mr-2" />Generate PDF</>}
-          </Button>
-        </div>
+        {!readOnly && (
+          <div className="flex justify-end">
+            <Button onClick={handleGenerate} disabled={generating} className="bg-blue-600 hover:bg-blue-500 text-white font-bold">
+              {generating
+                ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Generating…</>
+                : <><Printer className="w-4 h-4 mr-2" />Print Report</>}
+            </Button>
+          </div>
+        )}
       </div>
     </>
   )
