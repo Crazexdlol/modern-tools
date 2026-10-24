@@ -49,7 +49,7 @@ import {
 } from '@/lib/acv/calculations'
 import { saveACVHistory, fetchACVEntry, deleteACVHistory, type ClaimStatus } from '@/lib/supabase/history'
 import { useCurrentProfile, fetchAllProfilesBrowser, isPickerVisible, userHandlesClaimTypes, type Profile } from '@/lib/supabase/profiles'
-import { fetchStatusPhaseConfigs, phaseColorClasses, type StatusPhaseConfig } from '@/lib/supabase/status-phase-configs'
+import { fetchStatusPhaseConfigs, phaseColorClasses, formatPhaseAge, type StatusPhaseConfig } from '@/lib/supabase/status-phase-configs'
 import { useActiveCompany } from '@/hooks/use-active-company'
 import { useCurrentCompanyMembers } from '@/hooks/use-current-company-members'
 import { fileNumberLabel, fileNumberLongLabel } from '@/lib/company-labels'
@@ -580,6 +580,12 @@ function ClaimInfoForm({
         model: data.model || claim.model,
         mileage: data.mileage || claim.mileage,
         zip: data.zip || claim.zip,
+        // Parsed Notes section (currently populated by the Eagle View parser —
+        // other parsers return empty) lands in the appraiser-facing
+        // Handling Instructions field at the bottom of Claim Info. Uses the
+        // same "parsed-wins-over-blank, user-edit-wins-over-parsed" rule as
+        // every other field above.
+        appraiserNotes: data.notes || claim.appraiserNotes || '',
       })
       setPdfSuccess(true)
       setTimeout(() => setPdfSuccess(false), 3000)
@@ -2427,6 +2433,10 @@ function ReportsStep({
         if (existing) {
           const opposingAppraiser = notesData.appraiserName || existing.opposingAppraiser
           const oaCompany = notesData.appraiserCompany || existing.oaCompany
+          // Date Received Claim: user-edited value on the existing summary >
+          // claim's parsed dateReceived > blank. NO synthetic fallback — if
+          // the assignment sheet didn't carry a Date Created / Date Assigned
+          // field, the appraiser enters it manually (Henry 2026-10-20).
           const dateReceivedClaim = existing.dateReceivedClaim || claim.dateReceived || ''
           const synced: SavedSummary = {
             ...existing,
@@ -3648,6 +3658,13 @@ function ClaimWorkspaceInner({ claimId, isLockedForMe }: { claimId: string; isLo
     }
     return false
   })
+  // Rough-numbers handoff timestamp. Null until the first Submit on a
+  // needs_rough_numbers claim lands — then stamped by the submit route.
+  // Used to decide whether the Complete Report handoff is available: when
+  // rough numbers is pending (true + null here), the appraiser's "finish"
+  // action must route to the Rough Numbers inbox owner first, regardless
+  // of the Negotiating Appraiser on the file.
+  const [roughNumbersHandoffAt, setRoughNumbersHandoffAt] = useState<string | null>(null)
   // Umpire tracking (2026-10-15). Hydrated from the fetched entry below.
   const [proceededToUmpire, setProceededToUmpire] = useState<boolean>(false)
   const [umpireAgreement, setUmpireAgreement] = useState<boolean>(true)
@@ -3759,9 +3776,24 @@ function ClaimWorkspaceInner({ claimId, isLockedForMe }: { claimId: string; isLo
     })()
     return () => { cancelled = true }
   }, [clientId, isNew])
-  const [reportsState, setReportsState] = useState<ReportsState>(
-    () => draft.current?.reportsState ?? defaultReportsState(draft.current?.claim ?? defaultClaim())
-  )
+  const [reportsState, setReportsState] = useState<ReportsState>(() => {
+    // Session-storage handoff drain — mirrors the `claim` initializer at the
+    // top of this component. When ClaimWorkspace mounts on /claims/{id} right
+    // after createClaim fired, prefer the just-typed reportsState (which
+    // carries Opposing Appraiser + Ins. Co. Offer from the Create form) over
+    // defaultReportsState so a remount OR the handoff path's load-skip can't
+    // blank them. The load effect drains the whole handoff on its own.
+    if (!isNew && typeof window !== 'undefined') {
+      try {
+        const raw = sessionStorage.getItem(`claim-handoff-${claimId}`)
+        if (raw) {
+          const parsed = JSON.parse(raw)
+          if (parsed?.reportsState) return parsed.reportsState as ReportsState
+        }
+      } catch { /* malformed — fall through to default/draft */ }
+    }
+    return draft.current?.reportsState ?? defaultReportsState(draft.current?.claim ?? defaultClaim())
+  })
   const [mileageRate, setMileageRate] = useState(() => draft.current?.mileageRate ?? 0)
   const [sortBy, setSortBy] = useState<'default' | 'mileage-closest' | 'mileage-low' | 'mileage-high' | 'price-low' | 'price-high' | 'year-new' | 'year-old' | 'distance'>('default')
   const [activeFilters, setActiveFilters] = useState<{ trim: string[]; drivetrain: string[]; transmission: string[]; engine: string[]; fuelType: string[]; bodyType: string[] }>({ trim: [], drivetrain: [], transmission: [], engine: [], fuelType: [], bodyType: [] })
@@ -3933,6 +3965,7 @@ function ClaimWorkspaceInner({ claimId, isLockedForMe }: { claimId: string; isLo
       setSupplementCount(entry.supplementCount ?? 0)
       setIsRevision(entry.isRevision ?? false)
       setNeedsRoughNumbers(entry.needsRoughNumbers === true)
+      setRoughNumbersHandoffAt(entry.roughNumbersHandoffAt ?? null)
       setProceededToUmpire(entry.proceededToUmpire === true)
       setUmpireAgreement(entry.umpireAgreement !== false)
       setAuctionListings((entry.auctionListings as LossListing[] | undefined) ?? [])
@@ -4557,13 +4590,20 @@ function ClaimWorkspaceInner({ claimId, isLockedForMe }: { claimId: string; isLo
 
   // Non-admins only. Admins skip the submit step and close directly via the
   // Finalize dropdown (Complete / Cancel).
-  const handleSubmit = () => setPendingWorkflow({
-    path: 'submit',
-    title: 'Submit this claim for admin review?',
-    message: 'The claim will go to the admin queue for closing. You can still edit or attach documents afterward.',
-    confirmLabel: 'Submit',
-    variant: 'primary',
-  })
+  const handleSubmit = () => {
+    const isRoughNumbersSubmit = needsRoughNumbers && !roughNumbersHandoffAt
+    setPendingWorkflow({
+      path: 'submit',
+      title: isRoughNumbersSubmit
+        ? 'Submit rough numbers for admin review?'
+        : 'Submit this claim for QC?',
+      message: isRoughNumbersSubmit
+        ? 'The claim goes to the Rough Numbers inbox for admin review. Cycle time pauses until the admin reassigns it back for the full workup.'
+        : 'The claim moves to QC. You can still edit or attach documents afterward.',
+      confirmLabel: 'Submit',
+      variant: 'primary',
+    })
+  }
 
   // Report-complete handoff — appraiser doing the report work (comps/
   // adjustments/DV) hands the claim to the Negotiating Appraiser on the file,
@@ -4587,15 +4627,35 @@ function ClaimWorkspaceInner({ claimId, isLockedForMe }: { claimId: string; isLo
     negotiatingAppraiserProfile.id !== assignedTo &&
     // Appraisers with can_submit_without_handoff bypass the handoff and
     // submit straight to QC (Henry Aleksanyan + George Aleksanyan today).
-    profile?.canSubmitWithoutHandoff !== true
+    profile?.canSubmitWithoutHandoff !== true &&
+    // Rough-numbers claims always route to the admin FIRST, bypassing any
+    // Negotiating Appraiser handoff. Once the Rough Numbers inbox owner
+    // processes it and reassigns, roughNumbersHandoffAt is stamped and
+    // this gate reopens for subsequent submits.
+    (!needsRoughNumbers || !!roughNumbersHandoffAt) &&
+    // Report-only claims (no 'rta' in claim types) skip the handoff —
+    // we were hired to write the report, not to negotiate. The Negotiating
+    // Appraiser field may still be set for licensing/signature display,
+    // but no routing follows. 'rta' (Right To Appraisal) is the explicit
+    // "we're also doing the negotiation" marker.
+    (claim.claimTypes ?? []).includes('rta')
   )
-  const handleCompleteReport = async () => {
+  const completeReportTo = async (toAssignee: string | null, label: string) => {
     if (!editingId) return
-    const name = negotiatingAppraiserProfile?.name || negotiatingAppraiserProfile?.email || 'the negotiating appraiser'
-    if (!(await confirmDialog({ title: 'Complete report?', message: `Complete the report and hand this claim to ${name}?`, confirmLabel: 'Complete' }))) return
+    if (!(await confirmDialog({
+      title: 'Complete report?',
+      message: `Complete the report and hand this claim to ${label}?`,
+      confirmLabel: 'Complete',
+    }))) return
     const previousStage = workflowStage
     setWorkflowBusy(true)
-    const res = await fetch(`/api/claims/${editingId}/complete-report`, { method: 'POST' })
+    const res = await fetch(`/api/claims/${editingId}/complete-report`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      // toAssignee omitted → server falls back to Negotiating Appraiser
+      // name resolution. The picker (ACV-only) always passes an explicit id.
+      body: JSON.stringify(toAssignee ? { toAssignee } : {}),
+    })
     setWorkflowBusy(false)
     if (!res.ok) {
       const b = await res.json().catch(() => ({} as { error?: string }))
@@ -4732,6 +4792,20 @@ function ClaimWorkspaceInner({ claimId, isLockedForMe }: { claimId: string; isLo
     return () => document.removeEventListener('mousedown', onDocClick)
   }, [sendBackOpen])
 
+  // Complete Report dropdown state — same pattern as Send Back.
+  const [completeReportOpen, setCompleteReportOpen] = useState(false)
+  const completeReportRef = useRef<HTMLDivElement | null>(null)
+  useEffect(() => {
+    if (!completeReportOpen) return
+    const onDocClick = (e: MouseEvent) => {
+      if (completeReportRef.current && !completeReportRef.current.contains(e.target as Node)) {
+        setCompleteReportOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', onDocClick)
+    return () => document.removeEventListener('mousedown', onDocClick)
+  }, [completeReportOpen])
+
   // Admin needs the list of users for the Reassign popover; skip the fetch for
   // non-admins to avoid the extra roundtrip on every workspace load.
   useEffect(() => {
@@ -4747,9 +4821,17 @@ function ClaimWorkspaceInner({ claimId, isLockedForMe }: { claimId: string; isLo
   // Reassign flow (admin-only): the toolbar button opens a popover of
   // appraisers. Selecting one arms a ConfirmDialog. Confirming POSTs to the
   // assign API, refetches, and updates local state (no full page reload).
+  //
+  // dropPhase: when the current claim has a non-'completed' status phase, the
+  // dialog surfaces a Keep/Drop toggle so the admin can decide whether the
+  // phase carries forward. Default = Keep (false). 'completed' is always
+  // cleared on reassign regardless of this flag (enforced server-side) — the
+  // UI hides the toggle in that case. Resets to false whenever the dialog
+  // closes so the next reassign starts fresh.
   const [reassignOpen, setReassignOpen] = useState(false)
   const [reassignBusy, setReassignBusy] = useState(false)
   const [pendingReassign, setPendingReassign] = useState<{ id: string | null; label: string } | null>(null)
+  const [dropPhase, setDropPhase] = useState(false)
   const reassignRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
@@ -4765,6 +4847,7 @@ function ClaimWorkspaceInner({ claimId, isLockedForMe }: { claimId: string; isLo
 
   const pickReassignee = (id: string | null, label: string) => {
     setReassignOpen(false)
+    setDropPhase(false) // next dialog always opens on "Keep"
     setPendingReassign({ id, label })
   }
 
@@ -4885,6 +4968,31 @@ function ClaimWorkspaceInner({ claimId, isLockedForMe }: { claimId: string; isLo
     return () => document.removeEventListener('mousedown', onDocClick)
   }, [finalizeOpen, finalizePhaseConfigs.length])
 
+  // Lazy-load phase configs when the reassign dialog opens so the Keep/Drop
+  // phase toggle can render the human label (e.g. "Pending Information")
+  // instead of the raw code. Shares state with the Finalize dropdown — same
+  // 60s-cached fetcher, no extra network cost if that dropdown opened first.
+  // If the fetch hasn't landed yet when the dialog paints, the toggle falls
+  // back to the raw code for one render.
+  useEffect(() => {
+    if (!pendingReassign) return
+    if (finalizePhaseConfigs.length > 0) return
+    fetchStatusPhaseConfigs().then(setFinalizePhaseConfigs)
+  }, [pendingReassign, finalizePhaseConfigs.length])
+
+  // Also lazy-load the configs whenever this claim has an active phase, so the
+  // compact phase chip rendered above the claim header grid can show the human
+  // label + color without waiting for the user to open a dropdown. Guarded by
+  // configs.length so a claim view with no phase doesn't fetch, and by the
+  // phase presence so the fetcher only fires for claims that actually need it.
+  // Fetcher's module-level 60s cache + in-flight dedup covers the common
+  // "flip between phased claims rapidly" case.
+  useEffect(() => {
+    if (!statusPhase) return
+    if (finalizePhaseConfigs.length > 0) return
+    fetchStatusPhaseConfigs().then(setFinalizePhaseConfigs)
+  }, [statusPhase, finalizePhaseConfigs.length])
+
   const pickFinalizePhase = async (code: string | null) => {
     if (!editingId) return
     if (code === statusPhase) {
@@ -4920,25 +5028,43 @@ function ClaimWorkspaceInner({ claimId, isLockedForMe }: { claimId: string; isLo
   const runReassign = async () => {
     if (!pendingReassign || !editingId) { setPendingReassign(null); return }
     setReassignBusy(true)
+    // keepPhase is only sent when the current claim actually has a
+    // non-'completed' phase — 'completed' is always cleared server-side and
+    // sending the flag for a null phase would be a no-op. Reading
+    // statusPhase at request-build time (not at dialog-open time) means we
+    // use the latest local value — the backend still re-reads the DB value
+    // when it decides, so a stale local would at worst cause one extra
+    // boolean to ride in the payload with no effect.
+    const payload: { assignedTo: string | null; keepPhase?: boolean } = {
+      assignedTo: pendingReassign.id,
+    }
+    if (statusPhase && statusPhase !== 'completed') {
+      payload.keepPhase = !dropPhase
+    }
     const res = await fetch(`/api/claims/${editingId}/assign`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ assignedTo: pendingReassign.id }),
+      body: JSON.stringify(payload),
     })
     setReassignBusy(false)
     setPendingReassign(null)
+    setDropPhase(false) // reset for the next reassign — always default to Keep
     if (!res.ok) {
       const b = await res.json().catch(() => ({} as { error?: string }))
       await alertDialog({ title: 'Reassign failed', message: (b as { error?: string }).error ?? 'The request did not complete.', variant: 'danger' })
       return
     }
-    // Also re-hydrate claim jsonb from the server. If we don't refresh here,
-    // the 2s autosave would overwrite any server-side mutations with the
-    // stale name from local state.
+    // Re-hydrate from the server. The 2s autosave would otherwise overwrite
+    // any server-side mutations with the stale local state. Also sync
+    // statusPhase + statusPhaseSetAt so the Keep/Drop choice reflects
+    // immediately in the UI (phase chip in the header, Change Phase submenu
+    // tick mark) — previously these were only refreshed on next page load.
     const fresh = await fetchACVEntry(editingId)
     if (fresh) {
       setAssignedTo(fresh.assignedTo ?? null)
       setClaim(fresh.claim)
+      setStatusPhase(fresh.statusPhase ?? null)
+      setStatusPhaseSetAt(fresh.statusPhaseSetAt ?? null)
     }
   }
 
@@ -5021,9 +5147,19 @@ function ClaimWorkspaceInner({ claimId, isLockedForMe }: { claimId: string; isLo
     // remount, promotedIdRef resets to null and we lose the typed state. The
     // handoff survives remount: the new component's useState initializer
     // reads it and the load effect drains it before any DB fetch can clobber.
+    //
+    // reportsState MUST be in this payload (Henry 2026-10-20). Opposing
+    // Appraiser (notesData.appraiserName) and Ins. Co. Offer
+    // (notesData.insuranceOfferNum) are both edited on the Create form and
+    // live inside reportsState — if the handoff path skips the DB fetch
+    // (which it does — see the load effect's early-return) AND reportsState
+    // isn't in the handoff, the new instance initializes from
+    // defaultReportsState and both fields vanish. The next autosave then
+    // overwrites the DB value with the empty default. BUGS.md originally
+    // noted this as "doesn't bite real workflows" — it does now.
     try {
       sessionStorage.setItem(`claim-handoff-${id}`, JSON.stringify({
-        claim, clientId, needsRoughNumbers,
+        claim, clientId, needsRoughNumbers, reportsState,
       }))
     } catch { /* storage full / disabled — fall back to DB load path */ }
     localStorage.removeItem(COMP_FINDER_SESSION_KEY)
@@ -5166,23 +5302,117 @@ function ClaimWorkspaceInner({ claimId, isLockedForMe }: { claimId: string; isLo
             <div className="flex items-center gap-2">
               {!isAdmin && !isSubmitted && !isClosed && isAssignee && (
                 needsReportHandoff ? (
-                  <Button
-                    onClick={handleCompleteReport}
-                    disabled={workflowBusy}
-                    size="sm"
-                    className="bg-blue-600 hover:bg-blue-500 text-white"
-                    title={`Hand off to ${negotiatingAppraiserProfile?.name || negotiatingAppraiserProfile?.email}`}
-                  >
-                    Complete Report
-                  </Button>
+                  // Override picker is ACV-only (Henry 2026-10-20). Non-ACV
+                  // claims keep the pre-Option-A single-click behavior:
+                  // confirm → POST without toAssignee → server auto-resolves
+                  // the Negotiating Appraiser name. Multi-type claims that
+                  // include 'acv' get the picker.
+                  !(claim.claimTypes ?? []).includes('acv') ? (
+                    <Button
+                      onClick={() => {
+                        const label = negotiatingAppraiserProfile?.name
+                          || negotiatingAppraiserProfile?.email
+                          || 'the negotiating appraiser'
+                        void completeReportTo(null, label)
+                      }}
+                      disabled={workflowBusy}
+                      size="sm"
+                      className="bg-blue-600 hover:bg-blue-500 text-white"
+                      title={`Hand off to ${negotiatingAppraiserProfile?.name || negotiatingAppraiserProfile?.email}`}
+                    >
+                      Complete Report
+                    </Button>
+                  ) : (
+                  <div className="relative" ref={completeReportRef}>
+                    <Button
+                      onClick={() => setCompleteReportOpen(o => !o)}
+                      disabled={workflowBusy}
+                      size="sm"
+                      className="bg-blue-600 hover:bg-blue-500 text-white"
+                      title="Pick who to hand this claim off to"
+                    >
+                      Complete Report
+                      <ChevronDown className="w-3.5 h-3.5 ml-1" />
+                    </Button>
+                    {completeReportOpen && (() => {
+                      // Eligible appraisers:
+                      //   • active, appraiser-role, picker-visible (no super-admins)
+                      //   • not the current assignee
+                      //   • claim-type overlap with claim.claimTypes (empty on
+                      //     profile = handles everything)
+                      // Negotiating Appraiser surfaces at the top (highlighted)
+                      // if they pass the filter; otherwise they're silently
+                      // dropped — Henry's rule, non-handlers shouldn't be an
+                      // option. If no one is eligible, show the fallback copy.
+                      const types = (claim.claimTypes ?? [])
+                      const eligible = allProfiles
+                        .filter(p => p.isActive && isPickerVisible(p))
+                        .filter(p => p.role === 'appraiser')
+                        .filter(p => p.id !== assignedTo)
+                        .filter(p => types.length === 0 || userHandlesClaimTypes(p, types))
+                      const negotiatorEligible = negotiatingAppraiserProfile
+                        && eligible.some(p => p.id === negotiatingAppraiserProfile.id)
+                        ? negotiatingAppraiserProfile
+                        : null
+                      const others = eligible
+                        .filter(p => p.id !== negotiatorEligible?.id)
+                        .sort((a, b) => (a.name || a.email).localeCompare(b.name || b.email))
+                      return (
+                        <div className="absolute right-0 mt-1 w-72 rounded-lg border border-gray-200 bg-white shadow-lg z-20 overflow-hidden">
+                          <div className="px-3 py-2 text-[10px] uppercase tracking-wider font-semibold text-gray-400 border-b border-gray-100 bg-gray-50">
+                            Hand off to
+                          </div>
+                          {negotiatorEligible && (
+                            <button
+                              type="button"
+                              onClick={() => { setCompleteReportOpen(false); void completeReportTo(negotiatorEligible.id, negotiatorEligible.name || negotiatorEligible.email) }}
+                              disabled={workflowBusy}
+                              className="w-full text-left px-3 py-2 text-sm text-gray-800 hover:bg-blue-50 hover:text-blue-700 border-b border-gray-100 bg-blue-50/40 truncate"
+                            >
+                              {negotiatorEligible.name || negotiatorEligible.email}
+                              <span className="text-blue-700 font-medium"> (negotiating appraiser)</span>
+                            </button>
+                          )}
+                          <div className="max-h-72 overflow-y-auto">
+                            {others.map(p => (
+                              <button
+                                key={p.id}
+                                type="button"
+                                onClick={() => { setCompleteReportOpen(false); void completeReportTo(p.id, p.name || p.email) }}
+                                disabled={workflowBusy}
+                                className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-blue-50 hover:text-blue-700 truncate"
+                              >
+                                {p.name || p.email}
+                              </button>
+                            ))}
+                          </div>
+                          {!negotiatorEligible && others.length === 0 && (
+                            <div className="px-3 py-4 text-center text-xs text-gray-400 italic">
+                              No eligible appraisers handle this claim&apos;s types.
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })()}
+                  </div>
+                  )
                 ) : (
+                  // Rough-numbers-pending claims take a different Submit path
+                  // under the hood (routes to the Rough Numbers inbox owner,
+                  // not QC). Label the button accordingly so the appraiser
+                  // knows what's actually about to happen.
                   <Button
                     onClick={handleSubmit}
                     disabled={workflowBusy}
                     size="sm"
                     className="bg-emerald-600 hover:bg-emerald-500 text-white"
+                    title={needsRoughNumbers && !roughNumbersHandoffAt
+                      ? 'Sends rough numbers to the admin for review before full workup'
+                      : 'Submits the finished report to QC'}
                   >
-                    Submit for QC
+                    {needsRoughNumbers && !roughNumbersHandoffAt
+                      ? 'Submit for Rough Numbers'
+                      : 'Submit for QC'}
                   </Button>
                 )
               )}
@@ -5565,14 +5795,71 @@ function ClaimWorkspaceInner({ claimId, isLockedForMe }: { claimId: string; isLo
           open={!!pendingReassign}
           title="Reassign this claim?"
           message={
-            pendingReassign ? (
-              <>This claim will be assigned to <b>{pendingReassign.label}</b>.</>
-            ) : ''
+            pendingReassign ? (() => {
+              // Resolve the human label + color for the current phase. Falls
+              // back to the raw code + gray if the configs haven't loaded yet
+              // (first open before the lazy-fetch useEffect lands).
+              const cfg = statusPhase
+                ? finalizePhaseConfigs.find(c => c.code === statusPhase)
+                : null
+              const phaseLabel = cfg?.label ?? statusPhase ?? ''
+              const phaseColor = cfg?.color ?? 'gray'
+              const phasePill = (
+                <span
+                  className={`inline-flex items-center justify-center px-3 py-0.5 rounded-md border text-[11.5px] font-semibold ${phaseColorClasses(phaseColor)}`}
+                >
+                  {phaseLabel}
+                </span>
+              )
+              return (
+                <div className="space-y-3">
+                  <div>This claim will be assigned to <b>{pendingReassign.label}</b>.</div>
+                  {statusPhase === 'completed' && (
+                    // Policy, not a user choice: the 'completed' marker belongs
+                    // to the prior appraiser's submit. Enforced server-side too.
+                    <div className="text-[12.5px] text-slate-500 italic">
+                      Phase will be cleared (new assignee hasn&apos;t submitted).
+                    </div>
+                  )}
+                  {statusPhase && statusPhase !== 'completed' && (
+                    <div className="rounded-lg bg-slate-50 px-3.5 py-3 space-y-2.5">
+                      <div className="flex items-center gap-2 text-[12px] font-medium text-slate-500">
+                        <span>Status Phase</span>
+                      </div>
+                      <label className={`flex items-center gap-2.5 cursor-pointer rounded-md px-2 py-1.5 transition-colors ${!dropPhase ? 'bg-white ring-1 ring-slate-200' : 'hover:bg-white/60'}`}>
+                        <input
+                          type="radio"
+                          name="reassign-phase"
+                          className="accent-blue-600"
+                          checked={!dropPhase}
+                          onChange={() => setDropPhase(false)}
+                          disabled={reassignBusy}
+                        />
+                        <span className="text-[13px] text-slate-800">Keep</span>
+                        {phasePill}
+                      </label>
+                      <label className={`flex items-center gap-2.5 cursor-pointer rounded-md px-2 py-1.5 transition-colors ${dropPhase ? 'bg-white ring-1 ring-slate-200' : 'hover:bg-white/60'}`}>
+                        <input
+                          type="radio"
+                          name="reassign-phase"
+                          className="accent-blue-600"
+                          checked={dropPhase}
+                          onChange={() => setDropPhase(true)}
+                          disabled={reassignBusy}
+                        />
+                        <span className="text-[13px] text-slate-800">Drop</span>
+                        <span className="text-[12px] text-slate-500">(reset to no phase)</span>
+                      </label>
+                    </div>
+                  )}
+                </div>
+              )
+            })() : ''
           }
           confirmLabel="Reassign"
           busy={reassignBusy}
           onConfirm={runReassign}
-          onCancel={() => setPendingReassign(null)}
+          onCancel={() => { setPendingReassign(null); setDropPhase(false) }}
         />
 
         <ConfirmDialog
@@ -5622,6 +5909,33 @@ function ClaimWorkspaceInner({ claimId, isLockedForMe }: { claimId: string; isLo
         {isNew ? (
           <h1 className="hp-display mb-5">New Claim</h1>
         ) : (
+          <>
+          {/* Phase chip strip — only renders when the claim has an active
+              phase. Sits above the 3-col header grid, centered, matches the
+              dashboard phase pill style exactly (phaseColorClasses + age).
+              Read-only here; admins change phase via the Finalize dropdown.
+              Hidden entirely when there's no phase so no-phase claims look
+              identical to pre-2026-10-20. Zero DOM overlap with the top
+              licensing badge (which lives in the toolbar above) or the
+              Negotiating Appraiser license summary (which lives INSIDE the
+              right-side mini-card below). */}
+          {statusPhase && (() => {
+            const cfg = finalizePhaseConfigs.find(c => c.code === statusPhase)
+            const label = cfg?.label ?? statusPhase
+            const color = cfg?.color ?? 'gray'
+            const age = formatPhaseAge(statusPhaseSetAt)
+            return (
+              <div className="mb-3 flex justify-center">
+                <div
+                  className={`inline-flex items-center justify-center gap-2 px-5 py-1 rounded-md border text-[12.5px] font-semibold min-w-[160px] ${phaseColorClasses(color)}`}
+                  title={`Status Phase: ${label}${age ? ` (${age})` : ''}`}
+                >
+                  <span>{label}</span>
+                  {age && <span className="opacity-80 font-medium">· {age}</span>}
+                </div>
+              </div>
+            )
+          })()}
           <div className="mb-5 grid grid-cols-[1fr_auto_1fr] items-start gap-4">
             {/* Umpire mini-card — left-aligned, mirrors the Negotiating
                 Appraiser mini-card on the right. Only renders on claims whose
@@ -5745,6 +6059,7 @@ function ClaimWorkspaceInner({ claimId, isLockedForMe }: { claimId: string; isLo
               />
             </div>
           </div>
+          </>
         )}
 
         {isSubmitted && !isAdmin && submittedAt && (
@@ -6804,7 +7119,7 @@ function ClaimWorkspaceInner({ claimId, isLockedForMe }: { claimId: string; isLo
             stays active even on submitted/closed/read-only claims (spec §7.2:
             meta-conversation about the work is always allowed). */}
         {step === 13 && editingId && (
-          <MessagesTab claimId={editingId} isClaimClosed={status === 'closed'} />
+          <MessagesTab claimId={editingId} isClaimClosed={status === 'closed'} assignedToId={assignedTo} />
         )}
 
         {/* Step 14: Guidelines — reference material for the claim's insurance

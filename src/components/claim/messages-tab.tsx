@@ -13,6 +13,7 @@ import {
   deleteMessage,
   editMessage,
   markMessagesRead,
+  postStatusOnBehalf,
   type Message,
 } from "@/lib/supabase/messages"
 import { fetchAllProfilesBrowser, useCurrentProfile, isPickerVisible, type Profile } from "@/lib/supabase/profiles"
@@ -39,7 +40,18 @@ function fmtStamp(iso: string): string {
   })
 }
 
-export function MessagesTab({ claimId, isClaimClosed = false }: { claimId: string; isClaimClosed?: boolean }) {
+export function MessagesTab({
+  claimId,
+  isClaimClosed = false,
+  assignedToId = null,
+}: {
+  claimId: string
+  isClaimClosed?: boolean
+  // Current claim.assignedTo — needed by the admin-only "Post as status on
+  // behalf" button so the UI can show whose clock it resets and hide the
+  // button when nobody is assigned.
+  assignedToId?: string | null
+}) {
   const { profile } = useCurrentProfile()
   const myId = profile?.id ?? null
   const [messages, setMessages] = useState<Message[]>([])
@@ -165,12 +177,14 @@ export function MessagesTab({ claimId, isClaimClosed = false }: { claimId: strin
   // Default recipient picker to a proper reply-all: everyone involved in
   // the previous message (sender + their recipients) MINUS the current user
   // AND MINUS any profile that isn't picker-visible (hidden super-admin
-  // test accounts — Henry 2026-10-15). Waits for both messages AND profiles
-  // to load so the picker-visibility filter can actually run; without the
-  // filter the auto-select could surface the hidden super-admin account
-  // (which has the same display name) and the server rejected the send
-  // with "Appraisers can only message admins". Won't overwrite a manual
-  // selection — only fires while recipientIds is still empty.
+  // test accounts — Henry 2026-10-15) AND, for appraiser accounts, MINUS
+  // any non-admin profile. Appraisers can only message admins (enforced in
+  // the picker at line 226 + server-side on /api/claims/[id]/messages POST);
+  // without the same filter here the auto-select could pre-populate another
+  // appraiser from the thread and the first send attempt would fail with
+  // "Appraisers can only message admins" — Henry 2026-10-20. Waits for both
+  // messages AND profiles to load. Won't overwrite a manual selection — only
+  // fires while recipientIds is still empty.
   useEffect(() => {
     if (recipientIds.length !== 0) return
     if (messages.length === 0 || profiles.length === 0) return
@@ -179,10 +193,18 @@ export function MessagesTab({ claimId, isClaimClosed = false }: { claimId: strin
     if (last.senderId) conversation.add(last.senderId)
     if (myId) conversation.delete(myId)
     const hiddenIds = new Set(profiles.filter((p) => !isPickerVisible(p)).map((p) => p.id))
-    const next = Array.from(conversation).filter((id) => !hiddenIds.has(id))
+    const next = Array.from(conversation).filter((id) => {
+      if (hiddenIds.has(id)) return false
+      // Appraisers can only message admins — mirrors the picker filter.
+      if (!isAdmin) {
+        const p = profiles.find((x) => x.id === id)
+        if (!p || p.role !== 'admin') return false
+      }
+      return true
+    })
     if (next.length > 0) setRecipientIds(next)
     // eslint-disable-next-line react-hooks/exhaustive-deps -- recipientIds.length is read as a one-shot gate
-  }, [messages, profiles, myId])
+  }, [messages, profiles, myId, isAdmin])
 
   // Auto-scroll to bottom when new messages arrive.
   useEffect(() => {
@@ -265,39 +287,71 @@ export function MessagesTab({ claimId, isClaimClosed = false }: { claimId: strin
   const bodyText = (bodyRef.current?.textContent ?? "").trim()
   const canSend = !isClaimClosed && bodyText.length > 0 && !sending
 
+  // Admin-only "Post as status on behalf" state. Only shown when an assignee
+  // exists AND the composer body is non-empty AND the current user is admin.
+  // Confirms with the admin before posting since the clock reset is a
+  // behavior change the appraiser can't easily undo.
+  const assigneeProfile = useMemo(
+    () => profiles.find((p) => p.id === assignedToId) ?? null,
+    [profiles, assignedToId],
+  )
+  const assigneeDisplayName = assigneeProfile
+    ? (assigneeProfile.name || assigneeProfile.email || 'the appraiser')
+    : 'the appraiser'
+  const canPostStatus = isAdmin && !!assignedToId && !isClaimClosed && bodyText.length > 0 && !sending
+
+  const buildSanitizedBodyFromComposer = (): string => {
+    // Shared with doSend + doPostStatusOnBehalf. Converts the contenteditable
+    // innerHTML into the limited-tag sanitized form we store in the DB.
+    const rawHtml = bodyRef.current?.innerHTML ?? ""
+    const normalized = rawHtml
+      .replace(/<span\s+style="[^"]*background-color:\s*([^;"]+)[^"]*"[^>]*>/gi,
+        (_m, color) => `<mark style="background-color:${String(color).trim()}">`)
+      .replace(/<\/span>/gi, '</mark>')
+      .replace(/<\/(p|div|li)\s*>/gi, '<br>')
+      .replace(/<(p|div|li)[^>]*>/gi, '')
+    const safeHtml = DOMPurify.sanitize(normalized, {
+      ALLOWED_TAGS: ["mark", "br"],
+      ALLOWED_ATTR: ["style"],
+      FORBID_ATTR: ["class"],
+    })
+      .replace(/(<br\s*\/?>\s*){3,}/gi, '<br><br>')
+      .trim()
+    return safeHtml || bodyText
+  }
+
+  const doPostStatusOnBehalf = async () => {
+    if (!canPostStatus) return
+    const ok = await confirmDialog({
+      title: `Post status on behalf of ${assigneeDisplayName}?`,
+      message:
+        'The message will be posted under YOUR name with the appraiser as recipient, and the auto-status clock will reset (any pending nag / lockout clears).',
+      confirmLabel: 'Post & reset clock',
+    })
+    if (!ok) return
+    setSending(true)
+    setSendError(null)
+    try {
+      const toSend = buildSanitizedBodyFromComposer()
+      await postStatusOnBehalf(claimId, toSend)
+      await load()
+      setBody("")
+      if (bodyRef.current) bodyRef.current.innerHTML = ""
+    } catch (err) {
+      setSendError(err instanceof Error ? err.message : 'Failed to post status')
+    } finally {
+      setSending(false)
+    }
+  }
+
   const doSend = async () => {
     if (!canSend) return
     setSending(true)
     setSendError(null)
     try {
-      // Normalize + sanitize. Messages are intentionally plain-style — the
-      // only allowed formatting is line breaks (from Enter) and highlights
-      // (from the Highlight toolbar). Everything else gets stripped: pasted
-      // Outlook / Gmail / web content comes in via onPaste as text/plain
-      // already, but we scrub again on send to catch any residue from
-      // execCommand or past-session rich content still in the editor.
-      const rawHtml = bodyRef.current?.innerHTML ?? ""
-      // Pre-process: convert block tags (<p>, <div>, <li>) and MSO-style
-      // paragraphs into line breaks so paragraph structure survives the
-      // tag strip. Convert execCommand highlight spans (`<span
-      // style="background-color: ...">`) into semantic <mark> so the
-      // allowlist below doesn't wipe them.
-      const normalized = rawHtml
-        .replace(/<span\s+style="[^"]*background-color:\s*([^;"]+)[^"]*"[^>]*>/gi,
-          (_m, color) => `<mark style="background-color:${String(color).trim()}">`)
-        .replace(/<\/span>/gi, '</mark>')
-        .replace(/<\/(p|div|li)\s*>/gi, '<br>')
-        .replace(/<(p|div|li)[^>]*>/gi, '')
-      const safeHtml = DOMPurify.sanitize(normalized, {
-        // Plain-style only: no bold / italic / font changes. Line breaks
-        // and highlight marks are the only decorations preserved.
-        ALLOWED_TAGS: ["mark", "br"],
-        ALLOWED_ATTR: ["style"],
-        FORBID_ATTR: ["class"],
-      })
-        .replace(/(<br\s*\/?>\s*){3,}/gi, '<br><br>')  // collapse runs of 3+ breaks
-        .trim()
-      const toSend = safeHtml || bodyText
+      // Sanitize via the shared helper so Send and Post-as-status-on-behalf
+      // apply the same tag/attribute allowlist.
+      const toSend = buildSanitizedBodyFromComposer()
       const created = await sendMessage(claimId, {
         recipientIds,
         body: toSend,
@@ -643,14 +697,28 @@ export function MessagesTab({ claimId, isClaimClosed = false }: { claimId: strin
               isClaimClosed && "opacity-60 cursor-not-allowed",
             )}
           />
-          <Button
-            onClick={doSend}
-            disabled={!canSend}
-            className="bg-blue-600 hover:bg-blue-500 text-white gap-2"
-          >
-            {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-            {sending ? "Sending…" : "Send"}
-          </Button>
+          <div className="flex flex-col items-stretch gap-2">
+            <Button
+              onClick={doSend}
+              disabled={!canSend}
+              className="bg-blue-600 hover:bg-blue-500 text-white gap-2"
+            >
+              {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+              {sending ? "Sending…" : "Send"}
+            </Button>
+            {isAdmin && assignedToId && !isClaimClosed && (
+              <Button
+                type="button"
+                onClick={doPostStatusOnBehalf}
+                disabled={!canPostStatus}
+                variant="outline"
+                className="gap-2 border-amber-300 text-amber-800 hover:bg-amber-50 hover:text-amber-900 text-xs whitespace-nowrap"
+                title={`Posts the composer text as a status update from you, addressed to ${assigneeDisplayName}, and resets the auto-status clock.`}
+              >
+                Post as status
+              </Button>
+            )}
+          </div>
         </div>
 
         {isAdmin && (

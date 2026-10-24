@@ -18,6 +18,320 @@ Read `CLAUDE.md` first if you haven't. Then read the top entry here before touch
 
 ---
 
+## 2026-10-24 — Auto-status requests: 6 fixes + prod cleanup (QC/Billing/Payment claims were nagging appraisers)
+
+**Worked on:** Henry reported the auto-status feature had multiple bugs. Audited prod against `acv_history` via service-role script (`scripts/audit-auto-status.mjs`) and found:
+- 2 active lockouts on PAYMENT-stage claims (MA#3712203 locked since Oct 12, MA#3871698 locked that morning) — appraisers were blocked from HamsPortal on claims that were already past their work
+- 7 open claims in `workflow_stage='payment'` still carrying `assigned_to` + nag state — the cron engine filtered on `(status='open' AND assigned_to IS NOT NULL)` with NO stage filter, so past-main claims kept getting nagged
+- 2 closed claims (MA#3983826, 3980784) with stale nag state
+
+**Root causes identified:**
+1. `/api/cron/status-requests` → `runStatusRequests()` had no `workflow_stage` filter
+2. `/api/claims/[id]/advance-workflow` payment→closed didn't clear nag state
+3. `/api/claims/[id]/phase` didn't reset nag counters on phase change — a claim at count=2 that then got phased to Hold jumped straight to lockout on the first paused-cadence cron fire that passed the 10-business-day threshold (both into-paused and out-of-paused transitions had the same bug mirrored)
+4. `runStatusRequests` anchor = `latestApprMsg ?? assigned_at` — if an appraiser was reassigned back to a claim they'd previously worked, the old message became the anchor and the clock started from the stale timestamp, nagging within 1 day
+5. No way for admins to post a status "on behalf of" the appraiser without triggering an immediate nag
+
+**Prod cleanup first** (`scripts/cleanup-auto-status-state.mjs`):
+- Nullified `assigned_to` + cleared the three nag columns on the 7 past-main payment-stage claims
+- Cleared nag state on the 2 closed claims
+- Unlocked the 2 bogus payment-stage lockouts
+- Verified: active lockouts dropped from 4 → 2 (both remaining are legit main-stage), past-main-with-assigned_to dropped from 7 → 0
+
+**Changed (code):**
+- `src/lib/status-requests/run.ts` — (a) query filters `workflow_stage IS NULL OR workflow_stage='main'`, (b) anchor = `max(latestApprMsg, assigned_at)` instead of `?? ` fallback so a reassign timestamp beats a stale message, (c) added `workflow_stage` to the `ClaimRow` interface + select
+- `src/app/api/claims/[id]/advance-workflow/route.ts` — main→qc transition clears `status_request_count=0, last_status_request_at=null, status_lockout_at=null`; payment→closed clears the same three
+- `src/app/api/claims/[id]/submit/route.ts` — same three columns cleared on submit (both the modern branch and the pre-migration fallback)
+- `src/app/api/claims/[id]/phase/route.ts` — every phase change (set, change, clear) resets `status_request_count=0, last_status_request_at=null, status_lockout_at=null`. Admin's phase action is a FRESH-START signal for the clock
+- `src/app/api/claims/[id]/status-on-behalf/route.ts` — **NEW** admin-only endpoint. Validates claim is open with assignee, inserts message `sender_id=admin.userId, sender_name=admin.name, recipient_ids=[assignee], is_auto_request=false, body: <text>`, then clears the three nag columns on the claim and fires `notifyClaimMessage` to email the appraiser
+- `src/lib/supabase/messages.ts` — new `postStatusOnBehalf(claimId, body)` client helper
+- `src/components/claim/messages-tab.tsx` — admin-only "Post as status" button next to Send. Shows when `isAdmin && assignedToId && !isClaimClosed && body.length > 0`. Click opens a confirm dialog ("Post status on behalf of {name}?"), on confirm posts via the new endpoint. Shared composer sanitizer extracted into `buildSanitizedBodyFromComposer()` so Send and Post-as-status apply the same tag allowlist. Reused the `assigneeProfile` lookup from the existing `fetchAllProfilesBrowser` cache
+- `src/components/claim/ClaimWorkspace.tsx` — passes new `assignedToId={assignedTo}` prop to `<MessagesTab />` so the button can show the right name and gate on assignee presence
+
+**Deploy status:**
+- Live: `dpl_DdB9PWFoxunw3MV6c8QpcFZQ88Me` → `modern-tools-bt3de8wyo-henry-as-projects-88caed67.vercel.app`
+- Aliases flipped: `hamsportal.com`, `www.hamsportal.com`, `modern-tools-rho.vercel.app`
+- Rollback: `npx vercel promote https://modern-tools-nlu99v3xj-henry-as-projects-88caed67.vercel.app --scope henry-as-projects-88caed67 --yes`
+- `npx tsc --noEmit` clean. `npm run build` clean.
+
+**Verification pass (post-deploy via audit script):**
+- A. Closed claims with nag state: 0 rows ✅
+- B. Past-main claims with assigned_to: 0 rows ✅
+- C. Past-main claims with any nag state: 0 rows ✅
+- D. Active lockouts: 2 (both main-stage, legit) ✅ was 4
+- E. Nag queue: 25 claims, all main-stage ✅
+- F. Closed in last 30 days with nag state: 0 rows ✅
+
+**Scripts added:**
+- `scripts/audit-auto-status.mjs` — read-only audit of nag-state across all claims. Reusable for future spot-checks
+- `scripts/cleanup-auto-status-state.mjs` — one-shot cleanup script (idempotent via maNumber + state preconditions)
+
+**NOT touched:**
+- The 2 remaining legit lockouts (MA#3978094 Deaven Shenkir, MA#3910440 James Goldsmith) — real appraisers overdue on main-stage claims
+- DB triggers `trg_clear_status_lockout_on_appraiser_message` and `trg_clear_status_lockout_on_reassign` — behavior preserved
+- Per-user `profiles.auto_status_requests_override` opt-out mechanism — unchanged
+- Cron schedule (both crons still fire at 14:00 UTC and 00:00 UTC)
+- Nag thresholds (3/4/5 default, 10/11/12 paused) — unchanged
+- `/api/claims/[id]/auto-message` route (phase/parser auto notes) — unchanged
+- `send-back` route — un-submit only, doesn't touch assigned_to or nag state; nothing to reset
+- `reopen` route — already clears `last_status_request_at` when assignTo is passed; reassign trigger handles the rest; close-side cleanup (Fix 3) now ensures incoming state is already clean
+
+**In progress / broken / unknowns:**
+- Admin "Post as status" button text in confirm dialog ("Post & reset clock") — Henry may want different copy once he uses it
+- Visual distinction in thread between a regular admin message and a status-on-behalf message: NOT added. Both show as admin's name with no badge. If needed later, add `messages.is_status_update boolean` column + migration + UI badge
+- The audit script is service-role-only (reads prod via SUPABASE_SERVICE_ROLE_KEY). Fine for Henry's one-off runs; not wired into the admin UI
+
+**Next:**
+- Henry smoke-test: (1) phase a main claim to Hold and confirm the counter resets, (2) submit a main claim to QC and confirm nag state clears, (3) on an open assigned claim, type a status in the composer as admin, click "Post as status", confirm message posts + clock resets, (4) spot-check tomorrow (Monday 14:00 UTC) that no past-main claims appear in the cron's actions.
+
+---
+
+## 2026-10-20 (overnight #3) — Phase chip in claim header + reassign dialog cleanup
+
+**Worked on:** Henry asked for two things: (a) make the reassign Keep/Drop phase block look cleaner, (b) surface the active phase somewhere inside the claim workspace with the same color pill style used across the dashboard. Explicit constraint from Henry: must not affect, overlap, or compete with the two licensing badges (top-toolbar NOT LICENSED/LICENSED pill + Negotiating Appraiser license summary inside the right-side mini-card).
+
+**Placement verification:** DOM-mapped both licensing badges BEFORE editing. `StateLicensingTopBadge` lives in the top toolbar (`ClaimWorkspace.tsx:5275`, absolute-positioned inside the toolbar bar). `NegotiatingAppraiserLicenseSummary` lives inside the right-side Negotiating Appraiser mini-card (`:6044`). The new phase chip renders in a brand-new row that sits ABOVE the 3-col header grid (which starts at `:5888`) — different DOM subtree, zero sibling conflict with either badge.
+
+**Changed:**
+- `src/components/claim/ClaimWorkspace.tsx`:
+  - **Phase chip strip above the 3-col header grid.** Only renders when `statusPhase` is non-null (no-phase claims look identical to pre-deploy). Compact `rounded-full` pill, `phaseColorClasses(color)` for background + text + border (matches dashboard + Finalize dropdown + reassign dialog — one color system across the app), format `{label} · {age}` where age is `formatPhaseAge(statusPhaseSetAt)`. Centered. Read-only; admins change phase via the existing Finalize dropdown so no duplicate click target.
+  - **Lazy-fetch for header chip.** New `useEffect` that fetches `fetchStatusPhaseConfigs()` into the shared `finalizePhaseConfigs` state when `statusPhase` is set AND configs aren't loaded. Shares state with the Finalize dropdown + reassign-dialog lazy-fetch; fetcher's module-level 60s cache + in-flight dedup makes concurrent fires free. If configs haven't landed yet on first paint, the chip renders the raw code with the `'gray'` fallback palette for one render.
+  - **Reassign dialog Keep/Drop block redesigned.** Replaced the bordered gray box with a borderless `bg-slate-50` container with soft rounded corners. Each radio option is a padded row that gets a subtle white `ring-1 ring-slate-200` highlight when selected (standard "selected" visual language). Blue radio accent. The Keep option now renders the actual phase-colored pill inline next to "Keep" (via the same `phaseColorClasses(color)` + rounded-full pill style used in the header chip and dashboard) so the admin can VISUALLY see what phase they're preserving. Drop option shows a greyed "(reset to no phase)" explanation. Font sizing + spacing tightened for better density. Same two-radio semantics as before — API payload unchanged.
+  - Added `formatPhaseAge` to the existing `status-phase-configs` import.
+
+**Deploy status:**
+- Live: `dpl_5X7wVx4XeeBQ5kKehp5Pc3eRVm3U` → `modern-tools-mc9atul7u-henry-as-projects-88caed67.vercel.app`
+- Aliases flipped: `hamsportal.com`, `www.hamsportal.com`, `modern-tools-rho.vercel.app`
+- Rollback: `npx vercel promote https://modern-tools-ddbwdwpf4-henry-as-projects-88caed67.vercel.app --scope henry-as-projects-88caed67 --yes`
+- `npx tsc --noEmit` clean. `npm run build` clean.
+
+**NOT touched (per Henry's constraint):**
+- Both licensing badges — DOM positions unchanged, visual styling unchanged, logic unchanged.
+- The 3-col header grid structure (Umpire card / Claim stats / Negotiating Appraiser card) — unchanged.
+- API `/api/claims/[id]/assign` — unchanged from the previous deploy. `keepPhase` boolean semantics, `completed`-force-clear invariant, back-compat for missing field all preserved.
+- Phase change endpoint `/api/claims/[id]/phase` — unchanged. Finalize dropdown still owns the click surface for changing phase; the new chip is purely informational.
+- No new routes, no DB changes, no migrations.
+
+**In progress / broken / unknowns:**
+- Can't test the live UI from this session (no dev server). Walked the diff + visually sanity-checked class names. Henry to confirm: (a) a claim WITH a phase shows the colored chip just above the stats row, (b) a claim WITHOUT a phase looks exactly like pre-deploy, (c) both licensing badges render identically, (d) reassign dialog looks cleaner with the inline phase pill on Keep.
+
+**Next:**
+- Henry's visual smoke test on a phased claim (e.g. MA# 555657 is NY — if it has any phase set) and a no-phase claim.
+
+---
+
+## 2026-10-20 (overnight #2) — Reassign dialog: Keep / Drop phase toggle
+
+**Worked on:** Admin reassign currently preserves all phases except `completed` (which auto-clears because the prior appraiser's submit no longer applies). Henry asked for an explicit admin choice on reassign: Keep phase (default) or Drop phase. Walked the full risk surface with him before coding — nine concrete bug/edge categories enumerated and addressed in-code.
+
+**Changed:**
+- `src/app/api/claims/[id]/assign/route.ts` — accepts optional `keepPhase: boolean` in request body (validated: must be boolean if provided). Phase decision block refactored for clarity:
+  - `completed` → ALWAYS cleared (invariant; comment explicitly warns not to "fix" this to honor keepPhase)
+  - non-completed + `keepPhase === false` → cleared
+  - non-completed + `keepPhase === true` → preserved
+  - non-completed + `keepPhase === undefined` → preserved (back-compat for any caller not updated)
+  - When preserving, `status_phase` + `status_phase_set_at` are NOT included in the UPDATE payload so Postgres leaves them untouched (avoids a no-op write that would needlessly bump updated_at).
+- `src/components/claim/ClaimWorkspace.tsx`:
+  - New `dropPhase` state (default `false` = Keep). Resets to `false` on dialog open AND on both cancel + confirm (so the next reassign always starts on Keep).
+  - Reassign ConfirmDialog message extended with a conditional block:
+    - `statusPhase === null` → no toggle, no extra message
+    - `statusPhase === 'completed'` → italic one-liner "Phase will be cleared (new assignee hasn't submitted)" — no toggle, no user choice (matches server policy)
+    - `statusPhase === 'hold' / 'umpire' / 'pending_information' / etc.` → bordered `rounded-md` block with two radios: "Keep phase: **{human label}**" and "Drop phase (reset to no phase)". Default = Keep.
+  - `runReassign` now:
+    - Builds payload conditionally: `keepPhase` only sent when `statusPhase` is non-null AND !== 'completed'. Null or completed phases omit the flag (server behavior unchanged for those).
+    - After the mutation + refetch, now also calls `setStatusPhase(fresh.statusPhase ?? null)` + `setStatusPhaseSetAt(fresh.statusPhaseSetAt ?? null)` so the header phase chip and the Change Phase submenu tick-mark reflect the Keep/Drop choice immediately (previously only refreshed on next page load — would have been a visible UI lag bug).
+  - New `useEffect` lazy-fetches `fetchStatusPhaseConfigs()` into the existing `finalizePhaseConfigs` state when the reassign dialog opens, so the Keep radio can show "Pending Information" instead of "pending_information". Shares state + the fetcher's 60s cache with the Finalize dropdown; concurrent-open dedup lives inside the fetcher. If the fetch hasn't landed on first paint, the toggle shows the raw code for one render — harmless.
+
+**Deploy status:**
+- Live: `dpl_FeAR5i6Y2Mnn5C7FUZJq3jA8gV82` → `modern-tools-ddbwdwpf4-henry-as-projects-88caed67.vercel.app`
+- Aliases flipped: `hamsportal.com`, `www.hamsportal.com`, `modern-tools-rho.vercel.app`
+- Rollback: `npx vercel promote https://modern-tools-f7kow4h1a-henry-as-projects-88caed67.vercel.app --scope henry-as-projects-88caed67 --yes`
+- `npx tsc --noEmit` clean. `npm run build` clean.
+
+**Walked every branch in the diff:** 10 backend branches (3 phase states × 3 keepPhase values, +1 malformed-input), 4 dialog branches (null/completed/hold-with-configs/hold-without-configs), 4 payload branches (null/completed/keep/drop), 3 state-reset paths (cancel/success/failure), 3 lazy-load paths (first open / after Finalize / already loaded). All verified correct.
+
+**NOT touched:**
+- `completed`-always-cleared invariant
+- `negotiatingAppraiser` (preserved by prior comment at `/assign:83-89`)
+- `assigned_at`, `last_status_request_at`, `submitted_at`, `submitted_by` behavior
+- `recordStageTransition` ledger (phase is orthogonal to stage)
+- Any other route (`/phase`, `/submit`, `/reopen`, `/complete-report`)
+
+**In progress / broken / unknowns:**
+- Can't test the live UI from this session (no dev-server access). Walked the diff mentally. Henry to click through the four cases: (a) no-phase claim reassign — unchanged, (b) completed-phase claim reassign — forced-clear with italic note, (c) hold-phase claim reassign + Keep — phase persists, (d) hold-phase claim reassign + Drop — phase cleared and header chip updates immediately.
+
+**Next:**
+- Henry's smoke test on the four cases above.
+
+---
+
+## 2026-10-20 (overnight) — reportsState handoff: Opposing Appraiser + Ins. Co. Offer survive create-claim
+
+**Worked on:** Henry reported that Opposing Appraiser + Ins. Co. Value disappear after Create Claim is clicked. Traced through the full save/handoff path:
+1. `createClaim` calls `saveToHistory(..., reportsState, ...)` → `reports_state` IS persisted to DB ✓
+2. Session-storage handoff `{claim, clientId, needsRoughNumbers}` — `reportsState` NOT in it ✗
+3. `router.replace('/claims/{id}')` navigates
+4. Load effect detects the handoff key, skips the DB fetch (by design, to prevent stale-DB-clobber), and drains the key
+5. `reportsState` useState initializer: no handoff drain for it → falls back to `defaultReportsState()` (empty)
+6. Next autosave fires with empty `reportsState` → overwrites the DB value with blanks
+Both Opposing Appraiser (`notesData.appraiserName`) and Ins. Co. Offer (`notesData.insuranceOfferNum`) live inside `reportsState.notesData` → both wiped. BUGS.md:91 had explicitly flagged this gap in 2026-10-13 with "doesn't bite real workflows" — it does now.
+
+**Changed:**
+- `src/components/claim/ClaimWorkspace.tsx` — `createClaim` handoff payload now includes `reportsState` alongside `claim`, `clientId`, `needsRoughNumbers`. The `reportsState` useState initializer now checks `sessionStorage.getItem('claim-handoff-{claimId}')` and prefers the handoff value (mirrors the existing pattern on `claim` + `clientId` + `needsRoughNumbers`). The load effect's early-return still works unchanged — it drains the whole handoff key and skips the fetch.
+- `docs/BUGS.md` — updated the limitation note to document that `reportsState` IS now in the handoff and why.
+
+**Deploy status:**
+- Live: `dpl_FAykFwS9o2egr9tw18Hvsj8Vjrk9` → `modern-tools-f7kow4h1a-henry-as-projects-88caed67.vercel.app`
+- Aliases flipped: `hamsportal.com`, `www.hamsportal.com`, `modern-tools-rho.vercel.app`
+- Rollback: `npx vercel promote https://modern-tools-4ex3qgaf3-henry-as-projects-88caed67.vercel.app --scope henry-as-projects-88caed67 --yes`
+- `npx tsc --noEmit` clean. `npm run build` clean.
+
+**Covered by this fix:** every reportsState-backed field on the Create form, not just the two Henry mentioned —
+- Opposing Appraiser Name (`notesData.appraiserName`)
+- Opposing Appraiser Company (`notesData.appraiserCompany`)
+- Ins. Co. Offer (`notesData.insuranceOfferNum`)
+- OA Value (`notesData.appraiserValueNum`)
+- MA Value (Est) (`notesData.estValueNum`)
+- Repair Shop Value (`notesData.repairShopAmountNum`)
+- MA Value (Storage) (`notesData.storageValueNum`)
+- Any derived state in `reportsState.awardData.signatureBlock2` (built from appraiser name + company)
+
+**Audit of other create-form inputs:** confirmed the only user-input state at create time lives in `claim` (handoff ✓), `reportsState` (handoff ✓ as of this deploy), `clientId` (handoff ✓), `needsRoughNumbers` (handoff ✓). Tool-tab state (`adjustments`, `documents`, `dv`, `lou`, `invoice`, `storage`, `estimate`, `auctionListings`) isn't user-editable from the Create form — those tabs don't render until the claim is promoted. Assignment-sheet upload uses `pendingAssignmentSheetRef` + fires `uploadPendingAssignmentSheet` from inside `createClaim` BEFORE the navigation, so it rides the same closure and doesn't need handoff storage.
+
+**In progress / broken / unknowns:**
+- None. The fix is strictly additive (new field in handoff, new initializer branch) and the old behavior still works for existing claims (no handoff → fetch from DB).
+
+**Next:**
+- Henry to verify by creating a fresh claim with Opposing Appraiser + Ins. Co. Offer filled in.
+
+---
+
+## 2026-10-20 (late night) — Licensing badge RLS fix + top badge switched to assignee-first
+
+**Worked on:** Diagnosed MA# 555657 (NY loss, Alex Aleksanyan negotiating, Alex has active NY license #1897419 exp 2026-12-31) showing a false "NOT LICENSED" top badge AND a false "No appraisers currently hold an active NY license." roster in Henry's appraiser-account view. Root cause verified via direct DB query: Alex IS NY-licensed; Henry's view was blocked by the appraiser_licenses RLS policy restricting SELECT to `auth.uid() = user_id OR is_admin()`. Non-admin appraisers only saw their own licenses, so the roster filter produced an empty set and the badge lied. Confirmed with Henry before touching anything that (a) Option A — broaden SELECT to all authenticated — was the right fix, and (b) he also wanted the TOP badge to reflect the current ASSIGNEE's license (not the negotiating appraiser's), so a claim assigned to Henry still shouts NOT LICENSED even if the handler (Alex) is NY-licensed.
+
+**Changed:**
+- `supabase/migration-appraiser-licenses-public-read.sql` + rollback — SELECT policy on `appraiser_licenses` changed from `auth.uid() = user_id OR is_admin()` to `auth.role() = 'authenticated'`. Writes untouched (admin-only via the existing "Admin write appraiser_licenses" policy). **Henry needs to run this manually in Supabase SQL editor.** Code is pre- AND post-migration tolerant: `fetchAllLicenses` just returns fewer rows pre-migration, more rows post-migration; nothing crashes either way.
+- `src/components/claim/state-licensing-top-badge.tsx` — license subject is now the current ASSIGNEE (`assignedTo`), with the Negotiating Appraiser as a fallback for QC / closed / unassigned claims. Previously only the negotiator was checked (via a comment that explicitly said "NOT the current assignee"). Unmarked `assignedTo` and `profile` as legacy props — they're used again. Updated docstring to describe the new semantics. Caller (`ClaimWorkspace.tsx:5211`) was already passing `assignedTo` + `profile`, no change needed there. The Negotiating Appraiser roster below the handler picker (`negotiating-appraiser-license-summary.tsx`) is untouched — its purpose is already handler-focused; the RLS fix alone makes it correct for non-admins.
+
+**Deploy status:**
+- Live: `dpl_4yWKyY8pP2XFmDPrFNHjP1wKeAaR` → `modern-tools-4ex3qgaf3-henry-as-projects-88caed67.vercel.app`
+- Aliases flipped: `hamsportal.com`, `www.hamsportal.com`, `modern-tools-rho.vercel.app`
+- Rollback: `npx vercel promote https://modern-tools-94w4hvs3s-henry-as-projects-88caed67.vercel.app --scope henry-as-projects-88caed67 --yes`
+- `npx tsc --noEmit` clean. `npm run build` clean.
+
+**In progress / broken / unknowns:**
+- **Migration pending Henry's run.** Until Henry runs `migration-appraiser-licenses-public-read.sql` in Supabase SQL editor, the roster + top badge will still show wrong data for non-admin accounts on claims they're not assigned to. The deploy is safe to ship ahead of the migration — the code gracefully handles both policy states.
+- Expected behavior post-migration on MA# 555657 viewed by Henry (not NY-licensed, assigned to Henry):
+  - Top badge: NOT LICENSED (red) — because Henry is the assignee
+  - Side panel: "Alex Aleksanyan — NY License #1897419" (green) — because Alex is the handler
+- Expected behavior on a claim assigned to Alex: top badge LICENSED (green).
+- QC / closed / unassigned claims fall back to the negotiator — same behavior as before.
+
+**Next:**
+- Henry runs `migration-appraiser-licenses-public-read.sql` in Supabase, then re-opens MA# 555657 to verify both views flip to the correct state.
+
+---
+
+## 2026-10-20 (follow-up) — Reverted Summary today-fallback
+
+**Worked on:** Henry pushed back on the "default dateReceivedClaim to today when parser didn't find a Date Created / Date Assigned label" change from the entry below. He wants the field blank if the sheet didn't carry a real date — no synthetic fallback, ever.
+
+**Changed:**
+- `src/components/claim/ClaimWorkspace.tsx` — removed `new Date().toISOString().split('T')[0]` fallback from both Summary init paths. Restored the original behavior: `dateReceivedClaim: claim.dateReceived || ''`.
+
+**Deploy status:**
+- Live: `dpl_73r7PpxNKc5fPNRN3e4Bzgd15u51` → `modern-tools-94w4hvs3s-henry-as-projects-88caed67.vercel.app`
+- Aliases flipped: `hamsportal.com`, `www.hamsportal.com`, `modern-tools-rho.vercel.app`
+- Rollback: `npx vercel promote https://modern-tools-qi531m3f3-henry-as-projects-88caed67.vercel.app --scope henry-as-projects-88caed67 --yes`
+
+**In progress / broken / unknowns:**
+- These Vista/GEICO assignment sheets have NO visible Date Created / Date Assigned text label — the parser can't populate `dateReceived`, so the Summary field stays blank until the appraiser enters it. PDF document metadata DOES carry a CreationDate (`D:20261020165151+00'00'` on both test PDFs) which equals the actual date the assignment was generated by VistaClaim. Not surfacing that yet — Henry didn't ask for it. If he wants autofill from a REAL date source (not today's), the next step is to read PDF metadata via `pdf.getMetadata()` in `parse-claim-pdf.ts` and pass CreationDate through to parsers as a dateReceived fallback.
+
+**Next:**
+- Decide if PDF metadata CreationDate should populate `dateReceived` for sheets without an explicit text date label.
+
+---
+
+## 2026-10-20 (late evening) — Eagle View parser fixes (GEICO sheets) + message preview HTML strip + appraiser auto-select + Summary dateReceived fallback
+
+**Worked on:** Five bug fixes Henry reported after uploading two GEICO-via-Eagle-View assignment PDFs (CL# 8827584190000001 Nissan Rogue + CL# 8868207100000002 Chevrolet Colorado). Ran a one-off `scripts/debug-parse-test-pdf.mjs` diagnostic (deleted after use) that extracted raw PDF text with pdfjs and ran the actual Eagle View parser against it so I could see which fields filled vs missed. All five root causes identified by evidence, not guesswork.
+
+**Changed:**
+- `src/lib/acv/parsers/eagle-view.ts` — three fixes:
+  - `grabInline` stop labels now use `(?![A-Za-z])` negative lookahead so prefix labels don't fire false stops. Fixed the "Vehicle Model Colorado Mileage" → empty-model bug: the stop label `Color` was matching the first 5 chars of `Colorado`. All other labels still stop correctly.
+  - `splitPartyBlocks` now has a Company-Name-counting fallback that activates when fewer than 3 of the 4 header-anchored party blocks contain real party-field content. GEICO-via-Eagle-View PDFs render ALL section headers stacked at the top of the extracted text (left-column sidebar in the source), so header anchoring produced empty slices. Fallback: find every `Company Name` position; if 5+ hits, skip the first (Appraiser Details) and take the next 4; end the last block at the last `Notes` occurrence (any boundary) or EOT.
+  - `extractNotes` now accepts `Notes` preceded by any non-letter character (not just `\n`). PDF 2 extracts as `...Rowlett, TX 75088Notes\n...` with no delimiter. Added leaked-content filters for bare phone lines (e.g. `(469)826-6026`) and standalone phone-type words (`Work`, `Home`) that trail past the Notes header when Notes appears mid-Owner-block.
+- `src/components/claim/ClaimWorkspace.tsx`:
+  - `handlePdfUpload` spread now includes `appraiserNotes: data.notes || claim.appraiserNotes || ''` so parsed Notes land in the Handling Instructions field at the bottom of Claim Info. The existing `onParsedNotes` → `pendingAutoNoteRef` → auto-message flow still fires in parallel (unchanged).
+  - Summary init fallback cascade updated: `existing.dateReceivedClaim || claim.dateReceived || new Date().toISOString().split('T')[0]`. Same change in the fresh-summary branch. Eagle View / GEICO sheets don't carry a Date Created label, so pre-fix the field sat empty forever.
+- `src/components/claim-message-preview.tsx` — `displayBody` now runs the message HTML through DOMParser, replaces `<br>` with spaces and appends spaces after `<p>/<div>/<li>` boundaries, then returns collapsed `textContent`. SSR-safe regex fallback for the edge case where `document` isn't available. Fixes previews rendering literal `<br><br>` tags.
+- `src/components/claim/messages-tab.tsx` — auto-select useEffect now filters conversation participants to admins when the current user is NOT an admin, mirroring the picker filter at line 226. Prevents appraisers from being auto-populated with another appraiser from the thread (which the server would reject with "Appraisers can only message admins").
+- `src/lib/acv/claim-field-mapping.ts` — updated EAGLE_VIEW_FIELDS: added `ownerName` row, clarified owner-block fallback cascade, documented that parsed `notes` now also populates `claim.appraiserNotes`. Added note on APP_INTERNAL_FIELDS `appraiserNotes` that it's primarily app-internal but also parser-populated.
+
+**Deploy status:**
+- Live: `dpl_6qkXdgNtbX3t9vvpqusXWNYjAj8T` → `modern-tools-qi531m3f3-henry-as-projects-88caed67.vercel.app`
+- Aliases flipped and verified: `hamsportal.com`, `www.hamsportal.com`, `modern-tools-rho.vercel.app`, `modern-tools-henry-as-projects-88caed67.vercel.app`
+- Rollback: `npx vercel promote https://modern-tools-lx6cg8y45-henry-as-projects-88caed67.vercel.app --scope henry-as-projects-88caed67 --yes`
+- `npx tsc --noEmit` clean. `npm run build` clean (no errors / warnings on the modified files).
+
+**Verification — parser diagnostic against both test PDFs:**
+- PDF 1 (Nissan Rogue): insuredName `Eric V Hernandez`, ownerPhone `Work (817)615-7427` (previously appraiser's `(702)321-5930`), ownerAddress `Grand Prairie, TX 75051`, model `Rogue`, zip `75051`. All ✓.
+- PDF 2 (Chevrolet Colorado): insuredName `Deitrich Brigham`, ownerPhone `Work (469)826-6026`, ownerAddress `2310 University Dr, Rowlett, TX 75088`, model `Colorado` (fixed), notes starts `Good Morning\nPlease find our attached...`, zip `75088`. All ✓.
+- `extractLossState('Grand Prairie, TX 75051')` → `'TX'`. `extractLossState('2310 University Dr, Rowlett, TX 75088')` → `'TX'`. Licensed-state badge will now resolve correctly for both; whether the badge shows LICENSED/NOT LICENSED/FORBIDDEN depends on the `licensed_states` DB row for TX (not changed in this session).
+
+**In progress / broken / unknowns:**
+- Didn't verify TX is actually populated in the `licensed_states` DB table (couldn't query DB from this session). If Henry wants TX detection to visibly tag claims, add TX via the admin page at `/admin/settings/licensed-states` with `required: true` (and optionally pick NOT-LICENSED color based on which appraisers are state-licensed).
+- `clientName` is still hardcoded to `'Sedgwick'` in the Eagle View parser even though these test sheets are routed through Eagle View on behalf of GEICO. Not changed because Henry's complaint list didn't mention it — flagging in case he wants `clientName` to track the `Client` admin-data field (GEICO) instead of the platform.
+- No pending migrations.
+
+**Next:**
+- If TX isn't in `licensed_states`, Henry can add it at `/admin/settings/licensed-states` to activate the badge for these GEICO sheets.
+- Decide if Eagle View `clientName` should be `insuranceCompany` (GEICO) rather than hardcoded Sedgwick when the sheet is routed via a different carrier.
+
+---
+
+## 2026-10-20 — Complete Report override picker + RTA / rough-numbers gating
+
+**Worked on:**
+- Diagnosed MA# 555644 (Maria Diaz, Travelers / House of Law, DV) landing in Henry's queue — walked `claim_stage_events` + `messages` for the full timeline (Wendy created, bounced Vahan ↔ Henry three times after Vahan's Carfax dropped the DV from $2,389.80 → $1,672.86).
+- Shipped Option A — Complete Report override picker. Appraiser can now override the auto-route-to-Negotiating-Appraiser behavior by picking a different handoff target from a dropdown (mirrors the Send Back pattern). Picker filtered by claim-type coverage (`userHandlesClaimTypes`).
+- Scoped the picker to **ACV claims only** — non-ACV claims keep the pre-Option-A single-click Complete Report that auto-routes to the Negotiating Appraiser name on the file.
+- Added **rough-numbers rule**: Complete Report is hidden (both UI gate + backend reject) whenever `needs_rough_numbers=true` and `rough_numbers_handoff_at=null`. Appraiser's Submit routes to the Rough Numbers inbox owner (Wendy) regardless of Negotiating Appraiser. Prevents the "handoff-then-handoff" chain Henry flagged.
+- Added **RTA rule**: handoff only fires when `claimTypes` includes `'rta'`. Without RTA = report-only engagement → straight to QC regardless of who's listed as Negotiating Appraiser. Backend `/complete-report` also enforces this.
+- **Submit button label** now dynamic: "Submit for Rough Numbers" when rough-numbers pending, "Submit for QC" otherwise. Matching confirm-dialog copy.
+- Built a reusable test harness: `scripts/create-test-matrix.mjs` (7-scenario ACV matrix) + `scripts/delete-test-matrix.mjs` (teardown) + `scripts/verify-test-matrix.mjs` (logic-replay against live claims). Final verify: ✓ all 7 scenarios PASS.
+- Ran `scripts/audit-handoff-regression.mjs` on 85 live open main-stage claims: 8 flipped button behavior due to missing RTA chips (5 appraiser-assigned, 3 admin-assigned). Henry chose to leave them.
+- Full workflow doc written at `docs/handoff-workflow.md` with decision tree, scenario matrix, state-machine diagrams, round-trip example, backend reference.
+
+**Changed:**
+- `src/app/api/claims/[id]/complete-report/route.ts` — accepts optional `{ toAssignee }`, validates: target active + appraiser + picker-visible + handles claim types + ≠ current assignee; rejects non-ACV when `toAssignee` provided; rejects non-RTA claims; rejects rough-numbers-pending claims.
+- `src/components/claim/ClaimWorkspace.tsx` — added `roughNumbersHandoffAt` state hydrated from entry; `needsReportHandoff` gate now also requires `(!needsRoughNumbers || !!roughNumbersHandoffAt)` AND `claimTypes.includes('rta')`; replaced single-shot Complete Report confirm with dropdown picker (ACV only) that mirrors Send Back; non-ACV path keeps single-click; dynamic Submit label + dynamic confirm dialog title/message based on rough-numbers state.
+- `scripts/create-test-matrix.mjs` — 7-scenario ACV matrix (A: picker, B: same negotiator, C: no negotiator, D: rough pending + Alex, E: rough pending + no neg, F: rough done + Alex, G: no RTA = report-only).
+- `scripts/delete-test-matrix.mjs` — teardown for TEST-ACV-* claims including `claim_stage_events` + `messages`.
+- `scripts/verify-test-matrix.mjs` — replays frontend `needsReportHandoff` + backend `/complete-report` validation + submit branch choice for every live TEST-ACV-* claim; reports PASS/FAIL per scenario.
+- `scripts/audit-handoff-regression.mjs` — scans all open main-stage claims and flags any whose button label flipped due to this session's gate changes.
+- `docs/handoff-workflow.md` — new workflow doc covering RTA + rough-numbers decision tree, scenario matrix, state diagrams, round-trip walkthrough, backend reference.
+- `.vercelignore` — new file to exclude `backups/` (two 100MB+ tarballs that blocked the first deploy attempt) and `modernappraisers/` sibling project.
+
+**Deploy status:**
+- Live: `dpl_5onoh3hmr5pikS6QhsNNwi9VfbiW` → `modern-tools-lx6cg8y45-henry-as-projects-88caed67.vercel.app`
+- Aliases flipped and verified: `modern-tools-rho.vercel.app`, `hamsportal.com`, `www.hamsportal.com`, `modern-tools-git-main-henry-as-projects-88caed67.vercel.app`
+- Rollback (one before this deploy): `npx vercel promote https://modern-tools-208gwmhl2-henry-as-projects-88caed67.vercel.app --scope henry-as-projects-88caed67 --yes`
+- All TEST-ACV-* fixtures were deleted at end of session.
+
+**In progress / broken / unknowns:**
+- 8 production claims had their appraiser-side button flip from Complete Report → Submit due to no `'rta'` chip in `claimTypes` (and 1 legacy claim with empty `claimTypes`). Henry acked and chose to leave them. If the admin team later decides those were genuinely value-dispute files, tick the RTA chip on each (MA# 555639, 555649, 555657, 555645, 3977992 are the appraiser-assigned ones; 3975960, 3972969, 555644 are admin-assigned so no UX impact).
+- No pending migrations.
+- No open bugs.
+
+**Next:**
+- Optional: backfill `'rta'` on the 5 appraiser-assigned claims above if those were meant to use the handoff flow.
+- Optional: backfill `claimTypes` on legacy claims (MA# 3977992 and any others with empty arrays) if desired to re-enable handoff on them.
+- Reusable regression test: `node scripts/create-test-matrix.mjs && node scripts/verify-test-matrix.mjs && node scripts/delete-test-matrix.mjs` — run before any future touch to the handoff / RTA / rough-numbers gates.
+
+---
+
 ## 2026-10-20 (evening) — SEO Level 1 kickoff + modernappraisers polish (team, favicon, submit-claim CTA)
 
 **Worked on:** All modernappraisers.com. Pivoted to marketing site after the morning's HAMS licensed-state + cleanup work (prior entry below). Order of work:

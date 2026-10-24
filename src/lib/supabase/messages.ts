@@ -70,6 +70,25 @@ export async function editMessage(claimId: string, messageId: string, body: stri
   if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? 'Failed to edit message')
 }
 
+// Admin posts a status update on behalf of the assigned appraiser. Posts a
+// real message (sender_id = admin, recipient = assignee) AND resets the
+// auto-status nag state so the appraiser doesn't get a request fired at them
+// immediately after an out-of-band verbal/email status. Admin-only (server
+// 403s non-admins). Returns the id of the posted message so callers can
+// optimistically append without an extra fetch, though messages-tab just
+// re-fetches the full thread for simplicity.
+export async function postStatusOnBehalf(claimId: string, body: string): Promise<void> {
+  const res = await fetch(`/api/claims/${encodeURIComponent(claimId)}/status-on-behalf`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ body }),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({})) as { error?: string }
+    throw new Error(err.error ?? 'Failed to post status on behalf')
+  }
+}
+
 // Convenience for `fetchMessages` row shape awareness in older callers that
 // expected the pre-admin-only Message type. Not used internally.
 export type MessageLegacy = Omit<Message, 'isAdminOnly'>

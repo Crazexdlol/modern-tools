@@ -78,9 +78,26 @@ export async function POST(
   //   - If the new phase is anything else (including null), clear the flag so
   //     the UI doesn't keep showing "Umpire Ruling Award" on a claim that's
   //     no longer phased umpire. Agreement resets to the default `true`.
+  //
+  // Every phase change is a FRESH-START signal for the auto-status clock
+  // (Henry 2026-10-24). Reasons:
+  //   - Phasing INTO a paused phase (Hold / Pending Repairs / Pending
+  //     Information / Rough Numbers): without resetting, a claim that was at
+  //     count=2 under fast cadence will jump straight to lockout on the first
+  //     paused-cadence cron fire that passes the 10-business-day threshold.
+  //   - Phasing OUT of a paused phase (back to no phase, or to a non-paused
+  //     phase): without resetting, the appraiser's old anchor from before
+  //     the pause will be 10+ business days stale → immediate nag or lockout.
+  //   - Any other phase swap (e.g. Hold → Umpire): user has clearly moved
+  //     the claim's status in the admin's head, so the appraiser's clock
+  //     should restart from the admin's action, not from the stale anchor.
+  // Reset covers all three cases uniformly.
   const patch: Record<string, unknown> = body.phase === null
     ? { status_phase: null, status_phase_set_at: null }
     : { status_phase: body.phase, status_phase_set_at: new Date().toISOString() }
+  patch.status_request_count = 0
+  patch.last_status_request_at = null
+  patch.status_lockout_at = null
 
   if (body.phase === 'umpire') {
     patch.proceeded_to_umpire = true

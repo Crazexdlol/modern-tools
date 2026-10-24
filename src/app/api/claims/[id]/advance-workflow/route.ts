@@ -154,12 +154,18 @@ export async function POST(
   const target = nextStage(currentStage)
 
   if (target === 'closed') {
-    // Payment → closed.
+    // Payment → closed. Nag state (status_request_count, last_status_request_at,
+    // status_lockout_at) is explicitly cleared so a reopened claim starts fresh
+    // and historical closed rows don't carry stale counters forward (Henry
+    // 2026-10-24).
     const patch: Record<string, unknown> = {
       status: 'closed',
       close_reason: 'completed',
       closed_at: now,
       workflow_stage_set_at: now,
+      status_request_count: 0,
+      last_status_request_at: null,
+      status_lockout_at: null,
     }
     let { error } = await service.from('acv_history').update(patch).eq('id', id)
     // Pre-migration safety: close_reason/closed_at missing → retry minimal.
@@ -182,12 +188,19 @@ export async function POST(
   // UNASSIGN the claim so appraisers can't keep working on it while QC is
   // reviewing. The submitter is remembered on submitted_by (shown on the
   // QC dashboard in place of Assigned To) so admins know who to send back to.
+  // Also clear any nag state so a subsequent reopen/send-back starts clean
+  // (Henry 2026-10-24). The reassign trigger clears these too when assigned_to
+  // changes, but we set them explicitly as belt-and-suspenders in case the
+  // claim was already assigned_to=null for some reason.
   if (currentStage === 'main' && target === 'qc') {
     if (!claim.submittedAt) {
       patch.submitted_at = now
       patch.submitted_by = caller!.userId
     }
     patch.assigned_to = null
+    patch.status_request_count = 0
+    patch.last_status_request_at = null
+    patch.status_lockout_at = null
   }
   const { error } = await service.from('acv_history').update(patch).eq('id', id)
   if (error) return NextResponse.json({ error: error.message }, { status: 400 })

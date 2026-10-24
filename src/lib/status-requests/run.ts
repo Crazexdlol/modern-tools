@@ -50,6 +50,7 @@ interface ClaimRow {
   status_lockout_at: string | null
   company_id: string | null
   status_phase: string | null
+  workflow_stage: string | null
 }
 
 interface LatestApprMsgRow {
@@ -85,11 +86,16 @@ export async function runStatusRequests(service: SupabaseClient): Promise<RunRes
     return { sent: 0, locked: 0, checked: 0, skipped: 'weekend' }
   }
 
+  // Only Main-stage claims are the appraiser's active work. Claims in QC /
+  // Billing / Payment have moved out of the appraiser's hands and must not be
+  // nagged (Henry 2026-10-24). `workflow_stage` is nullable on legacy rows that
+  // predate the stage column — treat null as 'main' per the rest of the app.
   const { data: claims, error: claimErr } = await service
     .from('acv_history')
-    .select('id, ma_number, assigned_to, assigned_at, last_status_request_at, status_request_count, status_lockout_at, company_id, status_phase')
+    .select('id, ma_number, assigned_to, assigned_at, last_status_request_at, status_request_count, status_lockout_at, company_id, status_phase, workflow_stage')
     .eq('status', 'open')
     .not('assigned_to', 'is', null)
+    .or('workflow_stage.is.null,workflow_stage.eq.main')
   if (claimErr) throw new Error(claimErr.message)
   const openClaims = (claims as unknown as ClaimRow[]) ?? []
   if (openClaims.length === 0) return { sent: 0, locked: 0, checked: 0 }
@@ -149,7 +155,21 @@ export async function runStatusRequests(service: SupabaseClient): Promise<RunRes
     const effectiveEnabled = profMap.get(c.assigned_to)?.auto_status_requests_override === true
     if (!effectiveEnabled) continue
 
-    const anchorIso = latestApprMsg.get(c.id) ?? c.assigned_at
+    // Anchor = max(appraiser's latest own message, assigned_at). Taking max
+    // (not the ?? fallback) covers three cases that the old `?? c.assigned_at`
+    // pattern miscounted (Henry 2026-10-24):
+    //   1. Fresh assignment: appraiser has no messages yet → fallback to
+    //      assigned_at — same as before.
+    //   2. Reassigned to a brand-new appraiser: trigger clears count/last,
+    //      assigned_at is NOW, latestApprMsg is empty → anchor = assigned_at.
+    //   3. Reassigned BACK to a prior appraiser (e.g. send-back-to-main):
+    //      latestApprMsg returns their OLD message from the earlier span,
+    //      but assigned_at is NOW. max() picks assigned_at so the clock
+    //      restarts from reassignment, not from an ancient message.
+    const msgIso = latestApprMsg.get(c.id)
+    const anchorIso = msgIso && c.assigned_at
+      ? (msgIso > c.assigned_at ? msgIso : c.assigned_at)
+      : (msgIso ?? c.assigned_at)
     if (!anchorIso) continue
     const anchor = new Date(anchorIso)
 

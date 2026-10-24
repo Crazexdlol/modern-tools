@@ -95,6 +95,12 @@ export async function POST(
       // Main dashboard. submitted_by preserves who submitted it so QC can
       // send it back if needed.
       assigned_to: null,
+      // Clear nag state so a later send-back starts fresh (Henry 2026-10-24).
+      // The reassign trigger also does this when assigned_to changes, but set
+      // explicitly for clarity + safety when assigned_to was already null.
+      status_request_count: 0,
+      last_status_request_at: null,
+      status_lockout_at: null,
     })
     .eq('id', id)
   if (error && error.code === '42703') {
@@ -106,6 +112,9 @@ export async function POST(
         status_phase: 'completed',
         status_phase_set_at: now,
         assigned_to: null,
+        status_request_count: 0,
+        last_status_request_at: null,
+        status_lockout_at: null,
       })
       .eq('id', id)
     error = e2
