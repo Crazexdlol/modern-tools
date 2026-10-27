@@ -157,7 +157,7 @@ export function AppHeader({ locked = false }: { locked?: boolean } = {}) {
             <>
               {!locked && <CompanySwitcher />}
               {!locked && <RemindersHeaderButton />}
-              {!locked && <ChatHeaderButton />}
+              {/* ChatHeaderButton temporarily hidden - chat migrations pending */}
               {!locked && <ClaimSearchButton />}
               {displayLabel ? (
                 <div className="relative" ref={menuRef}>
