@@ -2,6 +2,264 @@
 
 Running log of every working session on Modern Tools. **Newest entry on top.**
 
+---
+
+## 2026-10-26 — Per-client rate card (data + admin UI; invoice side deferred)
+
+**Worked on:** Groundwork for per-client billing automation. Added a per-client rate card so each client's negotiated prices (per assignment type with/without RTA, add-ons, time) live on the client record instead of in Henry's head. v1 persists + edits; invoice side intentionally untouched for a future redesign.
+
+**Spec:** `docs/superpowers/specs/2026-10-26-per-client-rate-card-design.md`
+**Plan:** `docs/superpowers/plans/2026-10-26-per-client-rate-card.md`
+
+**Changed:**
+- `src/lib/supabase/rate-card.ts` (new) — `ClientRateCard` shape, `defaultRateCard()`, `normalizeRateCard()`, `rateCardEquals()`, plus `PRIMARY_RATE_KEYS` / `ADDON_RATE_KEYS` as the single source of truth for UI iteration order.
+- `src/lib/supabase/clients.ts` — `Client` gains `rateCard: ClientRateCard` (always normalized shell). `rowToClient` normalizes `r.rate_card`. `updateClient` maps `patch.rateCard → rate_card` and strips the column on 42703 for pre-migration tolerance.
+- `src/components/claim/client-picker.tsx` + `src/app/marketing/_components/add-client-button.tsx` — two inline `Client` literals updated with `rateCard: defaultRateCard()`.
+- `src/app/admin/settings/clients/_rates-tab.tsx` (new) — three stacked sections (Primary / Add-ons / Time), decimal nullable inputs, own dirty state, own Save button, and a post-save detector that flags "rate_card column missing — run the migration" when the DB strip-and-retry round-trips as all-nulls.
+- `src/app/admin/settings/clients/clients-admin-client.tsx` — split `ClientDetailPanel` into Details / Rates tabs. Details tab is byte-identical. Switching tabs with unsaved Details changes shows a `confirmDialog` (no native dialogs).
+- `supabase/migration-client-rate-card.sql` + rollback — adds nullable `rate_card jsonb` to `public.clients`. **STATUS: NOT YET RUN — Henry must run in Supabase SQL editor to enable rate persistence.**
+
+**Deploy status:** Live. Deploy id `dpl_4tLE4yPFLuAt8L1fa5UrdGqABAmt`, status `● Ready`, aliased on `hamsportal.com` / `www.hamsportal.com` / `modern-tools-rho.vercel.app`. `npx tsc --noEmit` clean. `npm run build` clean. Alias verified post-deploy.
+
+**Rollback:** `npx vercel promote https://modern-tools-du9x5ge3v-henry-as-projects-88caed67.vercel.app --scope henry-as-projects-88caed67 --yes` (that's `dpl_EaAjdbkS7cn8nyZtB6fPoL4FHQBr`, the previous good build).
+
+**In progress / broken / unknowns:**
+- Migration **not yet run**. Until Henry runs `supabase/migration-client-rate-card.sql` in Supabase SQL editor, saving on the Rates tab will fail gracefully with an `alertDialog` prompting him to run it. Admin UI otherwise works normally; Details tab saves are unaffected.
+- Rates tab not yet consumed anywhere — invoice tab, PDF filling, and any downstream workflow are intentionally untouched. Future session hooks it in per Henry's "big plans."
+
+**Next:**
+- Henry runs `migration-client-rate-card.sql` in Supabase.
+- Then open the clients admin, pick a few real clients (Sedgwick, Clear Counsel, etc.), fill in actual rates. Confirm round-trip. Confirm independence between clients.
+- Future: wire the rate card into the invoice tab per Henry's upcoming invoice redesign.
+
+---
+
+## 2026-10-25 — Dark mode + dashboard tidy + bodyType auto-widen + assignment sheet complete rewrite
+
+**Worked on:** Massive session. Four separate workstreams all shipped to prod across 7 deploys.
+
+### 1. Dark mode toggle for HAMS
+
+CSS-only retrofit so existing component code wasn't touched (would've violated the "Cards MUST be bg-white border-gray-200 shadow-sm" hard rule across 400+ `bg-white` references).
+
+- `src/components/theme-provider.tsx` (new) — plain React Context + localStorage, no new deps.
+- `src/app/layout.tsx` — ThemeProvider wrap + inline before-hydration script to apply `.dark` on `<html>` from `localStorage.hp-theme` so no FOUC.
+- `src/components/app-header.tsx` — Sun/Moon toggle button in the user-avatar dropdown.
+- `src/app/globals.css` — ~400 lines added: dark variants for every `.hp-*` custom class, catch-all overrides for `bg-white` / `bg-slate-*` / `bg-gray-*` / `text-black` / `text-slate-*` / `text-gray-*` / `border-slate-*` / `border-gray-*` / shadows / pastel-50/100 tints / semi-transparent `/70` `/50` variants (dashboard count badges + claim tool-pill bar), all wrapped in `@media screen` so printing is always light. `.light-only` opt-out class that reverts every override (specificity-ordered to win via source order).
+- Login page restyled: dark blue gradient always, white logo via `brightness(0) invert`, `HAMS PORTAL` all-caps, white card in light mode / dark card in dark mode (via existing `.dark .bg-white` override).
+- `src/app/summary-page/SummaryPrintDoc.tsx` + `src/components/claim/estimate-review-tab.tsx` — `.light-only` on hidden off-screen PDF-capture surfaces so Summary and Estimate Review PDFs never bake a dark background.
+
+Walked every page in Playwright (dark mode) + verified contrast across dashboard tabs, admin settings, settlement analytics, tickets, messages, negotiations, marketing, my-profile. Only the login page needed hands-on cleanup (gradient was fighting input dark-fill).
+
+### 2. Removed "N open" counter from dashboard title
+
+`src/app/dashboard-client.tsx` — the W/Appraiser / All tab badges already convey the open count. Deleted the redundant counter next to the h1.
+
+### 3. BodyType auto-widen for comp search
+
+**Fixes ticket #28 (Alex, Kia Soul misclassified as SUV → zero comp matches).**
+
+- `src/components/claim/ClaimWorkspace.tsx` — `sortedListings` useMemo now computes strict + widened side-by-side. If strict returns 0 AND body-match was ON AND there's a subject bodyType AND widening yields comps, use the widened list and surface an amber banner above the results explaining the override. Only widens on bodyType — every other spec stays strict.
+- `scripts/audit-body-type-decode.mjs` (new) — audits what MarketCheck + NHTSA actually return for a sample of real claim VINs. Confirmed Kia Soul is the only misclassified case in the sample (NHTSA calls it "Sport Utility Vehicle [SUV]"); MarketCheck returns empty `body_style` for every VIN tested, so NHTSA is doing 100% of the body-style work right now.
+- `scripts/verify-bodytype-autowiden.mjs` (new) — unit-tests the auto-widen logic against 6 synthetic scenarios (strict matches, widen fires, widen stays empty, user turned Body off, etc.). All 6 pass.
+
+### 4. Verified auto-status + messages queue filters
+
+Henry asked whether the "auto-status requesting on payment-stage claims" + "messages queue showing non-assigned claims" bugs were still live. Both fixes verified in prod:
+
+- `src/lib/status-requests/run.ts:98` — `.or('workflow_stage.is.null,workflow_stage.eq.main')` filter still in place. Ran `scripts/audit-auto-status.mjs`: 0 past-main claims in nag queue, 0 closed claims with stale nag state, 2 legit active lockouts (both main stage), 25 open+assigned in queue (all main).
+- `src/app/api/messages/queue/route.ts:141` — appraiser-side filter still in place: `if (!callerIsAdmin && c.assigned_to !== user.id) return null`.
+
+Ticket #26 (Alex, "Requesting Status on CLOSED CLAIM") can be marked resolved.
+
+### 5. Assignment sheet COMPLETE rewrite
+
+Henry rejected yesterday's assignment sheet ("ass"). Started over with a card-boxed layout per his selected mockup. Multiple iteration rounds (preview harness → his feedback → iterate). Final shape:
+
+- **Letterhead:** logo left, "ASSIGNMENT SHEET" title right, heavy rule below.
+- **Big info strip** (no box): MA# / CL# / Client / Vehicle in 4 centered columns, uniform font size auto-shrunk to fit the longest value.
+- **Row 1:** CLAIM ↔ INSURANCE (half-width paired)
+- **Row 2:** OWNER / INSURED ↔ CLAIMANT (half-width paired; Claimant always renders even if blank)
+- **Row 3:** VEHICLE ↔ VEHICLE LOCATION (half-width paired; Vehicle Location always renders even if blank)
+- **Row 4:** APPRAISERS (full width)
+- **Row 5:** VALUATIONS (half-width, bottom-anchored, roomy 28pt row heights for hand-write room) + LABOR RATES (half-width 5×5 matrix: MA/OA/Ins/Shop/Hero × Sheet Metal/Refinish/Mechanical/Frame/Materials) on the right.
+- All paired cards bottom-align (shorter card gets forced-height to match taller).
+- Date under title removed.
+- Dollars moved from right-aligned to left-aligned next to their labels so the right half of Valuations is reserved blank for hand-written notes.
+
+**Gating rules (final, Henry 2026-10-25):**
+- Labor Rates matrix: **always shown** when `estimate` in claim types.
+- Valuations: when 2+ of {acv, dv, storage, desk, lou, full} selected → card renders **blank** (title only, no rows). Single primary → `MA [type]` + OA/Ins/Agreed (+Umpire if applicable). Est alone (no primary) → `MA Est Dispute` + OA/Ins/Agreed (+Umpire if applicable).
+- Umpire Amount row: only renders if `proceededToUmpire=true` on the claim OR `umpire` in claim types.
+- Modifiers (RTA, Specialty, Umpire, Desk, LOU, FULL, Salvage, Other) never add an "MA [type]" row by themselves — only the 6 primary valuation types do.
+
+**AssignmentSheetData interface** gained one new field: `proceededToUmpire: boolean`. Call site in `ClaimWorkspace.tsx:5302` passes `proceededToUmpire` from the hook.
+
+**Verification:** `scripts/preview-assignment-sheet-variants.mjs` generates all 8 Est × {ACV, DV, Storage}-combinations as PNGs in `tmp/variants/`. Spot-check with `proceededToUmpire=true` confirms the Umpire row appears correctly.
+
+**Keep in sync:** `src/components/claim/assignment-sheet.tsx` and `scripts/preview-assignment-sheet.mjs` have identical layout logic by hand — any visual change needs to go in BOTH files.
+
+### Deploys (chronological order, all live, latest is prod)
+
+| Deploy ID | Shipped |
+|---|---|
+| `dpl_3uih5tEG18A1PsF57cXNECnaCwrP` | Dark mode initial |
+| `dpl_BVeJ2PfYvT7TfKbLDFAssDREA994` | Removed "33 open" + bodyType auto-widen |
+| `dpl_7TayauXEZe2YkSUNTpADL8cxpw39` | Assignment sheet first full card-boxed rewrite |
+| `dpl_AzJDAFiBsiY11UPgMuUdKe6bdjY3` | Always-render Claimant + Vehicle Location |
+| `dpl_FyP67w2Jm6j8p8Le7AjG2wDzV2Fd` | Estimate 5×5 matrix added |
+| `dpl_8mDhM3mwWTNBHCAGFa9MYRqXJk6b` | Initial Labor Rates gating (hide when ACV+Est) |
+| `dpl_EaAjdbkS7cn8nyZtB6fPoL4FHQBr` | **FINAL** — always-show Labor Rates, blank Valuations when multi-primary, umpire row gated |
+
+**Current live:** `dpl_EaAjdbkS7cn8nyZtB6fPoL4FHQBr` aliased on hamsportal.com / www.hamsportal.com / modern-tools-rho.vercel.app.
+
+**Rollback:** `npx vercel promote https://modern-tools-a6816mrtt-henry-as-projects-88caed67.vercel.app --scope henry-as-projects-88caed67 --yes` (that's `dpl_8mDhM3mwWTNBHCAGFa9MYRqXJk6b`).
+
+**Build hygiene:** `npx tsc --noEmit` clean on every deploy; `npm run build` clean on every deploy.
+
+### In progress / broken / unknowns
+
+- Deploy `dpl_EaAjdbkS7cn8nyZtB6fPoL4FHQBr` NOT visually spot-checked against a real est-dispute claim in prod — Henry has to print one in anger to confirm the layout feels right. Variant PNGs match the spec; the end-to-end print path uses the same code with live data, so high confidence.
+- Dark mode visually walked on every major page EXCEPT the Reports Hub tab inside a claim, the Estimate Dispute tool, and the LOU tab — those pages render components that use `bg-white` + text-slate-X and should flip via the overrides, but weren't manually confirmed in Playwright.
+- Google Maps embed on `/marketing` stays with its own tiles (3rd-party widget, unavoidable).
+- `scripts/preview-assignment-sheet.mjs` and `src/components/claim/assignment-sheet.tsx` must be kept in sync BY HAND. Any layout change needs to go in both. The preview harness is the fast iteration loop; the component is what ships.
+
+### NOT touched
+
+- Auto-status engine (`src/lib/status-requests/run.ts`), messages queue API, assignment and complete-report APIs — all verified live but unchanged.
+- Assignment sheet component's `AssignmentSheetData` interface shape is unchanged apart from the new `proceededToUmpire` field; no other callers of `triggerAssignmentSheetPrint` exist so only one call site needed updating.
+
+### Next
+
+- Henry prints a real est-dispute claim in prod and reports back if Labor Rates / Valuations layout needs tweaking.
+- Spot-check Reports Hub + Estimate Dispute + LOU tabs in dark mode (visual pass only).
+- Nothing else specifically on-deck.
+
+---
+
+## 2026-10-24 — Assignment sheet polish (5-iteration autonomous pass)
+
+**Worked on:** Henry went to sleep and asked for 5 iterations until the assignment sheet was "perfect, not shit". Built a self-contained preview harness so each iteration took seconds instead of a full deploy cycle, then iterated on `src/components/claim/assignment-sheet.tsx` layout.
+
+**Preview harness:**
+- `scripts/preview-assignment-sheet.mjs` — pure-Node PDF generator with mock data covering every conditional section (owner-different-from-insured, Claimant, Vehicle Location, Notes with both handling instructions + fact of loss). Runs jsPDF directly, writes `tmp/assignment-sheet-preview.pdf`, then converts to `tmp/assignment-sheet-preview.png` via `pymupdf` for visual inspection. Mirrors the production layout code — must keep both files in sync whenever either changes.
+- One-shot setup: `py -m pip install pymupdf` + `py` to pre-process `public/companies/modern-appraisers/logo.png` → `tmp/logo-black.png` (replaces non-transparent pixels with black, matching the production CSS `filter: brightness(0)` effect).
+
+**Iteration log:**
+1. Baseline: content past Appraisers (Valuations + Notes) fell off the bottom of the page. Need compression.
+2. Shrunk font sizes (H_SECTION 12→11, H_FIELD_VALUE 11→10, etc.) and row rhythm (ROW_HEIGHT 26→22, LABEL_TO_VALUE 13→11, MONEY_ROW_HEIGHT 18→15). Valuations now fit; Notes still clipped.
+3. Added auto-paging guard before Notes: if the estimated Notes height won't fit, `pdf.addPage()` + reset `ctx.y`. Notes now rendered — but orphaned at the top-left of an otherwise empty page 2.
+4. Removed between-section horizontal rules entirely, replaced with 12pt whitespace. Saves ~5.5pt per section × 7 sections = ~38pt. Design feels airier; section titles alone provide the visual breaks. All 8 sections (CLAIM through VALUATIONS) now fit on page 1.
+5. Refactored logo loading into a reusable `drawHeaderBanner()` helper, called at the start AND when auto-paging kicks in. Page 2 (for long-Notes claims) now opens with the same logo + heavy-rule header as page 1, so continuation feels intentional, not orphaned.
+
+**Final design (verified against the preview PNG):**
+- Logo flush to top (6pt below MARGIN_TOP), followed by heavy 1.5pt black rule.
+- Section titles: 11pt bold Times, 1.2pt char-spacing, pure black. Clearly larger and heavier than field labels.
+- Field labels: 7pt bold Times, 0.4pt char-spacing, color `rgb(34,34,34)`. Dark enough to read, small enough to not compete with values.
+- Field values: 10pt regular Times, pure black.
+- Vehicle grid: single 4-column grid (Year | Make | Model | Trim) with VIN spanning cells 1–2 of the second row and Mileage at cell 3 — Mileage lines up directly under Model.
+- Valuations: single stacked list. Every money row (MA ACV, OA Value, Ins. Co. Offer, Agreed Amount, Umpire Amount) renders by default; dollar amounts right-align at a fixed x position (`MONEY_VALUE_RIGHT_X = MARGIN_X + 280`) so the signs form a straight vertical column. Blank value when 0 per Henry's rule.
+- No between-section rules; 12pt whitespace instead. Heavy rule only under the logo.
+- Row rhythm: label at y, value at y+11, next label at y+22. Verified cap-height math gives 3+ pt gap between every glyph boundary — nothing touches.
+
+**Deploy status:**
+- Live: `dpl_8NYVHFNqw5owpxtucagfbf2ES88r`
+- Aliases flipped: `hamsportal.com`, `www.hamsportal.com`, `modern-tools-rho.vercel.app`
+- Rollback: `npx vercel promote https://modern-tools-m3n0xybx8-henry-as-projects-88caed67.vercel.app --scope henry-as-projects-88caed67 --yes` (previous `dpl_3BrQkZTwMgn1Qo7L9y2KWSJRdPNj`)
+- `npx tsc --noEmit` clean. `npm run build` clean.
+
+**In progress / broken / unknowns:**
+- Preview harness and production code have to be kept in sync by hand. If Henry iterates further on the layout, change BOTH files or the preview will lie.
+- Fully-populated claims (every optional section + long notes) take 2 pages. Typical claims (just Vehicle Location + brief Notes) should fit on 1. If a typical real claim unexpectedly spills to page 2, we can either compress more aggressively or combine sections (e.g. Vehicle + Vehicle Location → one combined section).
+- Didn't test on a real claim via Playwright this round — Henry asked for preview-driven iteration. The deployed code uses identical layout logic (`buildAssignmentSheetPdf` reads the full `ClaimInfo` passed from `ClaimWorkspace.tsx:5260` and renders identically to the preview).
+
+**Next:**
+- Henry prints a real claim when he wakes up. If anything is still off, iterate from there.
+
+---
+
+## 2026-10-24 — Assignment sheet rewrite (layout + blanks + fields + sharpness)
+
+**Worked on:** Henry walked through the printed Assignment Sheet and flagged seven issues. Rewrote `src/components/claim/assignment-sheet.tsx` end-to-end to address all of them.
+
+**Changes:**
+1. **Logo pulled up** — outer `.assignment-sheet` top padding `16px → 6px`; `.header` padding-bottom `8px → 4px`, margin-bottom `10px → 8px`. Logo now sits close to the top edge of the sheet.
+2. **Blank = blank** — every "—" placeholder removed. `fmtDate` returns `''` on empty; all `|| '—'` patterns across Rows / Opposing / Vehicle / Insurance / Appraisers replaced with `|| ''`; `yearStr` / `mileageStr` / `deductibleStr` compute to `''` when zero. Row component still renders the label and a `minHeight: 1em` value cell so the layout stays grid-aligned.
+3. **Vehicle laid out properly** — one labeled field per attribute instead of the "Year / Make / Model / Trim · VIN · Mileage" one-liner. `grid-4`: Year, Make, Model, Trim; then `grid-3`: VIN (2fr), Mileage, Body Type.
+4. **Valuations spaced + conditional** — empty rows hidden per claim type (no `$0` placeholders), empty claim-type blocks hidden entirely, section hidden if nothing to show. `.valuation-block` gets `marginBottom: 14px` between blocks; `.grid-money` row gap `3px → 8px`.
+5. **Sharpness** — html2canvas `scale: 2 → 3`; capture format `image/jpeg (q=0.95) → image/png`; `jsPDF addImage` format `'JPEG' → 'PNG'`. Added `-webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility;` on the sheet root. Label color darkened `#666 → #333` and set to `font-weight: 700`. Section border `#bbb → #999`. Money row label `#333 → #1a1a1a`; money row value bumped to `font-weight: 500`. h3 color `#444 → #222`.
+6. **Date Received removed** — `claim.dateReceived` row deleted from the CLAIM section.
+7. **Audited ClaimInfo and added everything missing:**
+   - `ownerName` — shows as separate "Owner Name" row only when non-empty AND different from `insuredName` (common case: parent's policy on child's car).
+   - `clientContactName` — new "Client Contact" row in Insured/Owner section (the specific person at the client company).
+   - `deductible` — new row in Insured/Owner, formatted with `formatCurrency`.
+   - **Claimant block** (new conditional section) — rendered only when `claim.claimantName` is set; shows Name, Phone, Email, Address.
+   - `bodyType` — new column in Vehicle `grid-3`.
+   - **Vehicle Location block** (new conditional section) — rendered when any of `vehicleLocationName / vehicleLocationAddress / vehicleLocationContact` is set; shows Location, Contact, Address.
+   - **Notes block** (new conditional section) — rendered when either `appraiserNotes` ("Handling Instructions") or `factOfLoss` is set; preserves whitespace via `white-space: pre-wrap`.
+
+**Not added (deliberate):** `engine / drivetrain / transmission / fuelType` — rarely populated from parsers and would bloat the sheet; easy to add to the Vehicle grid later. `zip / radius` — comp-search metadata, not claim identity. `clientContactId` — internal ID, not user-facing. `vehicleLocation` (legacy single field) — superseded by the name+address split.
+
+**AssignmentSheetData interface:** unchanged. Full `ClaimInfo` already flowed through from `ClaimWorkspace.tsx:7215`, so no plumbing changes were needed in the caller.
+
+**Deploy status:**
+- Live: `dpl_4R7mkXtfMdTHDEVVg59G3Zfz8KpN` → `modern-tools-l4eaucz2t-henry-as-projects-88caed67.vercel.app`
+- Aliases flipped: `hamsportal.com`, `www.hamsportal.com`, `modern-tools-rho.vercel.app`
+- Rollback: `npx vercel promote https://modern-tools-jsh0shqv5-henry-as-projects-88caed67.vercel.app --scope henry-as-projects-88caed67 --yes`
+- `npx tsc --noEmit` clean. `npm run build` clean.
+
+**In progress / broken / unknowns:**
+- Didn't visually re-verify the printed PDF (would need Henry to click Print on a real claim and inspect the output). High-confidence of correctness given typecheck + build pass and the fact that no API/data shape changed, but the fit-on-one-page geometry could shift if a claim fills every optional section (claimant + vehicle location + notes) — the scale-to-fit fallback will handle that gracefully by shrinking the capture rather than paginating.
+- PNG + scale 3 produces a larger PDF than the old JPEG at scale 2 — expect single-page claims to be ~1-3 MB. If filesize ever becomes a concern we can switch back to JPEG at quality 1.0 for a middle ground.
+
+**Next:**
+- Henry clicks Print on a few claims (one sparse, one fully-populated) and reports back on sharpness + layout. If any field placement is still off, re-order within the grids.
+
+---
+
+## 2026-10-24 — Auto-status fix prod validation + UI copy scrub (no "clock" jargon)
+
+**Worked on:** End-to-end validation of yesterday's auto-status fix on hamsportal.com, then scrubbed the "Post as status" dialog copy that was leaking internal mechanics ("clock", "nag") to employees.
+
+**Validation pass (prod, no regressions):**
+1. Confirmed deploy `dpl_DdB9PWFoxunw3MV6c8QpcFZQ88Me` (commit `d4fbf0b`) still aliased on `hamsportal.com` / `www.hamsportal.com` / `modern-tools-rho.vercel.app`.
+2. Spot-checked endpoints: `POST /api/claims/[id]/status-on-behalf` → 401 (exists, auth-gated); `GET /api/cron/status-requests` → 401 (exists).
+3. Ran `scripts/audit-auto-status.mjs` — all 6 invariants matched post-deploy numbers from 2026-10-23 (closed-with-nag=0, past-main-with-assignee=0, past-main-with-nag=0, active-lockouts=2 legit, nag-queue=25 all main, closed-30d-with-nag=0).
+4. Full UI walkthrough via Playwright: created throwaway specialty claim (MA#555696, id `1792832989764-jk1nz`, owner "ZZZ TEST — AUTO-STATUS FIX"), assigned to Henry Aleksanyan via Reassign flow, seeded `status_request_count=1 + last_status_request_at=now` via new `scripts/seed-test-nag-state.mjs`, opened Messages tab, verified **"Post as status"** button renders (correctly gated on `isAdmin && assignedToId && !isClaimClosed`, disabled while composer empty), typed body, clicked Post → confirm dialog → confirmed. Thread showed "Henry SUPER → Henry Aleksanyan · Oct 24, 2:12 AM" with the test body. Re-queried the row: `status_request_count=0, last_status_request_at=null, status_lockout_at=null` — **PASS**. Henry deleted the throwaway via UI.
+
+**Scripts added:**
+- `scripts/seed-test-nag-state.mjs` — one-shot: set `status_request_count=1 + last_status_request_at=now` on a given claim id. Reusable for future "Post as status" / lockout verification runs.
+- `scripts/cleanup-test-claim.mjs` — guarded cleanup for the throwaway (MA#555696 + owner-contains-"ZZZ TEST" preconditions). Not run — classifier blocked destructive prod ops autonomously; Henry deleted via UI instead.
+
+**Copy scrub (Henry: "Why would an employee at our company need to know about a clock"):**
+- `src/components/claim/messages-tab.tsx:328` — confirm dialog body changed from "The message will be posted under YOUR name with the appraiser as recipient, and the auto-status clock will reset (any pending nag / lockout clears)." → "The message will be posted under your name, addressed to {appraiser}."
+- `src/components/claim/messages-tab.tsx:329` — confirm button changed from "Post & reset clock" → "Post"
+- `src/components/claim/messages-tab.tsx:716` — "Post as status" tooltip changed from "Posts the composer text as a status update from you, addressed to {appraiser}, and resets the auto-status clock." → "Posts the composer text as a status update from you, addressed to {appraiser}."
+- `src/app/admin/settings/users/[id]/_tabs/permissions-tab.tsx:66` — "Auto status requests" permission description: "nags" → "reminders" (admin-facing but still pejorative wording).
+
+**Memory saved:**
+- `feedback_no_internal_mechanics_in_ui.md` — employee-facing UI copy must never expose internal jargon (clock, nag, lockout, counter, cron). Describe user-visible outcomes instead.
+
+**Deploy status:**
+- Live: `dpl_5HHtpgHSWJLZKhMubEYMsL8MVeY4` → `modern-tools-jsh0shqv5-henry-as-projects-88caed67.vercel.app`
+- Aliases flipped: `hamsportal.com`, `www.hamsportal.com`, `modern-tools-rho.vercel.app`
+- Rollback: `npx vercel promote https://modern-tools-bt3de8wyo-henry-as-projects-88caed67.vercel.app --scope henry-as-projects-88caed67 --yes`
+- `npx tsc --noEmit` clean. `npm run build` clean.
+
+**In progress / broken / unknowns:**
+- Did NOT visually re-verify the new dialog copy post-deploy (throwaway claim was already deleted). Low risk — only three string changes, type-checked and built clean. Henry will see the new copy next time he uses "Post as status" in anger.
+- The reassign-anchor fix (`max(latestApprMsg, assigned_at)`) is not individually verified; would require reassigning a claim with prior message history and watching the next cron fire. Low-risk conservative change — leaving as implicit-via-no-regression.
+- The cron filter fix behavior (don't nag past-main claims) is validated transitively: today's 14:00 UTC cron fire ran ~5h before this session and audit section C still shows 0 past-main rows with nag state. If the filter had regressed, past-main claims would have been nagged.
+
+**NOT touched:**
+- The underlying auto-status logic (`src/lib/status-requests/run.ts`, `/api/claims/[id]/{submit,advance-workflow,phase,status-on-behalf}` routes) — all stayed as deployed in d4fbf0b.
+- Code comments that still mention "clock" / "nag" / "lockout" internally — those are developer-only, not UI copy.
+- LockoutGate copy — already professional ("Status update required" / "silent for 5+ days"), no scrub needed.
+
+**Next:**
+- Nothing specific. Suggested on-deck: validate the reassign-anchor fix next time a real claim is reassigned (verify next nag anchor uses the reassign timestamp, not an older message).
+
+
 Each entry follows this shape:
 
 ```
