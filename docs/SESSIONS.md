@@ -4,6 +4,74 @@ Running log of every working session on Modern Tools. **Newest entry on top.**
 
 ---
 
+## 2026-10-27 — Chat system v1 (1:1 only) + per-client rate card follow-up
+
+**Worked on:** Built a 1:1 user-to-user chat system from scratch. Permission-gated (admin-managed symmetric matrix), admin override, hybrid realtime (poll badge + subscribe open thread), browser push notifications on new messages, 10 MB attachments, edit/soft-delete own messages, typing indicators. Group chat intentionally deferred to v2.
+
+**Spec:** `docs/superpowers/specs/2026-10-27-chat-system-v1-design.md`
+**Plan:** `docs/superpowers/plans/2026-10-27-chat-system-v1.md`
+
+**Changed (23 new files, 2 modified):**
+
+New SQL:
+- `supabase/migration-chat.sql` + rollback — 4 tables (chat_conversations, chat_conversation_members, chat_messages, chat_permissions), full RLS, realtime publication on chat_messages. **NOT YET RUN — Henry must apply in Supabase SQL editor.**
+- `supabase/migration-chat-storage.sql` + rollback — private `chat-attachments` bucket + storage policies gated by chat_conversation_members. **NOT YET RUN.**
+
+New library (`src/lib/chat/`):
+- `types.ts` — ChatConversation / ChatMessage / ChatContact + canonicalPair + CHAT_ATTACHMENT_MAX_BYTES (10 MB).
+- `missing-table.ts` — isMissingTable (42P01 detector) + MigrationPendingResponse.
+- `push.ts` — sendChatPush (service-role push_subscriptions reader + web-push dispatcher).
+- `api.ts` — browser fetch client wrapping all /api/chat/* endpoints with ApiResult<T> + isMigrationPending / isApiError guards.
+- `realtime.ts` — subscribeToConversation (postgres_changes INSERT/UPDATE) + subscribeToTyping (ephemeral broadcast).
+
+New API routes (`src/app/api/chat/*` + `src/app/api/admin/chat-permissions/*`):
+- `contacts` — GET: admin bypass OR permission grants + always-admin partners.
+- `conversations` — GET list w/ counterpart + last message + unread; POST idempotent create w/ permission gate.
+- `conversations/[id]/messages` — GET paginated history.
+- `send` — POST insert + conversation.updated_at bump + fire-and-forget push to recipient.
+- `messages/[id]` — PATCH edit (sets edited_at), DELETE soft-delete (sets deleted_at).
+- `mark-read` — POST updates chat_conversation_members.last_read_at.
+- `unread-count` — GET total unread for header badge poll.
+- `upload-url` — POST signed PUT URL scoped to `<convId>/<msgId>/<filename>`, 10 MB cap enforced.
+- `signed-attachment` — GET 302-redirect to short-TTL signed URL after membership check.
+- `admin/chat-permissions` — GET all users + permission edges; POST toggle (canonicalPair-ordered).
+
+New UI (`src/components/chat/`):
+- `chat-header-button.tsx` — the MessageCircle button next to Reminders bell. Unread badge polled every 10 s. Reads `?chat=<id>` on mount to deep-link from push notifications.
+- `chat-panel.tsx` — side-sheet (500px, right) orchestrating list/thread/new views.
+- `chat-conversation-list.tsx` — row list with avatar initials + last-message preview + relative time + unread badge.
+- `chat-new-conversation.tsx` — searchable contact picker, filters to permitted + admin partners.
+- `chat-thread-view.tsx` — subscribes to postgres_changes + typing channel on mount; auto-markRead on new messages.
+- `chat-message-row.tsx` — bubble with hover menu for own messages (edit inline / soft-delete).
+- `chat-composer.tsx` — textarea + paperclip + typing broadcast (throttled 1.5 s). Attachment upload path: client-gen UUID → sign → PUT → send w/ attachment metadata.
+
+New admin page:
+- `src/app/admin/settings/chat-permissions/page.tsx` + `chat-permissions-client.tsx` — super-admin grid matrix. Rows and cols are users; checkbox at intersections; diagonals + admin rows/cols pre-checked and disabled.
+
+Modified:
+- `src/components/app-header.tsx` — mounts `<ChatHeaderButton />` next to the Reminders bell.
+- `src/app/admin/settings/_settings-nav.tsx` — adds "Chat Permissions" entry to the Super Admin nav section.
+
+Service worker (`public/sw.js`) **not** modified — already handles `event.notification.data.url` navigation.
+
+**Deploy status:** Live. Deploy id `dpl_FfoGRxHhAJcNh6i68y8aEXsxy9EN`, status `● Ready`, aliased on `hamsportal.com` / `www.hamsportal.com` / `modern-tools-rho.vercel.app`. `npx tsc --noEmit` clean. `npm run build` clean. All 10 chat routes + admin page compile successfully. Alias verified post-deploy.
+
+**Rollback:** `npx vercel promote https://modern-tools-llh6gqnsb-henry-as-projects-88caed67.vercel.app --scope henry-as-projects-88caed67 --yes` (that's `dpl_4tLE4yPFLuAt8L1fa5UrdGqABAmt`, yesterday's rate-card deploy).
+
+**In progress / broken / unknowns:**
+- **Both migrations NOT yet run.** Chat button renders disabled until Henry applies `supabase/migration-chat.sql` AND `supabase/migration-chat-storage.sql` in the Supabase SQL editor. The admin page shows an amber "Chat tables haven't been created yet" state in the meantime; all /api/chat/* routes return `{ migrationPending: true }` instead of crashing.
+- Realtime subscriptions require the chat_messages table to be on `supabase_realtime` publication — the migration handles this. Without the migration there's nothing to subscribe to anyway.
+- Typing indicators use ephemeral broadcast channels — no DB persistence, no migration dependency, but the channel only matters once two users are in a conversation.
+- Push notifications require the user to have granted browser permission via the existing RemindersPushBootstrap flow. Chat reuses the `push_subscriptions` table + the existing SW. If reminders push works for a user, chat push works for them.
+
+**Next:**
+- Henry runs the two migrations in Supabase.
+- At `/admin/settings/chat-permissions`, Henry grants a pair (e.g. Alex ↔ Jordan).
+- Both users refresh. Smoke 1:1 chat: send text, send 10 MB image, edit own, delete own, backgrounded tab → push.
+- v2 (future session): group chat, read receipts, admin-delete, full-text search.
+
+---
+
 ## 2026-10-26 — Per-client rate card (data + admin UI; invoice side deferred)
 
 **Worked on:** Groundwork for per-client billing automation. Added a per-client rate card so each client's negotiated prices (per assignment type with/without RTA, add-ons, time) live on the client record instead of in Henry's head. v1 persists + edits; invoice side intentionally untouched for a future redesign.
