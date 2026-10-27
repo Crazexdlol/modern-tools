@@ -6,7 +6,7 @@ import { notifyClaimMessage } from '@/lib/email/claim-notifications'
 
 export const runtime = 'nodejs'
 
-const MAX_BODY_LEN = 8000
+const MAX_BODY_LEN = 16000
 
 interface MessageRow {
   id: string
