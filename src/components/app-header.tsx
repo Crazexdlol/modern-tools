@@ -4,14 +4,16 @@ import { useState, useRef, useEffect } from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
 import { usePathname } from 'next/navigation'
-import { ChevronDown, User as UserIcon, Settings, Lock } from 'lucide-react'
+import { ChevronDown, User as UserIcon, Settings, Lock, Moon, Sun } from 'lucide-react'
 import { LogoutButton } from '@/components/logout-button'
 import { useCurrentProfile } from '@/lib/supabase/profiles'
 import { fetchDueForRemarketingCount } from '@/lib/supabase/clients'
 import { useActiveCompany } from '@/hooks/use-active-company'
 import { CompanySwitcher } from '@/components/company-switcher'
 import { RemindersHeaderButton } from '@/components/reminders/reminders-header-button'
+import { ChatHeaderButton } from '@/components/chat/chat-header-button'
 import { ClaimSearchButton } from '@/components/claim-search-button'
+import { useTheme } from '@/components/theme-provider'
 
 interface NavItem {
   label: string
@@ -54,6 +56,7 @@ export function AppHeader({ locked = false }: { locked?: boolean } = {}) {
   const [menuOpen, setMenuOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement | null>(null)
   const [dueCount, setDueCount] = useState<number>(0)
+  const { theme, toggle: toggleTheme } = useTheme()
 
   useEffect(() => {
     const onDocClick = (e: MouseEvent) => {
@@ -154,6 +157,7 @@ export function AppHeader({ locked = false }: { locked?: boolean } = {}) {
             <>
               {!locked && <CompanySwitcher />}
               {!locked && <RemindersHeaderButton />}
+              {!locked && <ChatHeaderButton />}
               {!locked && <ClaimSearchButton />}
               {displayLabel ? (
                 <div className="relative" ref={menuRef}>
@@ -182,6 +186,15 @@ export function AppHeader({ locked = false }: { locked?: boolean } = {}) {
                           <Settings className="w-4 h-4 text-slate-500" /> Settings
                         </Link>
                       )}
+                      <button
+                        type="button"
+                        onClick={toggleTheme}
+                        className="w-full flex items-center gap-2.5 px-3 py-2 text-[13px] text-slate-700 hover:bg-slate-50"
+                      >
+                        {theme === 'dark'
+                          ? <><Sun className="w-4 h-4 text-slate-500" /> Light mode</>
+                          : <><Moon className="w-4 h-4 text-slate-500" /> Dark mode</>}
+                      </button>
                       <div className="border-t border-slate-100 my-1.5" />
                       <div className="px-2 pb-1">
                         <LogoutButton />
