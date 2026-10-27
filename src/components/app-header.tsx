@@ -11,7 +11,6 @@ import { fetchDueForRemarketingCount } from '@/lib/supabase/clients'
 import { useActiveCompany } from '@/hooks/use-active-company'
 import { CompanySwitcher } from '@/components/company-switcher'
 import { RemindersHeaderButton } from '@/components/reminders/reminders-header-button'
-import { ChatHeaderButton } from '@/components/chat/chat-header-button'
 import { ClaimSearchButton } from '@/components/claim-search-button'
 import { useTheme } from '@/components/theme-provider'
 
@@ -157,7 +156,6 @@ export function AppHeader({ locked = false }: { locked?: boolean } = {}) {
             <>
               {!locked && <CompanySwitcher />}
               {!locked && <RemindersHeaderButton />}
-              {/* ChatHeaderButton temporarily hidden - chat migrations pending */}
               {!locked && <ClaimSearchButton />}
               {displayLabel ? (
                 <div className="relative" ref={menuRef}>

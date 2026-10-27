@@ -56,3 +56,10 @@ scripts/_samples/
 # Claude Code local settings (per-machine permissions)
 .claude/
 
+.env*.local
+
+# Playwright MCP session snapshots (local test artifacts)
+.playwright-mcp/
+
+# Transient diagnostic scripts and probes
+tmp/
