@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Loader2, Search, Plus, Trash2, Save, X, Star, StarOff, UserPlus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { confirmDialog, alertDialog } from '@/components/ui/dialog-service'
@@ -22,6 +22,7 @@ import {
   type ClientType,
   type NewContactInput,
 } from '@/lib/supabase/clients'
+import { RatesTab } from './_rates-tab'
 
 type StatusFilter = 'active' | 'all' | 'archived'
 type TypeFilter = 'all' | ClientType
@@ -386,6 +387,9 @@ function ClientDetailPanel({
   const [contacts, setContacts] = useState<ClientContact[]>([])
   const [contactsLoading, setContactsLoading] = useState(true)
 
+  const [activeTab, setActiveTab] = useState<'details' | 'rates'>('details')
+  const detailsDirtyRef = useRef(false)
+
   const reloadContacts = useCallback(async () => {
     const list = await fetchContacts(client.id)
     setContacts(list)
@@ -409,6 +413,24 @@ function ClientDetailPanel({
     email !== (client.email ?? '') ||
     website !== (client.website ?? '') ||
     notes !== (client.notes ?? '')
+
+  // Mirror Details-tab dirty into a ref so switchTab can read it without
+  // joining the render chain.
+  detailsDirtyRef.current = dirty
+
+  const switchTab = async (next: 'details' | 'rates') => {
+    if (next === activeTab) return
+    if (activeTab === 'details' && detailsDirtyRef.current) {
+      const ok = await confirmDialog({
+        title: 'Discard unsaved changes?',
+        message: 'You have unsaved changes on the Details tab. Switch tabs and discard them?',
+        confirmLabel: 'Discard',
+        variant: 'danger',
+      })
+      if (!ok) return
+    }
+    setActiveTab(next)
+  }
 
   const save = async () => {
     if (!dirty) return
@@ -470,6 +492,29 @@ function ClientDetailPanel({
         </button>
       </div>
 
+      {/* Tab strip */}
+      <div className="px-4 pt-3 flex gap-1 border-b border-slate-100">
+        {([
+          { id: 'details', label: 'Details' },
+          { id: 'rates',   label: 'Rates'   },
+        ] as const).map((t) => (
+          <button
+            key={t.id}
+            onClick={() => void switchTab(t.id)}
+            className={
+              'px-3 py-1.5 text-sm font-semibold rounded-t-md border-b-2 -mb-px ' +
+              (activeTab === t.id
+                ? 'border-blue-600 text-blue-700'
+                : 'border-transparent text-slate-500 hover:text-slate-700')
+            }
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {activeTab === 'details' && (
+      <>
       {/* Edit form */}
       <div className="px-4 py-4 space-y-3 border-b border-slate-100">
         <div>
@@ -551,6 +596,14 @@ function ClientDetailPanel({
         loading={contactsLoading}
         reload={reloadContacts}
       />
+      </>
+      )}
+
+      {activeTab === 'rates' && (
+        <div className="px-4 py-4">
+          <RatesTab client={client} onSaved={onChanged} />
+        </div>
+      )}
     </div>
   )
 }
