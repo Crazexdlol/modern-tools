@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Users, Database, BookOpen, DollarSign, ShieldCheck, Tag, Activity, Timer, Scale, BarChart3, Ticket, Mail, Wrench, Calculator, TrendingUp, Briefcase } from 'lucide-react'
+import { Users, Database, BookOpen, DollarSign, ShieldCheck, Tag, Activity, Timer, Scale, BarChart3, Ticket, Mail, Wrench, Calculator, TrendingUp, Briefcase, MessageCircle } from 'lucide-react'
 import { useCurrentProfile } from '@/lib/supabase/profiles'
 
 // Admin section — order per Henry 2026-10-12. Visible to every admin.
@@ -25,9 +25,10 @@ const ADMIN_SECTIONS = [
 // Super Admin section — rendered under its own eyebrow heading when the
 // current profile is super-admin. Hidden entirely otherwise.
 const SUPER_ADMIN_SECTIONS = [
-  { href: '/admin/settings/accounting', label: 'Accounting', Icon: Calculator },
-  { href: '/admin/settings/activity',   label: 'Activity',   Icon: Activity },
-  { href: '/admin/settings/tickets',    label: 'Tickets',    Icon: Ticket },
+  { href: '/admin/settings/accounting',        label: 'Accounting',        Icon: Calculator },
+  { href: '/admin/settings/activity',          label: 'Activity',          Icon: Activity },
+  { href: '/admin/settings/tickets',           label: 'Tickets',           Icon: Ticket },
+  { href: '/admin/settings/chat-permissions',  label: 'Chat Permissions',  Icon: MessageCircle },
 ]
 
 export function SettingsNav() {
