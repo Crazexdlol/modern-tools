@@ -12,6 +12,7 @@ import {
   type ClientType,
   type FuzzyClientMatch,
 } from '@/lib/supabase/clients'
+import { defaultRateCard } from '@/lib/supabase/rate-card'
 
 // Threshold above which we treat a fuzzy match as a likely duplicate. Same
 // value the API's search RPC returns candidates against (0.3), just raised
@@ -365,6 +366,7 @@ function AddClientModal({
       typeCustom: null,
       roughNumbersDefault: false,
       rtaDefault: false,
+      rateCard: defaultRateCard(),
       addressLine: null, city: m.city, state: m.state, zip: null,
       lat: null, lng: null, phone: null, email: null, website: null, notes: null,
       lastMarketedAt: null, remarketIntervalDays: null, nextRemarketAt: null,

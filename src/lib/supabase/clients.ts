@@ -1,4 +1,5 @@
 import { createClient as createBrowserClient } from './client'
+import { normalizeRateCard, type ClientRateCard } from './rate-card'
 
 // Fetches the caller's active company id from profiles. Used to stamp
 // company_id on client / contact / log INSERTs so post-migration RLS
@@ -74,6 +75,10 @@ export interface Client {
   // roughNumbersDefault. Pre-migration rows return false. (Henry
   // 2026-10-18: every Sedgwick claim gets RTA; backfilled on open claims.)
   rtaDefault: boolean
+  // Per-client billing rates. Always a complete shell (every key present
+  // with null leaves) via normalizeRateCard, even if the DB column is
+  // missing (pre-migration) or null — safe to access blindly.
+  rateCard: ClientRateCard
   addressLine: string | null
   city: string | null
   state: string | null
@@ -125,6 +130,7 @@ interface ClientRow {
   type_custom?: string | null
   rough_numbers_default?: boolean | null
   rta_default?: boolean | null
+  rate_card?: unknown
   address_line: string | null
   city: string | null
   state: string | null
@@ -157,6 +163,7 @@ function rowToClient(r: ClientRow): Client {
     typeCustom: r.type_custom ?? null,
     roughNumbersDefault: r.rough_numbers_default === true,
     rtaDefault: r.rta_default === true,
+    rateCard: normalizeRateCard(r.rate_card),
     addressLine: r.address_line,
     city: r.city,
     state: r.state,
@@ -380,6 +387,7 @@ export async function updateClient(id: string, patch: ClientUpdate): Promise<Cli
   if (patch.typeCustom !== undefined) dbPatch.type_custom = patch.typeCustom
   if (patch.roughNumbersDefault !== undefined) dbPatch.rough_numbers_default = patch.roughNumbersDefault
   if (patch.rtaDefault !== undefined) dbPatch.rta_default = patch.rtaDefault
+  if (patch.rateCard !== undefined) dbPatch.rate_card = patch.rateCard
   if (patch.addressLine !== undefined) dbPatch.address_line = patch.addressLine
   if (patch.city !== undefined) dbPatch.city = patch.city
   if (patch.state !== undefined) dbPatch.state = patch.state?.toUpperCase() ?? null
@@ -399,7 +407,7 @@ export async function updateClient(id: string, patch: ClientUpdate): Promise<Cli
   // retry. Admin can save other fields without losing the edit.
   while (error && error.code === '42703') {
     let stripped = false
-    for (const col of ['type_custom', 'rough_numbers_default', 'rta_default']) {
+    for (const col of ['type_custom', 'rough_numbers_default', 'rta_default', 'rate_card']) {
       if (col in dbPatch) { delete dbPatch[col]; stripped = true }
     }
     if (!stripped) break

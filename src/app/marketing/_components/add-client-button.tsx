@@ -11,6 +11,7 @@ import {
   type ClientType,
   type FuzzyClientMatch,
 } from '@/lib/supabase/clients'
+import { defaultRateCard } from '@/lib/supabase/rate-card'
 
 const DUPLICATE_GUARD_THRESHOLD = 0.4
 
@@ -95,6 +96,7 @@ function AddClientModal({
       typeCustom: null,
       roughNumbersDefault: false,
       rtaDefault: false,
+      rateCard: defaultRateCard(),
       addressLine: null, city: m.city, state: m.state, zip: null,
       lat: null, lng: null, phone: null, email: null, website: null, notes: null,
       lastMarketedAt: null, remarketIntervalDays: null, nextRemarketAt: null,
