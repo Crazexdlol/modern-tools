@@ -325,8 +325,8 @@ export function MessagesTab({
     const ok = await confirmDialog({
       title: `Post status on behalf of ${assigneeDisplayName}?`,
       message:
-        'The message will be posted under YOUR name with the appraiser as recipient, and the auto-status clock will reset (any pending nag / lockout clears).',
-      confirmLabel: 'Post & reset clock',
+        `The message will be posted under your name, addressed to ${assigneeDisplayName}.`,
+      confirmLabel: 'Post',
     })
     if (!ok) return
     setSending(true)
@@ -713,7 +713,7 @@ export function MessagesTab({
                 disabled={!canPostStatus}
                 variant="outline"
                 className="gap-2 border-amber-300 text-amber-800 hover:bg-amber-50 hover:text-amber-900 text-xs whitespace-nowrap"
-                title={`Posts the composer text as a status update from you, addressed to ${assigneeDisplayName}, and resets the auto-status clock.`}
+                title={`Posts the composer text as a status update from you, addressed to ${assigneeDisplayName}.`}
               >
                 Post as status
               </Button>

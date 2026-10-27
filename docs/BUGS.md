@@ -88,7 +88,9 @@ Three edits in `src/components/claim/ClaimWorkspace.tsx`:
 
 Why this works regardless of root cause: even if ClaimWorkspace remounts (which would reset useState and useRef values), sessionStorage survives. The new component instance reads the handoff on its very first render and starts with the right state. The old (promoted) ref-based guard is kept as belt-and-suspenders for the no-remount case.
 
-Limitation: comps / listings / selectedIds / compAdjs / adjustments / result / mileageRate / reportsState are NOT in the handoff. If a user built up comp search results on `/claims/new` before clicking Create AND a remount happens, those are still lost. In practice the Create flow is "fill Claim Info → click Create → then search comps on the ACV tab," so this gap doesn't bite real workflows. Can extend handoff if needed.
+Limitation: comps / listings / selectedIds / compAdjs / adjustments / result / mileageRate are NOT in the handoff. If a user built up comp search results on `/claims/new` before clicking Create AND a remount happens, those are still lost. In practice the Create flow is "fill Claim Info → click Create → then search comps on the ACV tab," so this gap doesn't bite real workflows. Can extend handoff if needed.
+
+**Update 2026-10-20:** `reportsState` has been ADDED to the handoff. The original note above said it "doesn't bite real workflows" — that was wrong. Henry fills Opposing Appraiser (`notesData.appraiserName`) + Ins. Co. Offer (`notesData.insuranceOfferNum`) on the Create form before clicking Create. Both fields were being saved to DB correctly, but after the handoff path skipped the load fetch, the new instance initialized reportsState from `defaultReportsState` (empty), and the next autosave overwrote the DB value. Fix: `reportsState` is now in the handoff payload and drained by its useState initializer, matching the pattern already in place for `claim`, `clientId`, and `needsRoughNumbers`.
 
 ### Rollback command (keep handy)
 

@@ -921,6 +921,7 @@ function PrintableReview({
   return (
     <div
       ref={elRef}
+      className="light-only"
       style={{
         visibility: 'hidden',
         position: 'absolute',

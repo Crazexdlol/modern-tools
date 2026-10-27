@@ -42,36 +42,38 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="relative min-h-screen overflow-hidden bg-gradient-to-br from-slate-50 via-white to-slate-100 flex items-center justify-center px-4 py-16">
+    <div className="relative min-h-screen overflow-hidden bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 flex items-center justify-center px-4 py-16">
       {/* Ambient background — two soft radial washes so the page has depth
           without a busy image. Contained to the viewport, doesn't scroll. */}
       <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">
-        <div className="absolute -top-40 -left-40 w-[520px] h-[520px] rounded-full bg-blue-200/25 blur-3xl" />
-        <div className="absolute -bottom-40 -right-40 w-[520px] h-[520px] rounded-full bg-indigo-200/25 blur-3xl" />
+        <div className="absolute -top-40 -left-40 w-[520px] h-[520px] rounded-full bg-blue-400/40 blur-3xl" />
+        <div className="absolute -bottom-40 -right-40 w-[520px] h-[520px] rounded-full bg-indigo-400/30 blur-3xl" />
       </div>
 
       <div className="relative w-full max-w-md">
         {/* Hero — big logo + wordmark. Sits above the card so it reads as a
-            page identity, not a modal decoration. */}
+            page identity, not a modal decoration. Blue background is pinned
+            on both themes (Henry's call) — the ONLY theme-sensitive piece is
+            the card itself (white in light, dark in dark via globals.css). */}
         <div className="flex flex-col items-center mb-8">
           <div className="relative mb-5">
-            <div aria-hidden className="absolute inset-0 blur-2xl bg-blue-300/30 rounded-full scale-90" />
+            <div aria-hidden className="absolute inset-0 blur-2xl bg-blue-400/40 rounded-full scale-90" />
             <Image
               src="/hamsportal-logo.png"
               alt="HamsPortal"
               width={144}
               height={144}
-              className="relative h-32 w-32 md:h-36 md:w-36 drop-shadow-sm"
+              className="relative h-32 w-32 md:h-36 md:w-36 drop-shadow-sm brightness-0 invert"
               priority
             />
           </div>
-          <h1 className="text-3xl md:text-4xl font-bold tracking-[0.2em] text-slate-900">
-            <span className="uppercase">HAMS</span><span className="text-[#1a3a70]"> Portal</span>
+          <h1 className="text-3xl md:text-4xl font-bold tracking-[0.2em] uppercase text-white">
+            HAMS<span className="text-blue-300"> Portal</span>
           </h1>
         </div>
 
         {/* Form card */}
-        <div className="bg-white/90 backdrop-blur border border-slate-200 rounded-2xl shadow-xl shadow-slate-300/30 p-8">
+        <div className="bg-white backdrop-blur border border-slate-200 rounded-2xl shadow-xl shadow-slate-300/30 p-8">
           <div className="text-center mb-6">
             <h2 className="text-xl font-bold tracking-[0.2em] uppercase text-slate-900">Login</h2>
             <p className="text-xs text-slate-500 mt-1.5">Sign in to your workspace</p>

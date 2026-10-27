@@ -34,7 +34,7 @@ export function SummaryPrintDoc({ summary }: { summary: SavedSummary }) {
   const brandName = activeCompany?.name || "Modern Appraisers";
 
   const doc = (
-    <div className="summary-print-portal">
+    <div className="summary-print-portal light-only">
       <table className="print-doc" aria-hidden="true">
         <thead className="print-repeated-header">
           <tr>

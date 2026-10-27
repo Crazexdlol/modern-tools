@@ -14,9 +14,16 @@ export async function POST(
   if (errorResponse) return errorResponse
 
   const { id } = await params
-  const body = await request.json().catch(() => null) as { assignedTo?: string | null } | null
+  const body = await request.json().catch(() => null) as { assignedTo?: string | null; keepPhase?: boolean } | null
   if (body === null || (body.assignedTo !== null && typeof body.assignedTo !== 'string')) {
     return NextResponse.json({ error: 'assignedTo (uuid string or null) required' }, { status: 400 })
+  }
+  // keepPhase is optional. When present it must be a boolean — not "true"/"false"
+  // strings or anything else. Omitting it preserves the pre-2026-10-20 behavior
+  // for any client that hasn't been updated: keep non-completed phases, clear
+  // completed. See the status_phase decision block below.
+  if (body.keepPhase !== undefined && typeof body.keepPhase !== 'boolean') {
+    return NextResponse.json({ error: 'keepPhase must be boolean if provided' }, { status: 400 })
   }
 
   const service = createServiceClient()
@@ -101,10 +108,31 @@ export async function POST(
     submitted_at: null,
     submitted_by: null,
   }
-  // If the claim was phased 'completed' (via submit), clear the phase too —
-  // the new appraiser hasn't submitted anything yet. Other phases (Umpire,
-  // Hold, etc.) are admin-managed and stay set across reassignment.
-  if (currentRowAny.status_phase === 'completed') {
+  // Phase handling on reassign.
+  //
+  // Invariant: a 'completed' phase ALWAYS clears on reassign, regardless of
+  // the keepPhase flag. The 'completed' marker belongs to the prior
+  // appraiser's submit; the new assignee hasn't submitted anything yet, so
+  // carrying the marker forward would misrepresent the claim's state in the
+  // dashboard and the cycle-time rollups. Do not "fix" this by honoring
+  // keepPhase for 'completed' — the flag is a UI convenience, not an escape
+  // hatch for the submit lifecycle.
+  //
+  // For any other current phase (Hold / Umpire / Pending Information /
+  // Pending Repairs / etc.) the behavior is:
+  //   - keepPhase === false  → clear phase + stamp
+  //   - keepPhase === true   → preserve phase + stamp
+  //   - keepPhase undefined  → preserve (back-compat with pre-2026-10-20 clients)
+  //
+  // When preserving, we deliberately DO NOT include status_phase or
+  // status_phase_set_at in the patch — Postgres leaves them untouched. This
+  // avoids a no-op write that would otherwise update the row's updated_at
+  // and could race with phase-related triggers in the future.
+  const currentPhase = currentRowAny.status_phase as string | null
+  if (currentPhase === 'completed') {
+    patch.status_phase = null
+    patch.status_phase_set_at = null
+  } else if (currentPhase && body.keepPhase === false) {
     patch.status_phase = null
     patch.status_phase_set_at = null
   }

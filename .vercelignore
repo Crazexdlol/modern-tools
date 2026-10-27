@@ -1,0 +1,9 @@
+# Local backup archives (over Vercel's 100MB per-file upload limit)
+backups/
+
+# Sibling project not deployed from this directory
+modernappraisers/
+
+# Local scratch / debug outputs
+*.log
+.env.local

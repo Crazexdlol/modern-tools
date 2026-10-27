@@ -205,9 +205,38 @@ export function ClaimMessagePreview({ claimId }: { claimId: string }) {
     }, 400)
   }
 
-  // Truncate body for display
-  const displayBody = (msg: LastMessage) =>
-    msg.body.length > 500 ? msg.body.slice(0, 500) + '…' : msg.body
+  // Strip HTML to plain text, then truncate for display. The message body
+  // is stored as sanitized HTML (contenteditable innerHTML from the composer,
+  // which emits <br>/<p>/<div> for line breaks and formatting). Rendering it
+  // raw inside the preview tooltip surfaced literal "<br><br>" tags next to
+  // the text. Pull textContent via a DOMParser rather than regex-stripping so
+  // &amp;/&lt; entities decode too. SSR-safe fallback: if no DOM (preview
+  // tooltip runs in the browser, but belt-and-suspenders), do a basic regex
+  // strip + entity decode so we never show tags to the user.
+  const htmlToText = (html: string): string => {
+    if (typeof document !== 'undefined') {
+      const doc = new DOMParser().parseFromString(html, 'text/html')
+      // <br> and <p>/<div> boundaries become spaces so "Hi<br>Jason" renders
+      // as "Hi Jason" and not "HiJason" in the preview truncation.
+      doc.querySelectorAll('br').forEach((br) => br.replaceWith(' '))
+      doc.querySelectorAll('p, div, li').forEach((el) => el.append(' '))
+      return (doc.body.textContent ?? '').replace(/\s+/g, ' ').trim()
+    }
+    return html
+      .replace(/<br\s*\/?>/gi, ' ')
+      .replace(/<\/(p|div|li)\s*>/gi, ' ')
+      .replace(/<[^>]+>/g, '')
+      .replace(/&nbsp;/g, ' ')
+      .replace(/&amp;/g, '&')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/\s+/g, ' ')
+      .trim()
+  }
+  const displayBody = (msg: LastMessage) => {
+    const plain = htmlToText(msg.body)
+    return plain.length > 500 ? plain.slice(0, 500) + '…' : plain
+  }
 
   const popover = open && rect && (
     <div

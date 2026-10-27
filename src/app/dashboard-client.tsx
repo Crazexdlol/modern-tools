@@ -192,10 +192,6 @@ export function DashboardClient() {
           <div className="space-y-3">
             <div className="flex items-baseline gap-3">
               <h1 className="hp-display">Dashboard</h1>
-              <span className="inline-flex items-baseline gap-1.5 text-slate-500 text-[13px] font-medium tabular-nums">
-                <span className="text-slate-900 font-semibold">{openClaims.length}</span>
-                open
-              </span>
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <Link href="/messages" className="hp-btn hp-btn-secondary">

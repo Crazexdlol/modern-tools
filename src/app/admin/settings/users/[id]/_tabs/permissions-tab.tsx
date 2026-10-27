@@ -63,7 +63,7 @@ const TOGGLES: { field: PermField; label: string; description: string }[] = [
   {
     field: 'autoStatusRequestsOverride',
     label: 'Auto status requests',
-    description: 'Receive automatic status-request nags on silent claims (first at 3 days, repeat at 4). After 5 days with no reply the user is locked out of all other claims until they post a status on the overdue one(s). Weekends count the same as weekdays. All users default to ON.',
+    description: 'Receive automatic status-request reminders on silent claims (first at 3 days, repeat at 4). After 5 days with no reply the user is locked out of all other claims until they post an update on the overdue one(s). Weekends count the same as weekdays. All users default to ON.',
   },
   {
     field: 'showInNegotiatingAppraiserList',

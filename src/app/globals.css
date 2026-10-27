@@ -460,3 +460,482 @@ button [class*="count"],
   color: rgb(51 65 85);
   margin-bottom: 4px;
 }
+
+/* ──────────────────────────────────────────────────────────────────────
+   DARK MODE
+   Toggled via `.dark` on <html> (see src/components/theme-provider.tsx and
+   the inline init script in src/app/layout.tsx). Strategy: CSS-only
+   retrofit — components keep their existing utilities (`bg-white`,
+   `text-black`, `border-gray-200`...). The rules below swap how those
+   utilities render under `.dark` so no component code has to change, and
+   the Card hard rule (`bg-white border-gray-200 shadow-sm`) still holds.
+   Wrapped in `@media screen` so printing is always light, no matter the
+   current theme — generated PDFs and print output must match the paper
+   version.
+   `.light-only` opts a subtree back to light tokens inside a dark page.
+   Used for in-UI report preview panes meant to look like their printed
+   PDF (Summary / Award / Notes / DV / Invoice / Cover Letter / LOU).
+   ────────────────────────────────────────────────────────────────────── */
+@media screen {
+  /* Opt-out wrapper — a dark-mode page can nest a light preview inside. */
+  .dark .light-only {
+    background-color: white !important;
+    color: rgb(15 23 42) !important;
+    color-scheme: light;
+  }
+
+  /* ── hp-* tokens / components ───────────────────────────────────── */
+  .dark {
+    --hp-rule: oklch(1 0 0 / 10%);
+    --hp-rule-strong: oklch(1 0 0 / 20%);
+    --hp-ring: oklch(1 0 0 / 24%);
+    --hp-elev-1: 0 1px 0 rgb(0 0 0 / 0.3), 0 1px 2px rgb(0 0 0 / 0.4);
+    --hp-elev-pop: 0 8px 24px rgb(0 0 0 / 0.5), 0 2px 6px rgb(0 0 0 / 0.4);
+  }
+  .dark .hp-card {
+    background: oklch(0.205 0 0);
+    border-color: oklch(1 0 0 / 10%);
+  }
+  .dark .hp-btn:focus-visible {
+    box-shadow: 0 0 0 2px oklch(0.145 0 0), 0 0 0 4px var(--hp-ring);
+  }
+  .dark .hp-btn-dark {
+    background: oklch(0.985 0 0);
+    color: oklch(0.145 0 0);
+  }
+  .dark .hp-btn-dark:hover { background: oklch(0.9 0 0); }
+  .dark .hp-btn-secondary {
+    background: oklch(0.269 0 0);
+    color: oklch(0.985 0 0);
+    box-shadow: inset 0 0 0 1px oklch(1 0 0 / 12%);
+  }
+  .dark .hp-btn-secondary:hover {
+    background: oklch(0.32 0 0);
+    box-shadow: inset 0 0 0 1px oklch(1 0 0 / 22%);
+  }
+  .dark .hp-btn-ghost { color: oklch(0.75 0 0); }
+  .dark .hp-btn-ghost:hover {
+    background: oklch(1 0 0 / 7%);
+    color: oklch(0.985 0 0);
+  }
+  .dark .hp-input,
+  .dark .hp-textarea,
+  .dark .hp-select {
+    background: oklch(0.205 0 0);
+    color: oklch(0.985 0 0);
+    border-color: oklch(1 0 0 / 12%);
+  }
+  .dark .hp-input::placeholder,
+  .dark .hp-textarea::placeholder { color: oklch(0.556 0 0); }
+  .dark .hp-input:hover,
+  .dark .hp-textarea:hover,
+  .dark .hp-select:hover { border-color: oklch(1 0 0 / 22%); }
+  .dark .hp-input:focus,
+  .dark .hp-textarea:focus,
+  .dark .hp-select:focus {
+    border-color: oklch(0.985 0 0);
+    box-shadow: 0 0 0 3px oklch(1 0 0 / 10%);
+  }
+  .dark .hp-input:disabled,
+  .dark .hp-textarea:disabled,
+  .dark .hp-select:disabled {
+    background: oklch(0.185 0 0);
+    color: oklch(0.5 0 0);
+  }
+  .dark .hp-label { color: oklch(0.78 0 0); }
+  .dark .hp-link { color: oklch(0.76 0.14 240); }
+  .dark .hp-link:hover { color: oklch(0.86 0.14 240); }
+  .dark .hp-chip {
+    background: oklch(0.269 0 0);
+    color: oklch(0.85 0 0);
+  }
+  .dark .hp-chip-strong {
+    background: oklch(0.985 0 0);
+    color: oklch(0.145 0 0);
+  }
+  .dark .hp-tabbar { background: oklch(0.205 0 0); }
+  .dark .hp-tab { color: oklch(0.65 0 0); }
+  .dark .hp-tab:hover {
+    background: oklch(1 0 0 / 5%);
+    color: oklch(0.985 0 0);
+  }
+  .dark .hp-tab-active {
+    background: oklch(0.3 0 0);
+    color: oklch(0.985 0 0);
+    box-shadow: inset 0 0 0 1px oklch(1 0 0 / 12%);
+  }
+  .dark .hp-divider { border-top-color: oklch(1 0 0 / 10%); }
+  .dark .hp-display,
+  .dark .hp-section { color: oklch(0.985 0 0); }
+  .dark .hp-eyebrow { color: oklch(0.65 0 0); }
+  .dark .hp-empty { color: oklch(0.65 0 0); }
+  .dark .hp-empty strong { color: oklch(0.85 0 0); }
+  .dark .hp-msg-editor:empty::before { color: oklch(0.5 0 0); }
+
+  /* ── Tailwind utility retrofits ─────────────────────────────────── */
+
+  /* Neutral surfaces */
+  .dark .bg-white { background-color: oklch(0.205 0 0) !important; }
+  .dark .bg-slate-50,
+  .dark .bg-gray-50 { background-color: oklch(0.19 0 0) !important; }
+  .dark .bg-slate-100,
+  .dark .bg-gray-100 { background-color: oklch(0.235 0 0) !important; }
+  .dark .bg-slate-200,
+  .dark .bg-gray-200 { background-color: oklch(0.28 0 0) !important; }
+
+  /* Semi-transparent neutral surfaces — Tailwind compiles `bg-white/50` as a
+     distinct class (not caught by `.bg-white`). Dashboard tab count badges
+     and the claim-workspace tool-pill bar use these, and the alpha-over-dark
+     comes out as muted gray-on-dark with unreadable text inside. Flip them
+     to dark fills so counts and labels stay visible. */
+  .dark .bg-white\/90 { background-color: oklch(0.22 0 0 / 0.9) !important; }
+  .dark .bg-white\/80 { background-color: oklch(0.22 0 0 / 0.8) !important; }
+  .dark .bg-white\/70 { background-color: oklch(0.3 0 0) !important; }
+  .dark .bg-white\/60 { background-color: oklch(0.28 0 0) !important; }
+  .dark .bg-white\/50 { background-color: oklch(0.26 0 0) !important; }
+  .dark .bg-white\/40 { background-color: oklch(0.24 0 0) !important; }
+  .dark .bg-slate-200\/70,
+  .dark .bg-gray-200\/70 { background-color: oklch(0.235 0 0) !important; }
+  .dark .bg-slate-100\/70,
+  .dark .bg-gray-100\/70 { background-color: oklch(0.22 0 0) !important; }
+  .dark .hover\:bg-white\/60:hover { background-color: oklch(0.3 0 0) !important; }
+  .dark .hover\:bg-white\/50:hover { background-color: oklch(0.28 0 0) !important; }
+  .dark .hover\:bg-white\/40:hover { background-color: oklch(0.26 0 0) !important; }
+  .dark .bg-slate-800,
+  .dark .bg-gray-800 { background-color: oklch(0.22 0 0) !important; }
+  .dark .bg-slate-900,
+  .dark .bg-gray-900 { background-color: oklch(0.18 0 0) !important; }
+  .dark .bg-slate-950,
+  .dark .bg-gray-950 { background-color: oklch(0.14 0 0) !important; }
+
+  /* Text */
+  .dark .text-black,
+  .dark .text-slate-900,
+  .dark .text-gray-900 { color: oklch(0.985 0 0) !important; }
+  .dark .text-slate-800,
+  .dark .text-gray-800 { color: oklch(0.93 0 0) !important; }
+  .dark .text-slate-700,
+  .dark .text-gray-700 { color: oklch(0.84 0 0) !important; }
+  .dark .text-slate-600,
+  .dark .text-gray-600 { color: oklch(0.72 0 0) !important; }
+  .dark .text-slate-500,
+  .dark .text-gray-500 { color: oklch(0.64 0 0) !important; }
+  .dark .text-slate-400,
+  .dark .text-gray-400 { color: oklch(0.58 0 0) !important; }
+  .dark .text-slate-300,
+  .dark .text-gray-300 { color: oklch(0.78 0 0) !important; }
+
+  /* Borders / rings / dividers */
+  .dark .border-slate-100,
+  .dark .border-gray-100 { border-color: oklch(1 0 0 / 6%) !important; }
+  .dark .border-slate-200,
+  .dark .border-gray-200 { border-color: oklch(1 0 0 / 10%) !important; }
+  .dark .border-slate-300,
+  .dark .border-gray-300 { border-color: oklch(1 0 0 / 15%) !important; }
+  .dark .ring-slate-200,
+  .dark .ring-gray-200 { --tw-ring-color: oklch(1 0 0 / 10%) !important; }
+  .dark .ring-slate-100,
+  .dark .ring-gray-100 { --tw-ring-color: oklch(1 0 0 / 6%) !important; }
+  .dark .divide-slate-200 > :not([hidden]) ~ :not([hidden]),
+  .dark .divide-gray-200 > :not([hidden]) ~ :not([hidden]) { border-color: oklch(1 0 0 / 10%) !important; }
+  .dark .divide-slate-100 > :not([hidden]) ~ :not([hidden]),
+  .dark .divide-gray-100 > :not([hidden]) ~ :not([hidden]) { border-color: oklch(1 0 0 / 6%) !important; }
+
+  /* Hover variants on neutral surfaces (lists, menu items) */
+  .dark .hover\:bg-slate-50:hover,
+  .dark .hover\:bg-gray-50:hover { background-color: oklch(0.23 0 0) !important; }
+  .dark .hover\:bg-slate-100:hover,
+  .dark .hover\:bg-gray-100:hover { background-color: oklch(0.27 0 0) !important; }
+  .dark .hover\:bg-white:hover { background-color: oklch(0.235 0 0) !important; }
+
+  /* Pastel tint surfaces — dim down so they don't glare on dark */
+  .dark .bg-blue-50 { background-color: oklch(0.29 0.07 240) !important; }
+  .dark .bg-blue-100 { background-color: oklch(0.33 0.09 240) !important; }
+  .dark .bg-emerald-50,
+  .dark .bg-green-50 { background-color: oklch(0.29 0.07 150) !important; }
+  .dark .bg-emerald-100,
+  .dark .bg-green-100 { background-color: oklch(0.33 0.09 150) !important; }
+  .dark .bg-amber-50,
+  .dark .bg-yellow-50 { background-color: oklch(0.3 0.06 85) !important; }
+  .dark .bg-amber-100,
+  .dark .bg-yellow-100 { background-color: oklch(0.34 0.08 85) !important; }
+  .dark .bg-red-50,
+  .dark .bg-rose-50 { background-color: oklch(0.3 0.08 20) !important; }
+  .dark .bg-red-100,
+  .dark .bg-rose-100 { background-color: oklch(0.34 0.1 20) !important; }
+  .dark .bg-orange-50 { background-color: oklch(0.3 0.08 55) !important; }
+  .dark .bg-orange-100 { background-color: oklch(0.34 0.1 55) !important; }
+  .dark .bg-purple-50,
+  .dark .bg-violet-50 { background-color: oklch(0.3 0.08 300) !important; }
+  .dark .bg-purple-100,
+  .dark .bg-violet-100 { background-color: oklch(0.34 0.1 300) !important; }
+  .dark .bg-sky-50 { background-color: oklch(0.29 0.07 230) !important; }
+  .dark .bg-sky-100 { background-color: oklch(0.33 0.09 230) !important; }
+  .dark .bg-indigo-50 { background-color: oklch(0.29 0.08 270) !important; }
+  .dark .bg-indigo-100 { background-color: oklch(0.33 0.1 270) !important; }
+
+  /* Deep accent text — lift so they contrast on dark surfaces */
+  .dark .text-blue-700,
+  .dark .text-blue-800,
+  .dark .text-blue-900 { color: oklch(0.8 0.15 240) !important; }
+  .dark .text-emerald-700,
+  .dark .text-emerald-800,
+  .dark .text-emerald-900,
+  .dark .text-green-700,
+  .dark .text-green-800,
+  .dark .text-green-900 { color: oklch(0.8 0.15 150) !important; }
+  .dark .text-amber-700,
+  .dark .text-amber-800,
+  .dark .text-amber-900,
+  .dark .text-yellow-700,
+  .dark .text-yellow-800,
+  .dark .text-yellow-900 { color: oklch(0.86 0.14 85) !important; }
+  .dark .text-red-700,
+  .dark .text-red-800,
+  .dark .text-red-900,
+  .dark .text-rose-700,
+  .dark .text-rose-800,
+  .dark .text-rose-900 { color: oklch(0.8 0.17 20) !important; }
+  .dark .text-orange-700,
+  .dark .text-orange-800 { color: oklch(0.82 0.15 55) !important; }
+  .dark .text-purple-700,
+  .dark .text-purple-800,
+  .dark .text-violet-700,
+  .dark .text-violet-800 { color: oklch(0.82 0.14 300) !important; }
+  .dark .text-indigo-700,
+  .dark .text-indigo-800 { color: oklch(0.82 0.14 270) !important; }
+
+  /* Input/select/textarea defaults — many are raw <input> without hp-* */
+  .dark input:not(.light-only input):not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]),
+  .dark select:not(.light-only select),
+  .dark textarea:not(.light-only textarea) {
+    background-color: oklch(0.205 0 0);
+    color: oklch(0.985 0 0);
+    border-color: oklch(1 0 0 / 12%);
+    color-scheme: dark;
+  }
+  .dark input::placeholder,
+  .dark textarea::placeholder { color: oklch(0.556 0 0); }
+
+  /* Native file-picker button inside file inputs */
+  .dark input[type="file"]::file-selector-button {
+    background-color: oklch(0.3 0 0);
+    color: oklch(0.985 0 0);
+    border-color: oklch(1 0 0 / 15%);
+  }
+
+  /* Shadows — flatten so they don't look like dark halos on dark */
+  .dark .shadow-sm,
+  .dark .shadow,
+  .dark .shadow-md { box-shadow: 0 1px 2px rgb(0 0 0 / 0.4), 0 0 0 1px oklch(1 0 0 / 4%) !important; }
+  .dark .shadow-lg,
+  .dark .shadow-xl { box-shadow: 0 8px 24px rgb(0 0 0 / 0.5), 0 0 0 1px oklch(1 0 0 / 5%) !important; }
+
+  /* Backdrop/overlay — ensure modals still dim visibly over dark pages */
+  .dark .bg-black\/50 { background-color: rgb(0 0 0 / 0.65) !important; }
+  .dark .bg-black\/40 { background-color: rgb(0 0 0 / 0.6) !important; }
+  .dark .bg-black\/30 { background-color: rgb(0 0 0 / 0.55) !important; }
+
+  /* ── .light-only reverts — restore the LIGHT visual values for any subtree
+        marked with .light-only, even on a dark page. Specificity (0,2,0)
+        matches the dark overrides above; placed LATER so source order wins.
+        Use this on report-preview panes and form editors meant to look like
+        their printed PDF (Summary print root, Award / Notes / DV / Invoice /
+        Cover Letter / LOU previews, ClaimWorkspace tab content). ───────── */
+
+  .light-only { color-scheme: light; }
+
+  .light-only .bg-white,
+  .light-only.bg-white { background-color: white !important; }
+  .light-only .bg-slate-50,
+  .light-only .bg-gray-50,
+  .light-only.bg-slate-50,
+  .light-only.bg-gray-50 { background-color: rgb(248 250 252) !important; }
+  .light-only .bg-slate-100,
+  .light-only .bg-gray-100,
+  .light-only.bg-slate-100,
+  .light-only.bg-gray-100 { background-color: rgb(241 245 249) !important; }
+  .light-only .bg-slate-200,
+  .light-only .bg-gray-200,
+  .light-only.bg-slate-200,
+  .light-only.bg-gray-200 { background-color: rgb(226 232 240) !important; }
+
+  /* Semi-transparent white reverts — mirror the opacity-variant dark overrides
+     added for the dashboard count badges and claim tool-pill bar. Without
+     these, the login card (bg-white/90) renders dark on an otherwise light
+     page. */
+  .light-only .bg-white\/90,
+  .light-only.bg-white\/90 { background-color: rgb(255 255 255 / 0.9) !important; }
+  .light-only .bg-white\/80,
+  .light-only.bg-white\/80 { background-color: rgb(255 255 255 / 0.8) !important; }
+  .light-only .bg-white\/70,
+  .light-only.bg-white\/70 { background-color: rgb(255 255 255 / 0.7) !important; }
+  .light-only .bg-white\/60 { background-color: rgb(255 255 255 / 0.6) !important; }
+  .light-only .bg-white\/50 { background-color: rgb(255 255 255 / 0.5) !important; }
+  .light-only .bg-white\/40 { background-color: rgb(255 255 255 / 0.4) !important; }
+  .light-only .bg-slate-200\/70,
+  .light-only .bg-gray-200\/70 { background-color: rgb(226 232 240 / 0.7) !important; }
+  .light-only .bg-slate-100\/70,
+  .light-only .bg-gray-100\/70 { background-color: rgb(241 245 249 / 0.7) !important; }
+  .light-only .hover\:bg-white\/60:hover { background-color: rgb(255 255 255 / 0.6) !important; }
+  .light-only .hover\:bg-white\/50:hover { background-color: rgb(255 255 255 / 0.5) !important; }
+  .light-only .hover\:bg-white\/40:hover { background-color: rgb(255 255 255 / 0.4) !important; }
+
+  .light-only .text-black { color: black !important; }
+  .light-only .text-slate-900,
+  .light-only .text-gray-900 { color: rgb(15 23 42) !important; }
+  .light-only .text-slate-800,
+  .light-only .text-gray-800 { color: rgb(30 41 59) !important; }
+  .light-only .text-slate-700,
+  .light-only .text-gray-700 { color: rgb(51 65 85) !important; }
+  .light-only .text-slate-600,
+  .light-only .text-gray-600 { color: rgb(71 85 105) !important; }
+  .light-only .text-slate-500,
+  .light-only .text-gray-500 { color: rgb(100 116 139) !important; }
+  .light-only .text-slate-400,
+  .light-only .text-gray-400 { color: rgb(148 163 184) !important; }
+  .light-only .text-slate-300,
+  .light-only .text-gray-300 { color: rgb(203 213 225) !important; }
+
+  .light-only .border-slate-100,
+  .light-only .border-gray-100 { border-color: rgb(241 245 249) !important; }
+  .light-only .border-slate-200,
+  .light-only .border-gray-200 { border-color: rgb(226 232 240) !important; }
+  .light-only .border-slate-300,
+  .light-only .border-gray-300 { border-color: rgb(203 213 225) !important; }
+  .light-only .ring-slate-200,
+  .light-only .ring-gray-200 { --tw-ring-color: rgb(226 232 240) !important; }
+  .light-only .divide-slate-200 > :not([hidden]) ~ :not([hidden]),
+  .light-only .divide-gray-200 > :not([hidden]) ~ :not([hidden]) { border-color: rgb(226 232 240) !important; }
+
+  .light-only .hover\:bg-slate-50:hover,
+  .light-only .hover\:bg-gray-50:hover { background-color: rgb(248 250 252) !important; }
+  .light-only .hover\:bg-slate-100:hover,
+  .light-only .hover\:bg-gray-100:hover { background-color: rgb(241 245 249) !important; }
+
+  /* Pastel surfaces revert */
+  .light-only .bg-blue-50 { background-color: rgb(239 246 255) !important; }
+  .light-only .bg-blue-100 { background-color: rgb(219 234 254) !important; }
+  .light-only .bg-emerald-50 { background-color: rgb(236 253 245) !important; }
+  .light-only .bg-emerald-100 { background-color: rgb(209 250 229) !important; }
+  .light-only .bg-green-50 { background-color: rgb(240 253 244) !important; }
+  .light-only .bg-green-100 { background-color: rgb(220 252 231) !important; }
+  .light-only .bg-amber-50 { background-color: rgb(255 251 235) !important; }
+  .light-only .bg-amber-100 { background-color: rgb(254 243 199) !important; }
+  .light-only .bg-yellow-50 { background-color: rgb(254 252 232) !important; }
+  .light-only .bg-yellow-100 { background-color: rgb(254 249 195) !important; }
+  .light-only .bg-red-50 { background-color: rgb(254 242 242) !important; }
+  .light-only .bg-red-100 { background-color: rgb(254 226 226) !important; }
+  .light-only .bg-rose-50 { background-color: rgb(255 241 242) !important; }
+  .light-only .bg-rose-100 { background-color: rgb(255 228 230) !important; }
+  .light-only .bg-orange-50 { background-color: rgb(255 247 237) !important; }
+  .light-only .bg-orange-100 { background-color: rgb(255 237 213) !important; }
+  .light-only .bg-purple-50 { background-color: rgb(250 245 255) !important; }
+  .light-only .bg-violet-50 { background-color: rgb(245 243 255) !important; }
+  .light-only .bg-sky-50 { background-color: rgb(240 249 255) !important; }
+  .light-only .bg-sky-100 { background-color: rgb(224 242 254) !important; }
+  .light-only .bg-indigo-50 { background-color: rgb(238 242 255) !important; }
+
+  /* Deep accent text revert */
+  .light-only .text-blue-700 { color: rgb(29 78 216) !important; }
+  .light-only .text-blue-800 { color: rgb(30 64 175) !important; }
+  .light-only .text-blue-900 { color: rgb(30 58 138) !important; }
+  .light-only .text-emerald-700 { color: rgb(4 120 87) !important; }
+  .light-only .text-emerald-800 { color: rgb(6 95 70) !important; }
+  .light-only .text-emerald-900 { color: rgb(6 78 59) !important; }
+  .light-only .text-green-700 { color: rgb(21 128 61) !important; }
+  .light-only .text-green-800 { color: rgb(22 101 52) !important; }
+  .light-only .text-green-900 { color: rgb(20 83 45) !important; }
+  .light-only .text-amber-700 { color: rgb(180 83 9) !important; }
+  .light-only .text-amber-800 { color: rgb(146 64 14) !important; }
+  .light-only .text-amber-900 { color: rgb(120 53 15) !important; }
+  .light-only .text-yellow-700 { color: rgb(161 98 7) !important; }
+  .light-only .text-yellow-800 { color: rgb(133 77 14) !important; }
+  .light-only .text-red-700 { color: rgb(185 28 28) !important; }
+  .light-only .text-red-800 { color: rgb(153 27 27) !important; }
+  .light-only .text-red-900 { color: rgb(127 29 29) !important; }
+  .light-only .text-rose-700 { color: rgb(190 18 60) !important; }
+  .light-only .text-rose-800 { color: rgb(159 18 57) !important; }
+  .light-only .text-orange-700 { color: rgb(194 65 12) !important; }
+  .light-only .text-orange-800 { color: rgb(154 52 18) !important; }
+  .light-only .text-purple-700 { color: rgb(126 34 206) !important; }
+  .light-only .text-violet-700 { color: rgb(109 40 217) !important; }
+  .light-only .text-indigo-700 { color: rgb(67 56 202) !important; }
+
+  /* hp-* reverts */
+  .light-only .hp-card,
+  .light-only.hp-card {
+    background: white !important;
+    border-color: rgb(226 232 240) !important;
+  }
+  .light-only .hp-input,
+  .light-only .hp-textarea,
+  .light-only .hp-select {
+    background: white !important;
+    color: rgb(15 23 42) !important;
+    border-color: rgb(226 232 240) !important;
+  }
+  .light-only .hp-input::placeholder,
+  .light-only .hp-textarea::placeholder { color: rgb(148 163 184) !important; }
+  .light-only .hp-label { color: rgb(51 65 85) !important; }
+  .light-only .hp-link { color: rgb(37 99 235) !important; }
+  .light-only .hp-link:hover { color: rgb(29 78 216) !important; }
+  .light-only .hp-chip {
+    background: rgb(241 245 249) !important;
+    color: rgb(51 65 85) !important;
+  }
+  .light-only .hp-chip-strong {
+    background: rgb(15 23 42) !important;
+    color: white !important;
+  }
+  .light-only .hp-tabbar { background: rgb(241 245 249) !important; }
+  .light-only .hp-tab { color: rgb(71 85 105) !important; }
+  .light-only .hp-tab-active {
+    background: white !important;
+    color: rgb(15 23 42) !important;
+    box-shadow: 0 1px 0 rgb(0 0 0 / 0.02), 0 1px 2px rgb(0 0 0 / 0.05) !important;
+  }
+  .light-only .hp-display,
+  .light-only .hp-section { color: rgb(15 23 42) !important; }
+  .light-only .hp-eyebrow { color: rgb(100 116 139) !important; }
+  .light-only .hp-divider { border-top-color: rgb(226 232 240) !important; }
+  .light-only .hp-empty { color: rgb(100 116 139) !important; }
+  .light-only .hp-empty strong { color: rgb(51 65 85) !important; }
+  .light-only .hp-btn-secondary {
+    background: white !important;
+    color: rgb(15 23 42) !important;
+    box-shadow: inset 0 0 0 1px rgb(226 232 240) !important;
+  }
+  .light-only .hp-btn-ghost { color: rgb(71 85 105) !important; }
+
+  /* Native inputs — revert dark text/bg inside light-only subtrees */
+  .light-only input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]),
+  .light-only select,
+  .light-only textarea {
+    background-color: white !important;
+    color: rgb(15 23 42) !important;
+    border-color: rgb(226 232 240) !important;
+    color-scheme: light !important;
+  }
+  .light-only input::placeholder,
+  .light-only textarea::placeholder { color: rgb(148 163 184) !important; }
+
+  /* Shadows revert */
+  .light-only .shadow-sm,
+  .light-only .shadow,
+  .light-only .shadow-md { box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05) !important; }
+}
+
+/* Print overrides — printing is ALWAYS light. If the user is viewing in
+   dark mode and prints, the generated PDF / paper output must look the
+   same as the light-mode version. `@media print` cascades after screen
+   rules; force the critical surfaces back to white. */
+@media print {
+  html.dark,
+  html.dark body,
+  html.dark .bg-white,
+  html.dark .hp-card {
+    background-color: white !important;
+    color: rgb(15 23 42) !important;
+  }
+}

@@ -67,7 +67,7 @@ import { ContractClient } from '@/app/claims/[id]/contract/contract-client'
 import { CoverLetterTab } from '@/components/claim/cover-letter-tab'
 import { fetchGuidelineNamesBrowser } from '@/lib/supabase/insurance-guidelines'
 import { useDuplicateCheck, type DuplicateResult } from '@/lib/supabase/claim-duplicates'
-import { AssignmentSheet, triggerAssignmentSheetPrint } from '@/components/claim/assignment-sheet'
+import { triggerAssignmentSheetPrint } from '@/components/claim/assignment-sheet'
 import { DVTab, finalDvFor, type DVState } from '@/components/claim/dv-tab'
 import { LOUTab } from '@/components/claim/lou-tab'
 import type { LOUState } from '@/lib/acv/types'
@@ -4136,12 +4136,17 @@ function ClaimWorkspaceInner({ claimId, isLockedForMe }: { claimId: string; isLo
     return TOOL_TABS.filter(t => byType(t.id) && !disabledToolSet.has(t.id))
   }, [claim.claimTypes, disabledToolSet])
 
-  const sortedListings = useMemo(() => {
-    const filtered = listings.filter((comp) => {
-      // Subject-spec matching (default on). Manual comps are always kept —
-      // Henry entered them deliberately.
+  const { sortedListings, bodyTypeAutoWidened } = useMemo(() => {
+    // VIN decoders occasionally misclassify body type (classic case: Kia Soul
+    // → "SUV" from MarketCheck when real listings are Hatchback/Wagon). When
+    // strict matching eliminates every comp, we auto-drop the bodyType gate
+    // (and surface a banner) so the user doesn't stare at an empty results
+    // table and assume the search is broken. Any other spec match stays
+    // strict — bodyType is the only known-flaky one.
+    const applyFilters = (includeBodyType: boolean) => listings.filter((comp) => {
       if (!comp.id.startsWith('manual-')) {
         for (const key of Object.keys(MATCH_LABELS) as MatchKey[]) {
+          if (key === 'bodyType' && !includeBodyType) continue
           const subjectVal = claim[key]
           if (matchSubject[key] && subjectVal && !matchesSubjectSpec(key, subjectVal, comp[key] || '')) {
             return false
@@ -4156,6 +4161,22 @@ function ClaimWorkspaceInner({ claimId, isLockedForMe }: { claimId: string; isLo
       if (activeFilters.bodyType.length > 0 && !activeFilters.bodyType.includes(comp.bodyType || '')) return false
       return true
     })
+
+    const strict = applyFilters(true)
+    let filtered = strict
+    let widened = false
+    // Auto-widen conditions: strict returned nothing, body-match was on, a
+    // subject bodyType is actually present (nothing to widen if there's no
+    // bodyType to begin with), and widening produces results. If widening
+    // STILL yields zero, use strict (empty) so no misleading banner shows.
+    if (strict.length === 0 && matchSubject.bodyType && (claim.bodyType || '').trim()) {
+      const widenedList = applyFilters(false)
+      if (widenedList.length > 0) {
+        filtered = widenedList
+        widened = true
+      }
+    }
+
     const sorted = [...filtered]
     switch (sortBy) {
       case 'mileage-closest':
@@ -4183,7 +4204,7 @@ function ClaimWorkspaceInner({ claimId, isLockedForMe }: { claimId: string; isLo
         sorted.sort((a, b) => a.distanceMi - b.distanceMi)
         break
     }
-    return sorted
+    return { sortedListings: sorted, bodyTypeAutoWidened: widened }
   }, [listings, sortBy, claim, activeFilters, matchSubject])
 
   const selectedComps = selectedIds
@@ -5257,7 +5278,30 @@ function ClaimWorkspaceInner({ claimId, isLockedForMe }: { claimId: string; isLo
           {!isNew && editingId && (
             <button
               type="button"
-              onClick={() => triggerAssignmentSheetPrint(`${claim.maNumber || 'claim'}-assignment-sheet.pdf`)}
+              onClick={() => triggerAssignmentSheetPrint(
+                `${claim.maNumber || 'claim'}-assignment-sheet.pdf`,
+                {
+                  claim,
+                  status,
+                  submittedAt,
+                  assignedToName: allProfiles.find(p => p.id === assignedTo)?.name
+                    || allProfiles.find(p => p.id === assignedTo)?.email
+                    || '',
+                  notesType: reportsState.notesType,
+                  opposingAppraiserName: reportsState.notesData.appraiserName,
+                  opposingAppraiserCompany: reportsState.notesData.appraiserCompany,
+                  opposingAppraiserValue: reportsState.notesData.appraiserValueNum,
+                  insuranceOfferValue: reportsState.notesData.insuranceOfferNum ?? 0,
+                  agreementAmount: reportsState.notesData.agreementAmountNum,
+                  umpireAmount: reportsState.notesData.umpireAmountNum,
+                  ourAcv: result.acv,
+                  dv: dv ?? null,
+                  claimTypes: claim.claimTypes ?? [],
+                  maEstValue: reportsState.notesData.estValueNum ?? 0,
+                  maStorageValue: reportsState.notesData.storageValueNum ?? 0,
+                  proceededToUmpire,
+                },
+              )}
               className="hp-btn hp-btn-sm hp-btn-ghost"
               title="Print the assignment sheet"
             >
@@ -6722,6 +6766,19 @@ function ClaimWorkspaceInner({ claimId, isLockedForMe }: { claimId: string; isLo
               </div>
             )}
 
+            {/* VIN decoders occasionally misclassify body type (e.g. Kia Soul → "SUV")
+                — when strict matching returns 0 we auto-widen past bodyType so the user
+                still sees comps. Flag it so the override is visible, not silent. */}
+            {!loadingComps && bodyTypeAutoWidened && unselectedListings.length > 0 && (
+              <div className="flex items-start gap-3 p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-sm">
+                <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
+                <span>
+                  No listings matched body type <span className="font-semibold">{claim.bodyType}</span> — showing all body types instead.
+                  Toggle the <span className="font-semibold">Body</span> match chip above to re-apply if the subject body type is correct.
+                </span>
+              </div>
+            )}
+
             {/* Results header */}
             {unselectedListings.length > 0 && (
               <div className="space-y-3">
@@ -7205,34 +7262,6 @@ function ClaimWorkspaceInner({ claimId, isLockedForMe }: { claimId: string; isLo
         )}
       </main>
 
-      {/* Assignment Sheet — hidden print portal. Only renders in print output
-          when the Print button is clicked (triggerAssignmentSheetPrint adds a
-          body class the sheet's CSS reads). Always mounted so the print flow
-          has no async delay. */}
-      {!isNew && editingId && (
-        <AssignmentSheet
-          data={{
-            claim,
-            status,
-            submittedAt,
-            assignedToName: allProfiles.find(p => p.id === assignedTo)?.name
-              || allProfiles.find(p => p.id === assignedTo)?.email
-              || '',
-            notesType: reportsState.notesType,
-            opposingAppraiserName: reportsState.notesData.appraiserName,
-            opposingAppraiserCompany: reportsState.notesData.appraiserCompany,
-            opposingAppraiserValue: reportsState.notesData.appraiserValueNum,
-            insuranceOfferValue: reportsState.notesData.insuranceOfferNum ?? 0,
-            agreementAmount: reportsState.notesData.agreementAmountNum,
-            umpireAmount: reportsState.notesData.umpireAmountNum,
-            ourAcv: result.acv,
-            dv: dv ?? null,
-            claimTypes: claim.claimTypes ?? [],
-            maEstValue: reportsState.notesData.estValueNum ?? 0,
-            maStorageValue: reportsState.notesData.storageValueNum ?? 0,
-          }}
-        />
-      )}
     </div>
   )
 }
