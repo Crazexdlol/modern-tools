@@ -1,5 +1,24 @@
 -- Creates the private chat-attachments bucket and its storage policies.
--- Run after migration-chat.sql.
+--
+-- HARD DEPENDENCY: migration-chat.sql MUST be applied first. If it hasn't
+-- been, this migration will raise an exception rather than create orphan
+-- policies - because orphan policies on storage.objects that reference a
+-- non-existent table cause EVERY authenticated storage query project-wide
+-- to fail with "DatabaseInvalidObjectDefinition". Learned the hard way
+-- 2026-10-27: a stray run of this file broke the Documents tab for every
+-- claim on the whole project. The guard below prevents a repeat.
+
+do $$
+begin
+  if not exists (
+    select 1 from information_schema.tables
+    where table_schema = 'public' and table_name = 'chat_conversation_members'
+  ) then
+    raise exception
+      'migration-chat-storage.sql requires chat_conversation_members to exist. '
+      'Run supabase/migration-chat.sql FIRST, then rerun this file.';
+  end if;
+end $$;
 
 insert into storage.buckets (id, name, public)
   values ('chat-attachments', 'chat-attachments', false)
