@@ -4,6 +4,65 @@ Running log of every working session on Modern Tools. **Newest entry on top.**
 
 ---
 
+## 2026-10-27 — Documents outage incident + env-var newline fix + chat storage migration footgun
+
+**Worked on:** Henry hit a cascading production incident. Documents tab was broken project-wide. Root-caused and fixed three stacked issues; chat system rolled back and will redeploy next session.
+
+**Incident timeline (newest at bottom):**
+
+1. **Chat system shipped** earlier same day (deploy `dpl_FfoGRxHhAJcNh6i68y8aEXsxy9EN`). Build + deploy clean. Chat UI gated on migrations which Henry hadn't run yet.
+2. **Henry reported "all claims Documents broken"** — rolled back chat deploy to `dpl_4tLE4yPFLuAt8L1fa5UrdGqABAmt` (yesterday's rate-card deploy). Didn't fix it. So chat wasn't the cause.
+3. **Vercel Fluid Compute showed 4h 35m / 4h — exceeded.** Henry upgraded to Pro. Didn't fix it alone.
+4. **Vercel function logs showed ERR_REQUIRE_ESM** on every `/claims/[id]` SSR: `@exodus/bytes/encoding-lite.js` can't be `require()`'d by `html-encoding-sniffer`. Chain: `isomorphic-dompurify@4.2.0` → `jsdom@30.0.1` → `@exodus/bytes@1.15.1` (ESM-only). Fixed by downgrading `isomorphic-dompurify` to `2.26.0` (pulls `jsdom@26` + `whatwg-encoding` instead). Deploy `dpl_29ACmBmqFa45f8EeuDDUpSFPwvXR`. Claim pages stopped 500ing.
+5. **Documents STILL broken** — different error now, from Supabase storage: `400 "schema is invalid or incompatible"`. Service-role tests from CLI always worked (sign + download <400 ms). Only Henry's browser failed.
+6. **Env var inspection** showed `NEXT_PUBLIC_SUPABASE_URL` was 41 bytes (should be 40) and `NEXT_PUBLIC_SUPABASE_ANON_KEY` was 209 bytes (should be 208) — real trailing `\n` characters stored in Vercel for 217 days. Henry fixed manually in Vercel UI. Deploy `dpl_2HLkiWG8afzDgvmfDrys5rzSAkcj`. Env vars now clean.
+7. **STILL broken.** Supabase storage response body revealed: `{"statusCode":"503","error":"DatabaseInvalidObjectDefinition","message":"The database schema is invalid or incompatible."}`. Pulled policies list — four `chat_attachments_*` policies exist on `storage.objects` that reference `chat_conversation_members`, a table **that doesn't exist** (migration-chat.sql was never run; only migration-chat-storage.sql was). Postgres has to parse every policy when planning any query against `storage.objects`, so the orphan refs poisoned every single storage request project-wide. Service-role bypasses RLS so it was invisible from my diagnostics.
+8. **Fix: dropped the four orphan policies** via SQL Editor. Documents work. Total outage ~90 min.
+
+**Changed:**
+- `package.json` + `package-lock.json` — downgraded `isomorphic-dompurify` from `^4.2.0` to `2.26.0`. HARD RULE: don't bump isomorphic-dompurify past 2.x until jsdom's `@exodus/bytes` ESM/CJS mess is resolved upstream.
+- `src/components/app-header.tsx` — hid `<ChatHeaderButton />` (chat system is still rolled back; migration-chat.sql not run; polling the chat endpoints was 500-noise during the outage).
+- `supabase/migration-chat-storage.sql` — added guard at top that raises an exception if `chat_conversation_members` doesn't exist yet. Prevents a recurrence of the orphan-policy footgun that caused today's outage.
+- `src/lib/supabase/clients.ts` + related — already shipped yesterday for the rate card. Not touched today.
+- Vercel env vars — Henry manually edited `NEXT_PUBLIC_SUPABASE_URL` + `NEXT_PUBLIC_SUPABASE_ANON_KEY` to remove trailing `\n` characters (via Vercel dashboard, not CLI).
+
+**Deploys (chronological):**
+
+| Deploy ID | Content |
+|---|---|
+| `dpl_FfoGRxHhAJcNh6i68y8aEXsxy9EN` | Chat system (rolled back) |
+| `dpl_4tLE4yPFLuAt8L1fa5UrdGqABAmt` | Pre-chat state (yesterday's rate card) — ROLLBACK TARGET |
+| `dpl_29ACmBmqFa45f8EeuDDUpSFPwvXR` | isomorphic-dompurify downgrade |
+| `dpl_HP9EbjSb71qhWZgUcfEjyvnEoiwf` | ChatHeaderButton hidden |
+| `dpl_2HLkiWG8afzDgvmfDrys5rzSAkcj` | After env-var cleanup |
+
+**Current live:** `dpl_2HLkiWG8afzDgvmfDrys5rzSAkcj`. All auth'd Supabase storage requests work. Documents tab functional. No chat button in header.
+
+**Rollback target if next deploy breaks:** `dpl_2HLkiWG8afzDgvmfDrys5rzSAkcj` is now the safe state. Rollback:
+```
+npx vercel promote https://modern-tools-ojj6eapyo-henry-as-projects-88caed67.vercel.app --scope henry-as-projects-88caed67 --yes
+```
+
+**Lessons for the next session:**
+
+1. **Storage.objects RLS policies that reference tables from pending migrations will poison the entire bucket.** Any migration that adds a policy referencing another table MUST verify the referenced table exists first, or be in the same transaction / migration file. Guard pattern now in place at `supabase/migration-chat-storage.sql`.
+2. **Vercel env vars pulled via CLI dump include trailing `\n` in the dotenv file when the stored value has one.** Audit any production env var pull for trailing bytes before trusting them.
+3. **"DatabaseInvalidObjectDefinition" from Supabase storage == check the RLS policies on `storage.objects` for broken references.** Not a Supabase bug or an outage.
+4. **Service-role diagnostic probes bypass RLS and will miss any RLS-induced failure.** Always test the user-auth path (via anon key + session JWT) when debugging storage.
+5. **jsdom 30 + html-encoding-sniffer 6 + @exodus/bytes 1.15 is a broken combo** on Node runtime. `isomorphic-dompurify@2.x` sticks to `jsdom@26` which is safe. Pin until upstream fixes.
+
+**In progress / broken / unknowns:**
+- Chat system is NOT currently in prod (button hidden, API routes still present but harmless). Decision deferred to next session: redeploy fully once migrations are confirmed-runnable in sequence; OR leave hidden until Henry wants to flip the switch.
+- Original 2026-10-27 question — Summary PDF auto-attach failure on claim 555657 — never resolved. The debugging got overtaken by the Documents outage. Still open.
+- Original 2026-10-27 question — handoff process on claim 555657 — the answer is: yes, handoff is required because `claimTypes = ["acv","rta"]`, Negotiating Appraiser is Alex Aleksanyan, assignee is Henry. Henry must click "Complete Report ▾" and pick Alex. Not yet communicated to Henry in a formal way.
+
+**Next:**
+- Finish the handoff explanation for 555657.
+- Go back to Summary auto-attach bug on 555657.
+- Decide chat redeploy strategy. If redeploying, ensure migration-chat.sql runs BEFORE migration-chat-storage.sql (now guarded by the exception in the storage file).
+
+---
+
 ## 2026-10-27 — Chat system v1 (1:1 only) + per-client rate card follow-up
 
 **Worked on:** Built a 1:1 user-to-user chat system from scratch. Permission-gated (admin-managed symmetric matrix), admin override, hybrid realtime (poll badge + subscribe open thread), browser push notifications on new messages, 10 MB attachments, edit/soft-delete own messages, typing indicators. Group chat intentionally deferred to v2.
