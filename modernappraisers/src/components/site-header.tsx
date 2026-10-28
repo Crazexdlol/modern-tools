@@ -101,8 +101,8 @@ export function SiteHeader() {
           the sticky header's stacking context doesn't trap it below sibling
           page content on iOS Safari. z-50 keeps it above everything. */}
       {open && (
-        <div className="lg:hidden fixed inset-0 z-50 bg-[color:var(--color-bg)]">
-          <div className="h-16 border-b border-[color:var(--color-border)] flex items-center justify-between px-5">
+        <div className="lg:hidden fixed inset-0 z-50 bg-[color:var(--color-bg)] flex flex-col">
+          <div className="h-16 shrink-0 border-b border-[color:var(--color-border)] flex items-center justify-between px-5">
             <Link href="/" className="flex items-center shrink-0" aria-label="Modern Appraisers home">
               <Image
                 src="/logo-ma.png"
@@ -124,7 +124,7 @@ export function SiteHeader() {
               </svg>
             </button>
           </div>
-          <nav className="px-5 py-8 flex flex-col gap-1 text-xl font-semibold text-[color:var(--color-ink)]">
+          <nav className="flex-1 overflow-y-auto px-5 py-8 flex flex-col gap-1 text-xl font-semibold text-[color:var(--color-ink)]">
             {NAV_LINKS_LEFT.map(l => (
               <Link
                 key={l.href}

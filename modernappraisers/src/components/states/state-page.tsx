@@ -35,7 +35,7 @@ export function StatePage({ state }: { state: StateContent }) {
             <Link
               key={s.href}
               href={s.href}
-              className="block rounded-lg border border-black/10 hover:border-[color:var(--color-accent)] p-5 transition-colors bg-white"
+              className="block rounded-lg border border-white/10 hover:border-[color:var(--color-accent)] p-5 transition-colors bg-[color:var(--color-bg-elevated)]"
             >
               <div className="font-semibold text-[color:var(--color-ink)]">{s.title}</div>
               <div className="text-sm text-[color:var(--color-ink-muted)] mt-1">{s.desc}</div>
@@ -52,7 +52,7 @@ export function StatePage({ state }: { state: StateContent }) {
               <Link
                 key={slug}
                 href={`/states/${slug}`}
-                className="inline-block px-4 py-2 rounded-md border border-black/10 hover:border-[color:var(--color-accent)] bg-white text-sm text-[color:var(--color-ink)]"
+                className="inline-block px-4 py-2 rounded-md border border-white/10 hover:border-[color:var(--color-accent)] bg-[color:var(--color-bg-elevated)] text-sm text-[color:var(--color-ink)]"
               >
                 {nameBySlug.get(slug)}
               </Link>

@@ -5,7 +5,7 @@ export function StateCard({ state }: { state: StateMeta }) {
   return (
     <Link
       href={`/states/${state.slug}`}
-      className="block rounded-lg border border-black/10 hover:border-[color:var(--color-accent)] p-4 transition-colors bg-white"
+      className="block rounded-lg border border-white/10 hover:border-[color:var(--color-accent)] p-4 transition-colors bg-[color:var(--color-bg-elevated)]"
     >
       <div className="text-xs font-semibold text-[color:var(--color-ink-muted)] mb-1">{state.abbreviation}</div>
       <div className="text-base font-semibold text-[color:var(--color-ink)]">{state.name}</div>

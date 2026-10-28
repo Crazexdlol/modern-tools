@@ -60,7 +60,7 @@ export function StateMegaMenu() {
 
       {open && (
         <div
-          className="absolute left-0 top-full mt-3 z-40 bg-white border border-black/10 rounded-lg shadow-xl p-6 w-[760px] max-w-[90vw]"
+          className="absolute left-0 top-full mt-3 z-40 bg-[color:var(--color-bg-elevated)] border border-white/10 rounded-lg shadow-xl p-6 w-[760px] max-w-[90vw]"
           onMouseEnter={cancelClose}
           onMouseLeave={scheduleClose}
         >
@@ -81,7 +81,7 @@ export function StateMegaMenu() {
               </ul>
             ))}
           </div>
-          <div className="mt-4 pt-3 border-t border-black/5 text-right">
+          <div className="mt-4 pt-3 border-t border-white/5 text-right">
             <Link
               href="/states"
               className="text-xs text-[color:var(--color-accent)] font-semibold hover:underline"
