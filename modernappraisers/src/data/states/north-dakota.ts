@@ -6,12 +6,12 @@ const content: StateContent = {
   abbreviation: 'ND',
   heroImage: null,
   intro:
-    "Modern Appraisers delivers independent vehicle appraisal services throughout North Dakota — Fargo, Bismarck, Grand Forks, Minot, and the smaller communities serving the prairie, oil-patch, and agricultural economies. We prepare Actual Cash Value reports for total-loss claims, diminished value documentation after collision repairs, cost-of-repair dispute reviews, and valuations for specialty, classic, commercial, and heavy-duty vehicles common in the region. Our written appraisals assist drivers, attorneys, body shops, and claims teams through appraisal-clause proceedings and settlement discussions.",
+    "The Bakken oil patch brings a heavier commercial fleet into the North Dakota claims mix than most states. Modern Appraisers covers Fargo, Bismarck, Grand Forks, Minot, and the smaller prairie communities. We handle total loss ACV reports, diminished value documentation after repairs, cost of repair reviews, and valuations covering classics, agricultural units, heavy duty commercial vehicles, and specialty equipment. Our written appraisals go into appraisal clause work and settlement conversations with carriers.",
   majorCities: ['Fargo', 'Bismarck', 'Grand Forks', 'Minot'],
   relatedStates: ['montana', 'south-dakota', 'minnesota'],
   seo: {
     title: 'Auto Appraisal Services in North Dakota | Modern Appraisers',
-    description: 'Independent vehicle appraisals in North Dakota. ACV, diminished value, cost-of-repair, and appraisal clause support — Fargo, Bismarck, Grand Forks, Minot.',
+    description: 'Independent vehicle appraisals in North Dakota. ACV, diminished value, cost of repair, and appraisal clause support in Fargo, Bismarck, Grand Forks, Minot.',
   },
   legalSections: null,
   citations: [] as readonly never[],

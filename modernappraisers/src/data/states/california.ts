@@ -6,12 +6,12 @@ const content: StateContent = {
   abbreviation: 'CA',
   heroImage: null,
   intro:
-    "Modern Appraisers handles vehicle appraisal matters throughout California — from the Los Angeles basin and San Diego to the San Francisco Bay Area, Sacramento, and the Central Valley. We prepare Actual Cash Value reports for total-loss settlements, diminished value documentation for post-repair losses, cost-of-repair dispute reviews, and valuations for specialty, classic, and commercial vehicles. Our independent, written appraisals support drivers, attorneys, body shops, and claims professionals in appraisal-clause proceedings, insurance settlement negotiations, and litigation across the state.",
+    "California is the biggest vehicle market in the country, and the claims that come out of it are rarely simple. Modern Appraisers covers it from the LA basin and San Diego up through the Bay Area, Sacramento, and the Central Valley. Our scope: total loss ACV, diminished value, cost of repair disputes, and valuations for exotics, classics, and commercial fleets. When the carrier's figure doesn't reflect what the vehicle was actually worth, our written appraisal is the one you bring to the appraisal clause.",
   majorCities: ['Los Angeles', 'San Francisco', 'San Diego', 'Sacramento', 'San Jose'],
   relatedStates: ['oregon', 'nevada', 'arizona'],
   seo: {
     title: 'Auto Appraisal Services in California | Modern Appraisers',
-    description: 'Independent vehicle appraisals in California. ACV, diminished value, cost-of-repair, and appraisal clause support across Los Angeles, San Francisco, San Diego, Sacramento.',
+    description: 'Independent vehicle appraisals in California. ACV, diminished value, cost of repair, and appraisal clause support in Los Angeles, San Francisco, San Diego, Sacramento.',
   },
   legalSections: null,
   citations: [] as readonly never[],

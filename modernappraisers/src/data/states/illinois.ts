@@ -6,12 +6,12 @@ const content: StateContent = {
   abbreviation: 'IL',
   heroImage: null,
   intro:
-    "Modern Appraisers handles vehicle appraisal matters throughout Illinois — from Chicago and the collar counties out to Rockford, Peoria, Springfield, and the southern Illinois corridor. We prepare independent Actual Cash Value reports for total-loss claims, diminished value documentation for post-repair losses, cost-of-repair dispute reviews, and valuations for specialty, classic, and commercial vehicles. Our documented appraisals support drivers, attorneys, body shops, and claims professionals through appraisal-clause proceedings, settlement negotiation, and litigation statewide.",
+    "Chicago alone generates enough claims to keep a shop busy. Illinois has plenty more spread out through Aurora, Rockford, Peoria, Joliet, Springfield, and the southern corridor. Modern Appraisers handles independent appraisal work across the state: total loss ACV, diminished value after repairs, cost of repair review on disputed estimates, and valuations covering classics, exotics, and commercial units. Our written reports are the ones drivers, attorneys, body shops, and claims teams bring into appraisal clause or settlement negotiations.",
   majorCities: ['Chicago', 'Aurora', 'Rockford', 'Joliet', 'Springfield'],
   relatedStates: ['wisconsin', 'iowa', 'missouri', 'kentucky', 'indiana'],
   seo: {
     title: 'Auto Appraisal Services in Illinois | Modern Appraisers',
-    description: 'Independent vehicle appraisals in Illinois. ACV, diminished value, cost-of-repair, and appraisal clause support — Chicago, Aurora, Rockford, Springfield.',
+    description: 'Independent vehicle appraisals in Illinois. ACV, diminished value, cost of repair, and appraisal clause support in Chicago, Aurora, Rockford, Springfield.',
   },
   legalSections: null,
   citations: [] as readonly never[],

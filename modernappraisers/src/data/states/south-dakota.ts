@@ -6,12 +6,12 @@ const content: StateContent = {
   abbreviation: 'SD',
   heroImage: null,
   intro:
-    "Modern Appraisers serves South Dakota drivers, attorneys, body shops, and claims professionals across Sioux Falls, Rapid City, Aberdeen, and the smaller communities serving the Black Hills, the prairie, and agricultural regions. We prepare independent Actual Cash Value reports for total-loss claims, diminished value documentation after collision repairs, cost-of-repair dispute reviews, and valuations for specialty, classic, agricultural, and commercial vehicles. Our written appraisals support appraisal-clause proceedings, settlement discussions, and litigation.",
+    "Sioux Falls, Rapid City, and Aberdeen anchor South Dakota work for us. The Black Hills, the prairie, and the agricultural stretches bring their own mix of specialty, agricultural, and commercial vehicle claims into the practice. Modern Appraisers handles total loss ACV reports, diminished value documentation after repairs, cost of repair review on disputed estimates, and valuations covering classics, specialty units, and commercial fleets. Written appraisals ready for appraisal clause work and settlement conversations.",
   majorCities: ['Sioux Falls', 'Rapid City', 'Aberdeen'],
   relatedStates: ['north-dakota', 'minnesota', 'iowa', 'nebraska', 'wyoming', 'montana'],
   seo: {
     title: 'Auto Appraisal Services in South Dakota | Modern Appraisers',
-    description: 'Independent vehicle appraisals in South Dakota. ACV, diminished value, cost-of-repair, and appraisal clause support — Sioux Falls, Rapid City, Aberdeen.',
+    description: 'Independent vehicle appraisals in South Dakota. ACV, diminished value, cost of repair, and appraisal clause support in Sioux Falls, Rapid City, Aberdeen.',
   },
   legalSections: null,
   citations: [] as readonly never[],

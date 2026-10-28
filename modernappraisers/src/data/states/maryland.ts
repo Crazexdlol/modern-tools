@@ -6,12 +6,12 @@ const content: StateContent = {
   abbreviation: 'MD',
   heroImage: null,
   intro:
-    "Modern Appraisers handles vehicle appraisal matters across Maryland — Baltimore, Columbia, Silver Spring, Germantown, and Annapolis, as well as the Eastern Shore and western counties. We prepare independent Actual Cash Value reports for total-loss claims, diminished value documentation for post-repair losses, cost-of-repair dispute reviews, and valuations for specialty, classic, and commercial vehicles. Our documented appraisals support drivers, attorneys, body shops, and claims professionals through appraisal-clause proceedings, settlement negotiations, and litigation statewide.",
+    "Baltimore, the DC commuter belt around Silver Spring and Germantown, and Chesapeake coastal counties all generate serious claims volume. Modern Appraisers handles Maryland work across the state, including Columbia and Annapolis plus the Eastern Shore communities. We produce total loss ACV, diminished value documentation, cost of repair reviews, and valuations covering classics, specialty units, and commercial vehicles. Written appraisals that carry weight in appraisal clause proceedings and settlement conversations.",
   majorCities: ['Baltimore', 'Columbia', 'Germantown', 'Silver Spring', 'Annapolis'],
   relatedStates: ['pennsylvania', 'delaware', 'virginia', 'west-virginia'],
   seo: {
     title: 'Auto Appraisal Services in Maryland | Modern Appraisers',
-    description: 'Independent vehicle appraisals in Maryland. ACV, diminished value, cost-of-repair, and appraisal clause support — Baltimore, Columbia, Silver Spring, Annapolis.',
+    description: 'Independent vehicle appraisals in Maryland. ACV, diminished value, cost of repair, and appraisal clause support in Baltimore, Columbia, Silver Spring, Annapolis.',
   },
   legalSections: null,
   citations: [] as readonly never[],

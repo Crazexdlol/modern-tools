@@ -6,12 +6,12 @@ const content: StateContent = {
   abbreviation: 'SC',
   heroImage: null,
   intro:
-    "Modern Appraisers delivers independent vehicle appraisal services throughout South Carolina — from Charleston and the Lowcountry to Columbia, Greenville, Myrtle Beach, and the Upstate communities. We prepare Actual Cash Value reports for total-loss settlements, diminished value documentation for post-repair losses, cost-of-repair dispute reviews, and valuations for specialty, classic, and commercial vehicles. Our written appraisals assist drivers, attorneys, body shops, and claims professionals through appraisal-clause proceedings, settlement negotiations, and litigation.",
+    "Charleston and the Lowcountry handle their share of coastal storm claims. Columbia, Greenville, Myrtle Beach, and the Upstate round out the South Carolina work for us. Modern Appraisers prepares total loss ACV reports, diminished value documentation after repairs, cost of repair review when the estimate and the carrier's figures don't line up, and valuations for classics, specialty units, and commercial vehicles. Our written reports are built for appraisal clause and settlement work.",
   majorCities: ['Charleston', 'Columbia', 'Greenville', 'Myrtle Beach'],
   relatedStates: ['north-carolina', 'georgia'],
   seo: {
     title: 'Auto Appraisal Services in South Carolina | Modern Appraisers',
-    description: 'Independent vehicle appraisals in South Carolina. ACV, diminished value, cost-of-repair, and appraisal clause support — Charleston, Columbia, Greenville, Myrtle Beach.',
+    description: 'Independent vehicle appraisals in South Carolina. ACV, diminished value, cost of repair, and appraisal clause support in Charleston, Columbia, Greenville, Myrtle Beach.',
   },
   legalSections: null,
   citations: [] as readonly never[],

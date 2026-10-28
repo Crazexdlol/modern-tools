@@ -6,12 +6,12 @@ const content: StateContent = {
   abbreviation: 'CO',
   heroImage: null,
   intro:
-    "Across Colorado — from Denver and the Front Range to Colorado Springs, Fort Collins, Boulder, and the Western Slope — Modern Appraisers provides independent vehicle appraisals and dispute-resolution services. We prepare Actual Cash Value reports, diminished value documentation, cost-of-repair reviews, and valuations for specialty vehicles, commercial trucks, and off-road and recreational vehicles common to the state. Our written appraisals support drivers, attorneys, body shops, and claims professionals through appraisal-clause proceedings, settlement discussions, and litigation.",
+    "Elevation changes a lot about what a vehicle market looks like. Modern Appraisers works Colorado claims up and down the Front Range from Denver to Colorado Springs and Fort Collins, out to Boulder, and across to the Western Slope. We handle total loss ACV, diminished value after repairs, cost of repair disputes, classic and specialty valuations, and work on recreational and off road vehicles that get used hard in this state. Our written appraisals are built for appraisal clause and settlement work.",
   majorCities: ['Denver', 'Colorado Springs', 'Aurora', 'Fort Collins', 'Boulder'],
   relatedStates: ['wyoming', 'nebraska', 'kansas', 'oklahoma', 'new-mexico', 'arizona', 'utah'],
   seo: {
     title: 'Auto Appraisal Services in Colorado | Modern Appraisers',
-    description: 'Independent vehicle appraisals in Colorado. ACV, diminished value, cost-of-repair, and appraisal clause support — Denver, Colorado Springs, Boulder, Fort Collins.',
+    description: 'Independent vehicle appraisals in Colorado. ACV, diminished value, cost of repair, and appraisal clause support in Denver, Colorado Springs, Boulder, Fort Collins.',
   },
   legalSections: null,
   citations: [] as readonly never[],

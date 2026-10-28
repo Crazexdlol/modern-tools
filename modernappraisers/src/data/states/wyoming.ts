@@ -6,12 +6,12 @@ const content: StateContent = {
   abbreviation: 'WY',
   heroImage: null,
   intro:
-    "Modern Appraisers delivers independent vehicle appraisal services across Wyoming — Cheyenne, Casper, Laramie, Gillette, and the smaller communities serving the ranching, mining, and energy economies throughout the state. We prepare Actual Cash Value reports for total-loss claims, diminished value documentation after collision repairs, cost-of-repair dispute reviews, and valuations for specialty, classic, recreational, heavy-duty, and commercial vehicles. Our written appraisals assist drivers, attorneys, body shops, and claims professionals through appraisal-clause proceedings and settlement negotiations.",
+    "Wyoming's a ranching and energy state and the vehicle mix shows it. Modern Appraisers works claims in Cheyenne, Casper, Laramie, Gillette, and the smaller towns in between. The practice includes total loss ACV reports, diminished value documentation after repairs, cost of repair review on contested estimates, and valuations covering classics, recreational vehicles, heavy duty commercial units, and specialty equipment. Written appraisals built to carry in appraisal clause and settlement work with carriers.",
   majorCities: ['Cheyenne', 'Casper', 'Laramie', 'Gillette'],
   relatedStates: ['montana', 'south-dakota', 'nebraska', 'colorado', 'utah', 'idaho'],
   seo: {
     title: 'Auto Appraisal Services in Wyoming | Modern Appraisers',
-    description: 'Independent vehicle appraisals in Wyoming. ACV, diminished value, cost-of-repair, and appraisal clause support — Cheyenne, Casper, Laramie, Gillette.',
+    description: 'Independent vehicle appraisals in Wyoming. ACV, diminished value, cost of repair, and appraisal clause support in Cheyenne, Casper, Laramie, Gillette.',
   },
   legalSections: null,
   citations: [] as readonly never[],

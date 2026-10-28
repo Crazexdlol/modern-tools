@@ -6,12 +6,12 @@ const content: StateContent = {
   abbreviation: 'OH',
   heroImage: null,
   intro:
-    "Modern Appraisers handles vehicle appraisal matters across Ohio — Columbus, Cleveland, Cincinnati, Toledo, Akron, Dayton, and the smaller markets throughout the state. We prepare independent Actual Cash Value reports for total-loss claims, diminished value documentation for post-repair losses, cost-of-repair reviews for disputed estimates, and valuations for specialty, classic, and commercial vehicles. Our documented appraisals support drivers, attorneys, body shops, and claims professionals in appraisal-clause proceedings, settlement negotiations, and litigation statewide.",
+    "Three metros, three different claims markets: Columbus runs its own, Cleveland runs its own, and Cincinnati brings a third flavor into the mix. Toledo, Akron, Dayton, and the smaller communities fill the rest. Modern Appraisers works Ohio across the board. The practice covers total loss ACV, diminished value documentation, cost of repair reviews on disputed estimates, and valuations for classics, specialty vehicles, and commercial fleets. Our written appraisals are built to carry in appraisal clause work and settlement talks.",
   majorCities: ['Columbus', 'Cleveland', 'Cincinnati', 'Toledo', 'Akron'],
   relatedStates: ['michigan', 'indiana', 'kentucky', 'west-virginia', 'pennsylvania'],
   seo: {
     title: 'Auto Appraisal Services in Ohio | Modern Appraisers',
-    description: 'Independent vehicle appraisals in Ohio. ACV, diminished value, cost-of-repair, and appraisal clause support — Columbus, Cleveland, Cincinnati, Toledo, Akron.',
+    description: 'Independent vehicle appraisals in Ohio. ACV, diminished value, cost of repair, and appraisal clause support in Columbus, Cleveland, Cincinnati, Toledo, Akron.',
   },
   legalSections: null,
   citations: [] as readonly never[],

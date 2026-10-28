@@ -6,12 +6,12 @@ const content: StateContent = {
   abbreviation: 'OK',
   heroImage: null,
   intro:
-    "Modern Appraisers serves Oklahoma drivers, attorneys, body shops, and claims professionals across Oklahoma City, Tulsa, Norman, Edmond, and the smaller communities throughout the state. We prepare independent Actual Cash Value reports for total-loss claims, diminished value documentation for post-repair losses, cost-of-repair dispute reviews, and valuations for specialty, classic, agricultural, and commercial vehicles. Our written appraisals support appraisal-clause proceedings, insurance settlement negotiations, and litigation statewide.",
+    "Oklahoma City, Tulsa, Norman, and Edmond carry the bulk of our Oklahoma volume. The energy sector mix brings heavier commercial fleet work into the practice too. Modern Appraisers handles total loss ACV reports, diminished value documentation after collision repair, cost of repair reviews when the estimate's in dispute, and valuations covering classics, specialty vehicles, agricultural equipment, and commercial units. Written appraisals built to carry weight in appraisal clause and settlement work.",
   majorCities: ['Oklahoma City', 'Tulsa', 'Norman', 'Edmond'],
   relatedStates: ['kansas', 'missouri', 'arkansas', 'texas', 'new-mexico', 'colorado'],
   seo: {
     title: 'Auto Appraisal Services in Oklahoma | Modern Appraisers',
-    description: 'Independent vehicle appraisals in Oklahoma. ACV, diminished value, cost-of-repair, and appraisal clause support — Oklahoma City, Tulsa, Norman, Edmond.',
+    description: 'Independent vehicle appraisals in Oklahoma. ACV, diminished value, cost of repair, and appraisal clause support in Oklahoma City, Tulsa, Norman, Edmond.',
   },
   legalSections: null,
   citations: [] as readonly never[],

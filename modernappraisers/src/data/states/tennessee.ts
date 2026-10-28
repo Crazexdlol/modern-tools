@@ -6,12 +6,12 @@ const content: StateContent = {
   abbreviation: 'TN',
   heroImage: null,
   intro:
-    "From Nashville and Memphis to Knoxville, Chattanooga, and the smaller communities across the Great Smoky Mountains, Modern Appraisers supports Tennessee drivers, attorneys, body shops, and claims teams with independent vehicle appraisals. Our Actual Cash Value reports, diminished value documentation, cost-of-repair reviews, and specialty-vehicle valuations are structured to be defensible in appraisal-clause proceedings, insurance negotiations, and litigation. We handle first-party and third-party matters, standard passenger vehicles, and commercial fleet work.",
+    "Nashville, Memphis, Knoxville, and Chattanooga pull most of the Tennessee claims we handle. The Smokies and the Mississippi River border add their own flavor. Modern Appraisers works all of it. Our scope covers total loss ACV, diminished value documentation after repairs, cost of repair reviews when the shop's work and the carrier's offer don't match, and valuations for classics, specialty units, and commercial vehicles. Written appraisals that stand up in appraisal clause work and in the settlement conversations that follow.",
   majorCities: ['Nashville', 'Memphis', 'Knoxville', 'Chattanooga'],
   relatedStates: ['kentucky', 'virginia', 'north-carolina', 'georgia', 'alabama', 'mississippi', 'arkansas', 'missouri'],
   seo: {
     title: 'Auto Appraisal Services in Tennessee | Modern Appraisers',
-    description: 'Independent vehicle appraisals in Tennessee. ACV, diminished value, cost-of-repair, and appraisal clause support — Nashville, Memphis, Knoxville, Chattanooga.',
+    description: 'Independent vehicle appraisals in Tennessee. ACV, diminished value, cost of repair, and appraisal clause support in Nashville, Memphis, Knoxville, Chattanooga.',
   },
   legalSections: null,
   citations: [] as readonly never[],

@@ -6,12 +6,12 @@ const content: StateContent = {
   abbreviation: 'NH',
   heroImage: null,
   intro:
-    "Modern Appraisers delivers independent vehicle appraisal services across New Hampshire, from Manchester and Nashua to Concord, Dover, and the smaller communities throughout the White Mountains and Seacoast. We prepare Actual Cash Value reports for total-loss settlements, diminished value documentation after collision repairs, cost-of-repair reviews for disputed estimates, and valuations for specialty, classic, and commercial vehicles. Our written appraisals assist drivers, attorneys, body shops, and claims professionals through appraisal-clause proceedings and settlement discussions throughout the state.",
+    "Manchester, Nashua, Concord, and Dover handle most of the volume we see out of New Hampshire. The coastal communities and the White Mountains round it out. Modern Appraisers prepares total loss ACV reports, diminished value documentation after repairs, cost of repair reviews when the estimate's being pushed back on, and valuations covering classics, specialty vehicles, and commercial units. Our written appraisals go into appraisal clause work and settlement conversations with carriers.",
   majorCities: ['Manchester', 'Nashua', 'Concord', 'Dover'],
   relatedStates: ['maine', 'vermont', 'connecticut'],
   seo: {
     title: 'Auto Appraisal Services in New Hampshire | Modern Appraisers',
-    description: 'Independent vehicle appraisals in New Hampshire. ACV, diminished value, cost-of-repair, and appraisal clause support — Manchester, Nashua, Concord, Dover.',
+    description: 'Independent vehicle appraisals in New Hampshire. ACV, diminished value, cost of repair, and appraisal clause support in Manchester, Nashua, Concord, Dover.',
   },
   legalSections: null,
   citations: [] as readonly never[],

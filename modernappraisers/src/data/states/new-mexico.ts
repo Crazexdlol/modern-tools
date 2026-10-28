@@ -6,12 +6,12 @@ const content: StateContent = {
   abbreviation: 'NM',
   heroImage: null,
   intro:
-    "Across New Mexico — from Albuquerque and Santa Fe out to Las Cruces, Rio Rancho, and the smaller communities throughout the Rio Grande valley and high desert — Modern Appraisers provides independent vehicle appraisal services. We prepare Actual Cash Value reports for total-loss claims, diminished value documentation after collision repairs, cost-of-repair dispute reviews, and valuations for specialty, classic, and commercial vehicles. Our written appraisals support drivers, attorneys, body shops, and claims professionals through appraisal-clause proceedings and settlement negotiations.",
+    "Albuquerque and Santa Fe anchor the Rio Grande valley volume, Las Cruces picks up the southern work, and the oilfield communities bring their own mix of specialty and commercial fleet claims. Modern Appraisers covers it. Total loss ACV, diminished value documentation after repairs, cost of repair review on contested estimates, and valuations for classics, specialty, and commercial units. Our written appraisals go into appraisal clause work and the settlement conversations attorneys and drivers have with carriers.",
   majorCities: ['Albuquerque', 'Las Cruces', 'Santa Fe', 'Rio Rancho'],
   relatedStates: ['colorado', 'oklahoma', 'texas', 'arizona', 'utah'],
   seo: {
     title: 'Auto Appraisal Services in New Mexico | Modern Appraisers',
-    description: 'Independent vehicle appraisals in New Mexico. ACV, diminished value, cost-of-repair, and appraisal clause support — Albuquerque, Las Cruces, Santa Fe.',
+    description: 'Independent vehicle appraisals in New Mexico. ACV, diminished value, cost of repair, and appraisal clause support in Albuquerque, Las Cruces, Santa Fe.',
   },
   legalSections: null,
   citations: [] as readonly never[],

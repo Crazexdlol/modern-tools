@@ -6,12 +6,12 @@ const content: StateContent = {
   abbreviation: 'KS',
   heroImage: null,
   intro:
-    "Modern Appraisers works vehicle appraisal matters across Kansas, from Wichita and the Topeka metro area to Kansas City, Overland Park, and the smaller markets scattered across the state. We prepare independent Actual Cash Value reports for total-loss claims, diminished value documentation for post-repair losses, cost-of-repair dispute reviews, and valuations for specialty, classic, and commercial vehicles including farm and heavy-equipment valuations. Our written appraisals support drivers, attorneys, body shops, and claims teams through appraisal-clause proceedings and settlement discussions.",
+    "Wichita and the Kansas City metro produce most of the volume, with Overland Park and Topeka not far behind. Weather events are a factor here, and so is the heavier commercial and agricultural fleet mix. Modern Appraisers handles total loss ACV reports, diminished value documentation after repairs, cost of repair reviews on disputed estimates, and valuations for classics, specialty vehicles, and commercial units. Written reports that stand up in appraisal clause work and settlement conversations.",
   majorCities: ['Wichita', 'Overland Park', 'Kansas City', 'Topeka'],
   relatedStates: ['nebraska', 'missouri', 'oklahoma', 'colorado'],
   seo: {
     title: 'Auto Appraisal Services in Kansas | Modern Appraisers',
-    description: 'Independent vehicle appraisals in Kansas. ACV, diminished value, cost-of-repair, and appraisal clause support — Wichita, Overland Park, Kansas City, Topeka.',
+    description: 'Independent vehicle appraisals in Kansas. ACV, diminished value, cost of repair, and appraisal clause support in Wichita, Overland Park, Kansas City, Topeka.',
   },
   legalSections: null,
   citations: [] as readonly never[],

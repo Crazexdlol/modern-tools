@@ -6,12 +6,12 @@ const content: StateContent = {
   abbreviation: 'MS',
   heroImage: null,
   intro:
-    "Modern Appraisers serves Mississippi drivers, attorneys, body shops, and claims professionals across Jackson, Gulfport, Southaven, Hattiesburg, Biloxi, and the smaller communities throughout the state. Our independent appraisals cover Actual Cash Value for total-loss settlements, diminished value documentation after repairs, cost-of-repair dispute reviews, and valuations for specialty, classic, and commercial vehicles — including flood-affected matters along the Gulf Coast. We prepare written reports structured to withstand scrutiny in appraisal-clause proceedings, settlement negotiations, and litigation.",
+    "Jackson, Gulfport, Southaven, Hattiesburg, and Biloxi carry most of the Mississippi claims we see. The Gulf storm pattern pulls flood vehicles into play more often than most states. Modern Appraisers handles total loss ACV reports, diminished value documentation, cost of repair review on contested estimates, flood affected vehicle work, and valuations covering classics, specialty units, and commercial vehicles. Our written appraisals are built to hold up where it counts: appraisal clause, settlement, and anywhere further the claim goes.",
   majorCities: ['Jackson', 'Gulfport', 'Southaven', 'Hattiesburg'],
   relatedStates: ['tennessee', 'alabama', 'louisiana', 'arkansas'],
   seo: {
     title: 'Auto Appraisal Services in Mississippi | Modern Appraisers',
-    description: 'Independent vehicle appraisals in Mississippi. ACV, diminished value, cost-of-repair, and appraisal clause support — Jackson, Gulfport, Southaven, Hattiesburg.',
+    description: 'Independent vehicle appraisals in Mississippi. ACV, diminished value, cost of repair, and appraisal clause support in Jackson, Gulfport, Southaven, Hattiesburg.',
   },
   legalSections: null,
   citations: [] as readonly never[],

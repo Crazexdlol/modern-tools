@@ -6,12 +6,12 @@ const content: StateContent = {
   abbreviation: 'NV',
   heroImage: null,
   intro:
-    "Modern Appraisers provides independent vehicle appraisal services throughout Nevada, from Las Vegas and the Mojave corridor to Reno, Carson City, Henderson, and the agricultural communities of the north. Our documented valuations and dispute-resolution services support drivers, attorneys, body shops, and claims professionals handling total-loss, diminished value, cost-of-repair, and specialty-vehicle matters. We work on first-party and third-party claims and provide written appraisals that stand up to scrutiny in appraisal-clause proceedings, settlement negotiations, and litigation.",
+    "Nevada's where we do the most of our work. Modern Appraisers handles claims across Las Vegas and Henderson out through Reno and Carson City, plus the smaller communities north and south. We cover total loss ACV, diminished value documentation, cost of repair reviews on disputed estimates, and valuations on classics, exotics, specialty vehicles, and commercial units. First party, third party, and everything in between. Our written appraisals are the kind drivers, attorneys, and claims teams bring to the appraisal clause when they need something defensible.",
   majorCities: ['Las Vegas', 'Henderson', 'Reno', 'Carson City'],
   relatedStates: ['oregon', 'idaho', 'utah', 'arizona', 'california'],
   seo: {
     title: 'Auto Appraisal Services in Nevada | Modern Appraisers',
-    description: 'Independent vehicle appraisals in Nevada. ACV, diminished value, cost-of-repair, and appraisal clause support — Las Vegas, Henderson, Reno, Carson City.',
+    description: 'Independent vehicle appraisals in Nevada. ACV, diminished value, cost of repair, and appraisal clause support in Las Vegas, Henderson, Reno, Carson City.',
   },
   legalSections: null,
   citations: [] as readonly never[],

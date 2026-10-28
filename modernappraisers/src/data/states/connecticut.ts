@@ -6,12 +6,12 @@ const content: StateContent = {
   abbreviation: 'CT',
   heroImage: null,
   intro:
-    "Modern Appraisers serves Connecticut drivers, attorneys, body shops, and claims teams across Hartford, Bridgeport, New Haven, Stamford, and the surrounding corridors. We prepare independent Actual Cash Value reports for total-loss claims, diminished value documentation after collision repairs, and cost-of-repair dispute reviews. Specialty, classic, and commercial vehicles receive the same careful valuation. Our written appraisals are built to withstand scrutiny in appraisal-clause proceedings, settlement negotiations, and litigation anywhere in the state.",
+    "Connecticut's a compact state with a dense claims volume. Modern Appraisers covers Hartford, Bridgeport, New Haven, and Stamford, plus everything in between along the I 95 and I 91 corridors. We do total loss ACV reports, diminished value after collision repair, cost of repair review when the shop's estimate and the carrier's number don't agree, classic and specialty valuations, and commercial work. Our written appraisals are the ones that come up in appraisal clause proceedings and settlement talks.",
   majorCities: ['Bridgeport', 'Hartford', 'New Haven', 'Stamford'],
   relatedStates: ['new-york', 'new-jersey', 'pennsylvania'],
   seo: {
     title: 'Auto Appraisal Services in Connecticut | Modern Appraisers',
-    description: 'Independent vehicle appraisals in Connecticut. ACV, diminished value, cost-of-repair, and appraisal clause support — Hartford, Bridgeport, New Haven, Stamford.',
+    description: 'Independent vehicle appraisals in Connecticut. ACV, diminished value, cost of repair, and appraisal clause support in Hartford, Bridgeport, New Haven, Stamford.',
   },
   legalSections: null,
   citations: [] as readonly never[],

@@ -6,12 +6,12 @@ const content: StateContent = {
   abbreviation: 'NE',
   heroImage: null,
   intro:
-    "Across Nebraska — from Omaha and Lincoln to Bellevue, Grand Island, and the smaller communities across the Platte River valley and the Sandhills — Modern Appraisers provides independent vehicle appraisal services. We prepare Actual Cash Value reports for total-loss settlements, diminished value documentation for post-repair losses, cost-of-repair dispute reviews, and valuations for specialty, classic, agricultural, and commercial vehicles. Our documented appraisals support drivers, attorneys, body shops, and claims professionals in appraisal-clause proceedings and settlement discussions.",
+    "Omaha and Lincoln anchor our Nebraska work. Bellevue, Grand Island, and the smaller communities throughout the Platte River valley and the Sandhills round it out. Modern Appraisers handles total loss ACV reports, diminished value documentation after repairs, cost of repair reviews when the estimate's contested, and valuations covering classics, agricultural equipment, specialty units, and commercial vehicles. Written reports built to carry weight in appraisal clause work and settlement talks.",
   majorCities: ['Omaha', 'Lincoln', 'Bellevue', 'Grand Island'],
   relatedStates: ['south-dakota', 'iowa', 'missouri', 'kansas', 'colorado', 'wyoming'],
   seo: {
     title: 'Auto Appraisal Services in Nebraska | Modern Appraisers',
-    description: 'Independent vehicle appraisals in Nebraska. ACV, diminished value, cost-of-repair, and appraisal clause support — Omaha, Lincoln, Bellevue, Grand Island.',
+    description: 'Independent vehicle appraisals in Nebraska. ACV, diminished value, cost of repair, and appraisal clause support in Omaha, Lincoln, Bellevue, Grand Island.',
   },
   legalSections: null,
   citations: [] as readonly never[],

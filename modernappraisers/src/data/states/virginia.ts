@@ -6,12 +6,12 @@ const content: StateContent = {
   abbreviation: 'VA',
   heroImage: null,
   intro:
-    "Modern Appraisers handles vehicle appraisal matters across Virginia — from Virginia Beach and Hampton Roads to Richmond, Northern Virginia including Alexandria and Arlington, Norfolk, and the smaller communities throughout the state. We prepare independent Actual Cash Value reports for total-loss claims, diminished value documentation for post-repair losses, cost-of-repair dispute reviews, and valuations for specialty, classic, and commercial vehicles. Our documented appraisals support drivers, attorneys, body shops, and claims professionals through appraisal-clause proceedings, settlement negotiations, and litigation statewide.",
+    "Virginia Beach and Hampton Roads, Richmond, and the Northern Virginia belt around Alexandria and Arlington all push volume. Norfolk and the smaller cities fill in the rest. Modern Appraisers handles the Virginia work. The practice covers total loss ACV reports, diminished value documentation after repairs, cost of repair review when the estimate's being challenged, and valuations for classics, specialty units, and commercial vehicles. Written appraisals built to carry in appraisal clause and settlement work.",
   majorCities: ['Virginia Beach', 'Richmond', 'Alexandria', 'Norfolk', 'Arlington'],
   relatedStates: ['maryland', 'west-virginia', 'kentucky', 'tennessee', 'north-carolina'],
   seo: {
     title: 'Auto Appraisal Services in Virginia | Modern Appraisers',
-    description: 'Independent vehicle appraisals in Virginia. ACV, diminished value, cost-of-repair, and appraisal clause support — Virginia Beach, Richmond, Norfolk, Arlington.',
+    description: 'Independent vehicle appraisals in Virginia. ACV, diminished value, cost of repair, and appraisal clause support in Virginia Beach, Richmond, Norfolk, Arlington.',
   },
   legalSections: null,
   citations: [] as readonly never[],

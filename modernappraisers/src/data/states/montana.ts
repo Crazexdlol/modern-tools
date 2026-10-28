@@ -6,12 +6,12 @@ const content: StateContent = {
   abbreviation: 'MT',
   heroImage: null,
   intro:
-    "Modern Appraisers delivers independent vehicle appraisal services across Montana, from Billings and Missoula to Bozeman, Great Falls, Helena, and the smaller communities serving ranch, mining, and forestry economies statewide. We prepare Actual Cash Value reports for total-loss claims, diminished value documentation after collision repairs, cost-of-repair dispute reviews, and valuations for specialty, classic, recreational, and commercial vehicles including heavy trucks and off-road equipment. Our written appraisals assist drivers, attorneys, body shops, and claims teams through appraisal-clause proceedings and settlement discussions.",
+    "Montana claims come with long distances between comps and a heavy mix of ranch trucks, off road vehicles, and specialty equipment alongside the normal passenger fleet. Modern Appraisers works it from Billings and Missoula to Bozeman, Great Falls, Helena, and the smaller towns. Our scope: total loss ACV, diminished value documentation, cost of repair review on contested estimates, and valuations across classics, recreational, specialty, commercial, and heavy duty vehicles. Our written reports are ready for appraisal clause or settlement work.",
   majorCities: ['Billings', 'Missoula', 'Bozeman', 'Great Falls'],
   relatedStates: ['north-dakota', 'south-dakota', 'wyoming', 'idaho'],
   seo: {
     title: 'Auto Appraisal Services in Montana | Modern Appraisers',
-    description: 'Independent vehicle appraisals in Montana. ACV, diminished value, cost-of-repair, and appraisal clause support — Billings, Missoula, Bozeman, Great Falls.',
+    description: 'Independent vehicle appraisals in Montana. ACV, diminished value, cost of repair, and appraisal clause support in Billings, Missoula, Bozeman, Great Falls.',
   },
   legalSections: null,
   citations: [] as readonly never[],

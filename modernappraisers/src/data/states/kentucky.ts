@@ -6,12 +6,12 @@ const content: StateContent = {
   abbreviation: 'KY',
   heroImage: null,
   intro:
-    "From Louisville and Lexington to Bowling Green, Covington, and the smaller communities across the state, Modern Appraisers delivers independent vehicle appraisal services throughout Kentucky. We prepare Actual Cash Value reports for total-loss settlements, diminished value documentation after collision repairs, cost-of-repair reviews, and valuations for specialty, classic, and commercial vehicles. Our written appraisals assist drivers, attorneys, body shops, and claims professionals in appraisal-clause proceedings, insurance negotiations, and litigation.",
+    "Louisville, Lexington, Bowling Green, and Covington carry the Kentucky claims volume for us. Modern Appraisers handles total loss ACV reports, diminished value documentation after repairs, cost of repair review when the estimate's being challenged, and valuations across classics, exotics, specialty units, and commercial vehicles. Attorneys, body shops, drivers, and claims teams bring our written appraisals into appraisal clause proceedings and settlement talks when they need something defensible.",
   majorCities: ['Louisville', 'Lexington', 'Bowling Green', 'Covington'],
   relatedStates: ['indiana', 'ohio', 'west-virginia', 'virginia', 'tennessee', 'missouri', 'illinois'],
   seo: {
     title: 'Auto Appraisal Services in Kentucky | Modern Appraisers',
-    description: 'Independent vehicle appraisals in Kentucky. ACV, diminished value, cost-of-repair, and appraisal clause support — Louisville, Lexington, Bowling Green, Covington.',
+    description: 'Independent vehicle appraisals in Kentucky. ACV, diminished value, cost of repair, and appraisal clause support in Louisville, Lexington, Bowling Green, Covington.',
   },
   legalSections: null,
   citations: [] as readonly never[],

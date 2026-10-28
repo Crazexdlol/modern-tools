@@ -6,12 +6,12 @@ const content: StateContent = {
   abbreviation: 'ME',
   heroImage: null,
   intro:
-    "Modern Appraisers delivers independent vehicle appraisal services across Maine, from Portland and the southern coast up through Lewiston, Bangor, and Augusta to the smaller communities inland and Down East. We prepare Actual Cash Value reports for total-loss settlements, diminished value documentation for post-collision losses, cost-of-repair reviews, and valuations for specialty, classic, and commercial vehicles. Our written appraisals assist drivers, attorneys, body shops, and claims professionals in appraisal-clause proceedings and settlement discussions throughout the state.",
+    "Maine runs on winters that eat vehicles alive and a shorter claims radius than most states. Modern Appraisers covers it from Portland and the southern coast up through Lewiston, Bangor, Augusta, and the smaller communities Down East. We produce total loss ACV, diminished value documentation after repairs, cost of repair reviews, and valuations on classics, specialty units, and commercial vehicles. Our written reports are built to carry in appraisal clause work and in settlement talks with carriers.",
   majorCities: ['Portland', 'Lewiston', 'Bangor', 'Augusta'],
   relatedStates: ['new-hampshire', 'vermont'],
   seo: {
     title: 'Auto Appraisal Services in Maine | Modern Appraisers',
-    description: 'Independent vehicle appraisals in Maine. ACV, diminished value, cost-of-repair, and appraisal clause support — Portland, Lewiston, Bangor, Augusta.',
+    description: 'Independent vehicle appraisals in Maine. ACV, diminished value, cost of repair, and appraisal clause support in Portland, Lewiston, Bangor, Augusta.',
   },
   legalSections: null,
   citations: [] as readonly never[],

@@ -6,12 +6,12 @@ const content: StateContent = {
   abbreviation: 'NC',
   heroImage: null,
   intro:
-    "From Charlotte and the Research Triangle through Greensboro, Winston-Salem, Asheville, and the Outer Banks, Modern Appraisers supports North Carolina drivers, attorneys, body shops, and claims teams with independent vehicle appraisals. Our Actual Cash Value reports, diminished value documentation, cost-of-repair reviews, and specialty-vehicle valuations are structured to be defensible in appraisal-clause proceedings, insurance negotiations, and litigation. We handle first-party and third-party matters, standard passenger vehicles, and commercial fleet work across the state.",
-  majorCities: ['Charlotte', 'Raleigh', 'Greensboro', 'Durham', 'Winston-Salem'],
+    "Charlotte and the Research Triangle produce a lot of our North Carolina volume. Greensboro, Winston Salem, Asheville, and the Outer Banks fill in the rest. Modern Appraisers handles total loss ACV, diminished value documentation after repairs, cost of repair reviews on contested estimates, and valuations for classics, specialty vehicles, and commercial units. Our written appraisals are the kind that stand up in appraisal clause work and in settlement conversations with carriers.",
+  majorCities: ['Charlotte', 'Raleigh', 'Greensboro', 'Durham', 'Winston Salem'],
   relatedStates: ['virginia', 'tennessee', 'georgia', 'south-carolina'],
   seo: {
     title: 'Auto Appraisal Services in North Carolina | Modern Appraisers',
-    description: 'Independent vehicle appraisals in North Carolina. ACV, diminished value, cost-of-repair, and appraisal clause support — Charlotte, Raleigh, Greensboro, Durham.',
+    description: 'Independent vehicle appraisals in North Carolina. ACV, diminished value, cost of repair, and appraisal clause support in Charlotte, Raleigh, Greensboro, Durham.',
   },
   legalSections: null,
   citations: [] as readonly never[],

@@ -6,12 +6,12 @@ const content: StateContent = {
   abbreviation: 'PA',
   heroImage: null,
   intro:
-    "Modern Appraisers works vehicle appraisal matters across Pennsylvania — from Philadelphia and the suburban counties out to Pittsburgh, Allentown, Harrisburg, Erie, and the smaller communities throughout the state. We prepare independent Actual Cash Value reports for total-loss claims, diminished value documentation for post-repair losses, cost-of-repair reviews for disputed estimates, and valuations for specialty, classic, and commercial vehicles. Our documented appraisals support drivers, attorneys, body shops, and claims professionals through appraisal-clause proceedings, settlement negotiations, and litigation statewide.",
+    "Philadelphia and the suburban counties on the eastern side, Pittsburgh on the western side, and Allentown, Harrisburg, Erie, plus the Appalachian stretches in between. Modern Appraisers works Pennsylvania claims across the state. The practice covers total loss ACV reports, diminished value documentation after repairs, cost of repair review on contested estimates, and valuations for classics, specialty units, exotics, and commercial vehicles. Written appraisals built to carry weight in appraisal clause work and settlement conversations with carriers.",
   majorCities: ['Philadelphia', 'Pittsburgh', 'Allentown', 'Erie', 'Harrisburg'],
   relatedStates: ['new-york', 'new-jersey', 'delaware', 'maryland', 'west-virginia', 'ohio'],
   seo: {
     title: 'Auto Appraisal Services in Pennsylvania | Modern Appraisers',
-    description: 'Independent vehicle appraisals in Pennsylvania. ACV, diminished value, cost-of-repair, and appraisal clause support — Philadelphia, Pittsburgh, Allentown, Harrisburg.',
+    description: 'Independent vehicle appraisals in Pennsylvania. ACV, diminished value, cost of repair, and appraisal clause support in Philadelphia, Pittsburgh, Allentown, Harrisburg.',
   },
   legalSections: null,
   citations: [] as readonly never[],

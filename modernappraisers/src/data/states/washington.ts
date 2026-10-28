@@ -6,12 +6,12 @@ const content: StateContent = {
   abbreviation: 'WA',
   heroImage: null,
   intro:
-    "Across Washington — from Seattle and the Puget Sound corridor to Spokane, Tacoma, Olympia, and the smaller communities east of the Cascades — Modern Appraisers provides independent vehicle appraisal services. We prepare Actual Cash Value reports for total-loss claims, diminished value documentation after collision repairs, cost-of-repair dispute reviews, and valuations for specialty, classic, recreational, and commercial vehicles. Our written appraisals support drivers, attorneys, body shops, and claims professionals through appraisal-clause proceedings, settlement discussions, and litigation throughout the state.",
+    "Seattle and the Puget Sound corridor is where most of the Washington claims land. Spokane, Tacoma, Olympia, and Vancouver push the rest. East of the Cascades the market changes, and the vehicle mix changes with it. Modern Appraisers works all of it. We handle total loss ACV, diminished value documentation after repairs, cost of repair reviews on contested estimates, and valuations for classics, specialty units, recreational vehicles, and commercial fleets. Written appraisals built for appraisal clause and settlement work.",
   majorCities: ['Seattle', 'Spokane', 'Tacoma', 'Olympia', 'Vancouver'],
   relatedStates: ['idaho', 'oregon'],
   seo: {
     title: 'Auto Appraisal Services in Washington | Modern Appraisers',
-    description: 'Independent vehicle appraisals in Washington. ACV, diminished value, cost-of-repair, and appraisal clause support — Seattle, Spokane, Tacoma, Olympia.',
+    description: 'Independent vehicle appraisals in Washington. ACV, diminished value, cost of repair, and appraisal clause support in Seattle, Spokane, Tacoma, Olympia.',
   },
   legalSections: null,
   citations: [] as readonly never[],

@@ -6,12 +6,12 @@ const content: StateContent = {
   abbreviation: 'AL',
   heroImage: null,
   intro:
-    "Modern Appraisers provides independent vehicle appraisal services across Alabama, from Birmingham and Montgomery to Mobile, Huntsville, and the Gulf Coast. Our documented valuations and dispute resolution services support drivers, attorneys, body shops, and claims professionals handling total-loss settlements, diminished value, cost-of-repair disputes, and specialty-vehicle matters. We work on first-party and third-party claims and provide written appraisals built to withstand scrutiny in appraisal-clause proceedings, settlement negotiations, and litigation throughout the state.",
+    "Alabama's auto claims market stretches from the industrial centers around Birmingham and Huntsville down to Mobile and the Gulf settlements. Modern Appraisers works it all. We produce total loss ACV reports, diminished value documentation, cost of repair reviews, and valuations for classics, exotics, and commercial units. Drivers, attorneys, and body shops bring our written appraisals into settlement talks or appraisal clause proceedings when they need something that holds up under scrutiny.",
   majorCities: ['Birmingham', 'Montgomery', 'Mobile', 'Huntsville'],
   relatedStates: ['tennessee', 'georgia', 'florida', 'mississippi'],
   seo: {
     title: 'Auto Appraisal Services in Alabama | Modern Appraisers',
-    description: 'Independent vehicle appraisals in Alabama. Actual Cash Value, diminished value, cost-of-repair disputes, and appraisal clause support — Birmingham, Mobile, Montgomery.',
+    description: 'Independent vehicle appraisals in Alabama. ACV, diminished value, cost of repair, and appraisal clause support in Birmingham, Mobile, Montgomery, Huntsville.',
   },
   legalSections: null,
   citations: [] as readonly never[],

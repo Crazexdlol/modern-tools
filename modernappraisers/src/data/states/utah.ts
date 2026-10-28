@@ -6,12 +6,12 @@ const content: StateContent = {
   abbreviation: 'UT',
   heroImage: null,
   intro:
-    "Across Utah — from Salt Lake City and the Wasatch Front out to Provo, Ogden, St. George, and the smaller communities throughout the Mountain West — Modern Appraisers provides independent vehicle appraisal services. We prepare Actual Cash Value reports for total-loss claims, diminished value documentation after collision repairs, cost-of-repair dispute reviews, and valuations for specialty, classic, recreational, and commercial vehicles. Our written appraisals support drivers, attorneys, body shops, and claims professionals through appraisal-clause proceedings and settlement negotiations.",
+    "Salt Lake City and the Wasatch Front produce most of the Utah volume we see. Provo, Ogden, St. George, and the smaller mountain communities round it out. Modern Appraisers prepares total loss ACV reports, diminished value documentation after repairs, cost of repair review on contested estimates, and valuations covering classics, specialty units, recreational and off road vehicles, and commercial fleets. Our written appraisals carry weight in appraisal clause work and in the settlement conversations that go with it.",
   majorCities: ['Salt Lake City', 'West Valley City', 'Provo', 'Ogden'],
   relatedStates: ['idaho', 'wyoming', 'colorado', 'new-mexico', 'arizona', 'nevada'],
   seo: {
     title: 'Auto Appraisal Services in Utah | Modern Appraisers',
-    description: 'Independent vehicle appraisals in Utah. ACV, diminished value, cost-of-repair, and appraisal clause support — Salt Lake City, Provo, Ogden, West Valley City.',
+    description: 'Independent vehicle appraisals in Utah. ACV, diminished value, cost of repair, and appraisal clause support in Salt Lake City, Provo, Ogden, West Valley City.',
   },
   legalSections: null,
   citations: [] as readonly never[],
