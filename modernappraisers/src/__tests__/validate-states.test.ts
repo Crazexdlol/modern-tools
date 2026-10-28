@@ -1,5 +1,4 @@
 import { describe, it, expect } from 'vitest'
-// @ts-expect-error - .mjs with no .d.ts; shape covered by inline typing below
 import { validate } from '../../scripts/validate-states.mjs'
 
 type Result = { errors: string[]; warnings: string[] }
