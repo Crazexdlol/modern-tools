@@ -48,15 +48,18 @@ export function StateMegaMenu() {
       onMouseEnter={() => { cancelClose(); setOpen(true) }}
       onMouseLeave={scheduleClose}
     >
-      <Link
-        href="/states"
-        className="hover:text-[color:var(--color-accent)]"
+      {/* Hover-only trigger — clicking does nothing by design. Keyboard users
+          toggle the dropdown with Enter/Space on this button. */}
+      <button
+        type="button"
+        className="hover:text-[color:var(--color-accent)] cursor-default"
         aria-haspopup="true"
         aria-expanded={open}
         onFocus={() => setOpen(true)}
+        onClick={() => setOpen(o => !o)}
       >
         States We Serve
-      </Link>
+      </button>
 
       {open && (
         <div
@@ -80,15 +83,6 @@ export function StateMegaMenu() {
                 ))}
               </ul>
             ))}
-          </div>
-          <div className="mt-4 pt-3 border-t border-white/5 text-right">
-            <Link
-              href="/states"
-              className="text-xs text-[color:var(--color-accent)] font-semibold hover:underline"
-              onClick={() => setOpen(false)}
-            >
-              View all states →
-            </Link>
           </div>
         </div>
       )}

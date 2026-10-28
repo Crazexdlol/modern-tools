@@ -19,15 +19,6 @@ export function StateMobileMenu({ onNavigate }: { onNavigate?: () => void }) {
       </button>
       {open && (
         <ul className="pl-3 space-y-1 pb-3">
-          <li>
-            <Link
-              href="/states"
-              className="block py-1 text-sm text-[color:var(--color-accent)] font-semibold"
-              onClick={onNavigate}
-            >
-              View all states →
-            </Link>
-          </li>
           {STATES.map(s => (
             <li key={s.slug}>
               <Link

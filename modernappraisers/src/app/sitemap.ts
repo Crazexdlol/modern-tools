@@ -32,14 +32,12 @@ export default function sitemap(): MetadataRoute.Sitemap {
     '/fulfillment-policy',
   ]
   const stateRoutes = STATES.map(s => `/states/${s.slug}`)
-  const dir = ['/states']
-  return [...existing, ...dir, ...stateRoutes].map(path => ({
+  return [...existing, ...stateRoutes].map(path => ({
     url: `${BASE}${path}`,
     lastModified: now,
     changeFrequency: path === '' ? 'weekly' : 'monthly',
     priority:
       path === '' ? 1 :
-      path === '/states' ? 0.7 :
       path.startsWith('/states/') ? 0.6 :
       path.length < 15 ? 0.8 : 0.6,
   }))
