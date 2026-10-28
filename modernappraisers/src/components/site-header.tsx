@@ -4,15 +4,21 @@ import Image from 'next/image'
 import { useEffect, useState } from 'react'
 import { usePathname } from 'next/navigation'
 import { Container } from './container'
+import { StateMegaMenu } from './states/state-mega-menu'
+import { StateMobileMenu } from './states/state-mobile-menu'
 
 // Site-wide top nav. Desktop: inline links + Submit a Claim CTA.
 // Mobile (< lg): hamburger button that opens a full-height drawer with the
 // same links. Drawer closes on route change and on Escape.
 
-const NAV_LINKS = [
+// Nav items BEFORE the States We Serve mega-menu, in the order they render.
+const NAV_LINKS_LEFT = [
   { href: '/',           label: 'Home' },
   { href: '/about',      label: 'About Us' },
   { href: '/services',   label: 'Services' },
+]
+// Nav items AFTER the States We Serve mega-menu.
+const NAV_LINKS_RIGHT = [
   { href: '/vehicles',   label: 'Property Types' },
   { href: '/faq',        label: 'FAQ' },
   { href: '/contact',    label: 'Contact Us' },
@@ -56,7 +62,11 @@ export function SiteHeader() {
 
           {/* Desktop nav */}
           <nav className="hidden lg:flex items-center gap-8 text-sm font-medium text-[color:var(--color-ink-muted)]">
-            {NAV_LINKS.map(l => (
+            {NAV_LINKS_LEFT.map(l => (
+              <Link key={l.href} href={l.href} className="hover:text-[color:var(--color-accent)]">{l.label}</Link>
+            ))}
+            <StateMegaMenu />
+            {NAV_LINKS_RIGHT.map(l => (
               <Link key={l.href} href={l.href} className="hover:text-[color:var(--color-accent)]">{l.label}</Link>
             ))}
           </nav>
@@ -115,7 +125,19 @@ export function SiteHeader() {
             </button>
           </div>
           <nav className="px-5 py-8 flex flex-col gap-1 text-xl font-semibold text-[color:var(--color-ink)]">
-            {NAV_LINKS.map(l => (
+            {NAV_LINKS_LEFT.map(l => (
+              <Link
+                key={l.href}
+                href={l.href}
+                className="py-3 border-b border-[color:var(--color-border)] hover:text-[color:var(--color-accent)]"
+              >
+                {l.label}
+              </Link>
+            ))}
+            <div className="py-3 border-b border-[color:var(--color-border)]">
+              <StateMobileMenu onNavigate={() => setOpen(false)} />
+            </div>
+            {NAV_LINKS_RIGHT.map(l => (
               <Link
                 key={l.href}
                 href={l.href}
