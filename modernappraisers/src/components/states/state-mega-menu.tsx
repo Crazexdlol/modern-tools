@@ -63,7 +63,7 @@ export function StateMegaMenu() {
 
       {open && (
         <div
-          className="absolute left-0 top-full mt-3 z-40 bg-[color:var(--color-bg-elevated)] border border-white/10 rounded-lg shadow-xl p-6 w-[760px] max-w-[90vw]"
+          className="absolute left-1/2 -translate-x-1/2 top-full mt-3 z-40 bg-[color:var(--color-bg-elevated)] border border-white/10 rounded-lg shadow-xl p-6 w-[760px] max-w-[90vw]"
           onMouseEnter={cancelClose}
           onMouseLeave={scheduleClose}
         >
