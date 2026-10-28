@@ -6,7 +6,8 @@
     "dev": "next dev --port 3100",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint",
+    "lint": "node scripts/validate-states.mjs && next lint",
+    "validate:states": "node scripts/validate-states.mjs",
     "test": "vitest run",
     "test:watch": "vitest"
   },
